@@ -1,0 +1,56 @@
+{
+    // VS Code Tasks for Rust development
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Rust: Format",
+            "type": "shell",
+            "command": "cargo fmt --all",
+            "group": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "Rust: Check",
+            "type": "shell",
+            "command": "cargo check",
+            "group": "build",
+            "dependsOn": "Rust: Format",
+            "problemMatcher": [
+                "$rustc"
+            ]
+        },
+        {
+            "label": "Rust: Clippy",
+            "type": "shell",
+            "command": "cargo clippy --all-targets --all-features -- -D warnings",
+            "group": "build",
+            "dependsOn": "Rust: Check",
+            "problemMatcher": [
+                "$rustc"
+            ]
+        },
+        {
+            "label": "Rust: Build",
+            "type": "shell",
+            "command": "cargo build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "dependsOn": "Rust: Clippy",
+            "problemMatcher": [
+                "$rustc"
+            ]
+        },
+        {
+            "label": "Rust: Test",
+            "type": "shell",
+            "command": "cargo test",
+            "group": "test",
+            "dependsOn": "Rust: Build",
+            "problemMatcher": [
+                "$rustc"
+            ]
+        }
+    ]
+}

@@ -1,0 +1,9 @@
+[package]
+name = "parsm"
+version = "0.1.0"
+edition = "2021"
+authors = ["John Cairns <john@2ad.com>"]
+description = "Parsm is a structured data parser for Unix, designed to handle structured data formats like JSON, XML, and YAML with ease."
+license = "MIT"
+repository = "https://github.com/jac18281828/parsm"
+[dependencies]
