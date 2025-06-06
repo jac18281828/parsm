@@ -3,7 +3,51 @@ name = "parsm"
 version = "0.1.0"
 edition = "2021"
 authors = ["John Cairns <john@2ad.com>"]
-description = "Parsm is a structured data parser for Unix, designed to handle structured data formats like JSON, XML, and YAML with ease."
+description = "Multi-format data processor that understands structured text better than sed or awk"
 license = "MIT"
 repository = "https://github.com/jac18281828/parsm"
 [dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+csv = "1.1"
+toml = "0.8.22"
+serde_yaml = "0.9.33"
+pest = "2.8.0"
+pest_derive = "2.8.0"
+clap = "4.5.39"
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[[bin]]
+name = "parsm" 
+path = "src/bin/parsm.rs"
+
+
+# Example usage in your lib.rs or main.rs:
+# 
+# Basic usage:
+# ```
+# // Filter JSON
+# echo '{"name": "Alice", "age": 30}' | parsm 'name == "Alice"'
+# 
+# // Filter and template
+# echo '{"name": "Alice", "age": 30}' | parsm 'age > 25' '$name is $age'
+# 
+# // Filter CSV (auto-converts to indexed fields)
+# echo 'Alice,30,Engineer' | parsm 'field_1 > "25"' '$field_0: $field_2'
+# 
+# // Filter logfmt
+# echo 'level=error msg="timeout" service=api' | parsm 'level == "error"' '[$level] $msg'
+# 
+# // Complex filters
+# parsm 'name == "Alice" && (age > 25 || status == "active")' '$name: $status'
+# ```
+#
+# Advanced features:
+# - Auto-detects JSON, CSV, YAML, TOML, logfmt, and plain text
+# - Supports nested field access (user.email)
+# - Rich comparison operators (==, !=, <, >, contains, startswith, etc.)
+# - Boolean logic (&&, ||, !)
+# - Template-based output formatting
+# - Streaming processing for large datasets

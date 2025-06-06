@@ -1,0 +1,54 @@
+// parsm.pest - Complete grammar for the filtering DSL
+
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+
+// Main program entry point
+program = { SOI ~ filter_expr? ~ template_expr? ~ EOI }
+
+// Filter expressions
+filter_expr = { condition }
+
+condition = { or_expr }
+or_expr = { and_expr ~ (or_op ~ and_expr)* }
+and_expr = { comparison ~ (and_op ~ comparison)* }
+
+comparison = {
+    field_access ~ comparison_op ~ value |
+    "(" ~ condition ~ ")" |
+    not_op ~ comparison
+}
+
+// Operators
+or_op = { "||" | "or" }
+and_op = { "&&" | "and" }
+not_op = { "!" | "not" }
+comparison_op = { 
+    "==" | "!=" | "<=" | ">=" | "<" | ">" | 
+    "contains" | "startswith" | "endswith" | "matches"
+}
+
+// Field access (supports nested fields like user.name)
+field_access = { identifier ~ ("." ~ identifier)* }
+identifier = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+
+// Values
+value = {
+    string_literal |
+    number |
+    boolean |
+    null
+}
+
+string_literal = { "\"" ~ string_inner ~ "\"" | "'" ~ string_inner_single ~ "'" }
+string_inner = { (!("\"") ~ ANY)* }
+string_inner_single = { (!("'") ~ ANY)* }
+
+number = { "-"? ~ (float | integer) }
+float = { integer ~ "." ~ ASCII_DIGIT+ }
+integer = { ASCII_DIGIT+ }
+
+boolean = { "true" | "false" }
+null = { "null" }
+
+// Template expressions (for output formatting)  
+template_expr = @{ (!EOI ~ ANY)+ }
