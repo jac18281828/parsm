@@ -1072,6 +1072,24 @@ fn try_split_filter_template(input: &str) -> Option<ParsedDSL> {
     None
 }
 
+/// Check if input has partial/mismatched braces that indicate invalid syntax.
+fn has_partial_braces(input: &str) -> bool {
+    let open_count = input.chars().filter(|&c| c == '{').count();
+    let close_count = input.chars().filter(|&c| c == '}').count();
+
+    // If we have braces but they don't match, or if we have braces but the entire input
+    // is not surrounded by them, it's partial braces
+    if open_count > 0 || close_count > 0 {
+        // Check if entire input is properly surrounded by braces
+        if input.starts_with('{') && input.ends_with('}') && open_count == 1 && close_count == 1 {
+            return false; // This is a properly formatted template
+        }
+        return true; // Any other case with braces is partial
+    }
+
+    false // No braces at all
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2574,22 +2592,4 @@ mod tests {
             }
         }
     }
-}
-
-/// Check if input has partial/mismatched braces that indicate invalid syntax.
-fn has_partial_braces(input: &str) -> bool {
-    let open_count = input.chars().filter(|&c| c == '{').count();
-    let close_count = input.chars().filter(|&c| c == '}').count();
-
-    // If we have braces but they don't match, or if we have braces but the entire input
-    // is not surrounded by them, it's partial braces
-    if open_count > 0 || close_count > 0 {
-        // Check if entire input is properly surrounded by braces
-        if input.starts_with('{') && input.ends_with('}') && open_count == 1 && close_count == 1 {
-            return false; // This is a properly formatted template
-        }
-        return true; // Any other case with braces is partial
-    }
-
-    false // No braces at all
 }
