@@ -46,7 +46,10 @@
             "label": "Rust: Test",
             "type": "shell",
             "command": "cargo test",
-            "group": "test",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
             "dependsOn": "Rust: Build",
             "problemMatcher": [
                 "$rustc"

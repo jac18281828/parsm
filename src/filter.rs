@@ -1,5 +1,3 @@
-// filter.rs - AST and evaluation engine for filtering
-
 use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +10,7 @@ pub enum FilterExpr {
         op: ComparisonOp,
         value: FilterValue,
     },
+    FieldTruthy(FieldPath),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +39,23 @@ impl FieldPath {
             }
         }
         Some(current)
+    }
+
+    /// Extract and format a field value from JSON data
+    pub fn extract_field(&self, data: &Value) -> Option<String> {
+        let value = self.get_value(data)?;
+
+        // Format the extracted value as a simple string without JSON encoding
+        match value {
+            Value::String(s) => Some(s.clone()),
+            Value::Number(n) => Some(n.to_string()),
+            Value::Bool(b) => Some(b.to_string()),
+            Value::Null => Some("null".to_string()),
+            Value::Array(_) | Value::Object(_) => {
+                // For complex types, use JSON representation
+                serde_json::to_string_pretty(value).ok()
+            }
+        }
     }
 }
 
@@ -136,6 +152,21 @@ impl FilterEngine {
             FilterExpr::Comparison { field, op, value } => {
                 Self::evaluate_comparison(field, op, value, data)
             }
+            FilterExpr::FieldTruthy(field) => Self::evaluate_field_truthiness(field, data),
+        }
+    }
+
+    fn evaluate_field_truthiness(field: &FieldPath, data: &Value) -> bool {
+        match field.get_value(data) {
+            Some(value) => match value {
+                Value::Null => false,
+                Value::Bool(b) => *b,
+                Value::String(s) => !s.is_empty(),
+                Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
+                Value::Array(arr) => !arr.is_empty(),
+                Value::Object(obj) => !obj.is_empty(),
+            },
+            None => false, // Field doesn't exist, so it's falsy
         }
     }
 
@@ -226,8 +257,6 @@ impl FilterEngine {
     }
 
     fn regex_matches(data_value: &Value, filter_value: &FilterValue) -> bool {
-        // For now, just do simple string matching
-        // In a real implementation, you'd use the `regex` crate
         match (data_value, filter_value) {
             (Value::String(data), FilterValue::String(pattern)) => data.contains(pattern),
             _ => false,

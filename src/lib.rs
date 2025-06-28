@@ -1,7 +1,140 @@
-// lib.rs - Library structure and public API
+//! # parsm - **Parse 'Em** - Multi-Format Data Processor
+//!
+//! A powerful library for parsing, filtering, and transforming structured data from various formats.
+//!
+//! ## Overview
+//!
+//! `parsm` automatically detects and parses JSON, CSV, TOML, YAML, logfmt, and plain text,
+//! providing powerful filtering and templating capabilities with a simple, intuitive syntax.
+//!
+//! ## Quick Start
+//!
+//! ```rust
+//! use parsm::{parse_command, process_stream, StreamingParser};
+//! use std::io::Cursor;
+//!
+//! // Parse a filter expression
+//! let dsl = parse_command(r#"age > 25 {${name} is ${age} years old}"#)?;
+//!
+//! // Process streaming data
+//! let input = r#"{"name": "Alice", "age": 30}"#;
+//! let mut output = Vec::new();
+//! process_stream(Cursor::new(input), &mut output)?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ## Supported Formats
+//!
+//! - **JSON**: `{"name": "Alice", "age": 30}`
+//! - **CSV**: `Alice,30,Engineer`
+//! - **YAML**: `name: Alice\nage: 30`
+//! - **TOML**: `name = "Alice"\nage = 30`
+//! - **Logfmt**: `level=error msg="timeout" service=api`
+//! - **Plain Text**: `Alice 30 Engineer`
+//!
+//! ## Filter Syntax
+//!
+//! - **Comparison**: `age > 25`, `name == "Alice"`
+//! - **String ops**: `email ~ "@company.com"`, `name ^= "A"`, `file $= ".log"`
+//! - **Boolean logic**: `age > 25 && active == true`, `!verified`
+//! - **Nested fields**: `user.email == "alice@example.com"`
+//!
+//! ## Template Syntax
+//!
+//! Templates are enclosed in braces `{...}` and use `${variable}` or `$variable` for substitution:
+//!
+//! - **Field substitution**: `{${name} is ${age}}` or `{$name is ${age}}`
+//! - **Indexed fields**: `{${1}, ${2}, ${3}}` (1-based, requires braces for numbers)
+//! - **Original input**: `{${0}}` (entire original input, requires braces)
+//! - **Nested fields**: `{${user.email}}` or `{$user.email}` (if unambiguous)
+//! - **Mixed**: `{$name costs $$100}` (use $$ for literal dollar signs)
+//!
+//! ## Field Selection
+//!
+//! ```rust
+//! use parsm::parse_command;
+//!
+//! // Extract specific fields using quoted syntax
+//! let dsl = parse_command(r#""user.email""#)?;
+//! assert!(dsl.field_selector.is_some());
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ## Examples
+//!
+//! ### Basic Filtering
+//!
+//! ```rust
+//! use parsm::{parse_command, FilterEngine};
+//! use serde_json::json;
+//!
+//! let dsl = parse_command(r#"age > 25"#)?;
+//! let data = json!({"name": "Alice", "age": 30});
+//!
+//! if let Some(filter) = &dsl.filter {
+//!     let passes = FilterEngine::evaluate(filter, &data);
+//!     assert!(passes);
+//! }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ### Template Rendering
+//!
+//! ```rust
+//! use parsm::parse_command;
+//! use serde_json::json;
+//!
+//! let dsl = parse_command(r#"age > 25 {${name} is ${age} years old}"#)?;
+//! let data = json!({"name": "Alice", "age": 30});
+//!
+//! if let Some(template) = &dsl.template {
+//!     let output = template.render(&data);
+//!     assert_eq!(output, "Alice is 30 years old");
+//! }
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ### Format Detection and Parsing
+//!
+//! ```rust
+//! use parsm::StreamingParser;
+//!
+//! // Create separate parsers for different formats
+//! let mut json_parser = StreamingParser::new();
+//! let json_result = json_parser.parse_line(r#"{"name": "Alice"}"#)?;
+//!
+//! let mut csv_parser = StreamingParser::new();
+//! let csv_result = csv_parser.parse_line("Alice,30,Engineer")?;
+//!
+//! let mut logfmt_parser = StreamingParser::new();
+//! let logfmt_result = logfmt_parser.parse_line("level=error msg=timeout")?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+//!
+//! ## Architecture
+//!
+//! The library consists of several key components:
+//!
+//! - [`parse`]: Multi-format parser with automatic detection
+//! - [`filter`]: Boolean expression evaluation engine
+//! - [`dsl`]: Domain-specific language parser using Pest
+//! - High-level functions for stream processing
+//!
+//! ## Error Handling
+//!
+//! - **First line errors**: Fatal (format detection failure)
+//! - **Subsequent errors**: Warnings with continued processing
+//! - **Missing fields**: Graceful fallback behavior
+//!
+//! ## Performance
+//!
+//! - **Streaming**: Line-by-line processing for constant memory usage
+//! - **Format detection**: Efficient with intelligent fallback
+//! - **Large files**: Scales to gigabyte-scale data processing
 
 pub mod dsl;
 pub mod filter;
+pub mod operators;
 pub mod parse;
 
 pub use dsl::{parse_command, DSLParser, ParsedDSL};
@@ -11,7 +144,6 @@ pub use parse::{process_stream, Format, ParsedLine, StreamingParser};
 use serde_json::Value;
 use std::io::{BufRead, Write};
 
-/// High-level API for processing streams with filters and templates
 pub fn process_with_filter<R: BufRead, W: Write>(
     reader: R,
     mut writer: W,
@@ -23,6 +155,7 @@ pub fn process_with_filter<R: BufRead, W: Write>(
         ParsedDSL {
             filter: None,
             template: None,
+            field_selector: None,
         }
     };
 
@@ -41,7 +174,6 @@ pub fn process_with_filter<R: BufRead, W: Write>(
             Ok(parsed_line) => {
                 let json_value = convert_to_json(parsed_line, &line)?;
 
-                // Apply filter
                 let passes_filter = if let Some(ref filter) = dsl.filter {
                     FilterEngine::evaluate(filter, &json_value)
                 } else {
@@ -49,7 +181,6 @@ pub fn process_with_filter<R: BufRead, W: Write>(
                 };
 
                 if passes_filter {
-                    // Apply template or output JSON
                     let output = if let Some(ref template) = dsl.template {
                         template.render(&json_value)
                     } else {
@@ -72,25 +203,23 @@ pub fn process_with_filter<R: BufRead, W: Write>(
     Ok(())
 }
 
-/// Convert ParsedLine to JSON Value for uniform processing
-fn convert_to_json(parsed_line: ParsedLine, original_input: &str) -> Result<Value, Box<dyn std::error::Error>> {
+fn convert_to_json(
+    parsed_line: ParsedLine,
+    original_input: &str,
+) -> Result<Value, Box<dyn std::error::Error>> {
     let json_value = match parsed_line {
         ParsedLine::Json(mut val) => {
-            // Add original input for $$ template
             if let Value::Object(ref mut obj) = val {
-                obj.insert("$$".to_string(), Value::String(original_input.to_string()));
+                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             }
             val
         }
         ParsedLine::Csv(record) => {
             let mut obj = serde_json::Map::new();
-            // Add the entire input line for $$ template
-            obj.insert("$$".to_string(), Value::String(original_input.to_string()));
-            // Add indexed fields
+            obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             for (i, field) in record.iter().enumerate() {
                 obj.insert(format!("field_{}", i), Value::String(field.to_string()));
             }
-            // Add array representation
             let values: Vec<Value> = record
                 .iter()
                 .map(|field| Value::String(field.to_string()))
@@ -101,32 +230,29 @@ fn convert_to_json(parsed_line: ParsedLine, original_input: &str) -> Result<Valu
         ParsedLine::Toml(val) => {
             let mut json_val = serde_json::to_value(val)?;
             if let Value::Object(ref mut obj) = json_val {
-                obj.insert("$$".to_string(), Value::String(original_input.to_string()));
+                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             }
             json_val
         }
         ParsedLine::Yaml(val) => {
             let mut json_val = serde_json::to_value(val)?;
             if let Value::Object(ref mut obj) = json_val {
-                obj.insert("$$".to_string(), Value::String(original_input.to_string()));
+                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             }
             json_val
         }
         ParsedLine::Logfmt(mut val) => {
             if let Value::Object(ref mut obj) = val {
-                obj.insert("$$".to_string(), Value::String(original_input.to_string()));
+                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             }
             val
         }
         ParsedLine::Text(words) => {
             let mut obj = serde_json::Map::new();
-            // Add the entire input line for $$ template
-            obj.insert("$$".to_string(), Value::String(original_input.to_string()));
-            // Add indexed words
+            obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             for (i, word) in words.iter().enumerate() {
                 obj.insert(format!("word_{}", i), Value::String(word.clone()));
             }
-            // Add array representation
             let values: Vec<Value> = words.into_iter().map(Value::String).collect();
             obj.insert("_array".to_string(), Value::Array(values));
             Value::Object(obj)
@@ -135,29 +261,33 @@ fn convert_to_json(parsed_line: ParsedLine, original_input: &str) -> Result<Valu
     Ok(json_value)
 }
 
-/// Utility function to detect what format a string is
 pub fn detect_format(input: &str) -> Format {
     let mut parser = StreamingParser::new();
-    // Try to parse the first line to determine format
-    if let Ok(_) = parser.parse_line(input) {
+    if parser.parse_line(input).is_ok() {
         parser.get_format().unwrap_or(Format::Text)
     } else {
         Format::Text
     }
 }
 
-/// Create a filter expression from a string
 pub fn create_filter(expr: &str) -> Result<FilterExpr, Box<dyn std::error::Error>> {
     let dsl = parse_command(expr)?;
     dsl.filter
         .ok_or_else(|| "No filter expression found".into())
 }
 
-/// Create a template from a string  
 pub fn create_template(expr: &str) -> Result<Template, Box<dyn std::error::Error>> {
-    let dsl = parse_command(&format!("true {}", expr))?; // Add dummy filter
+    let dsl = parse_command(expr)?;
     dsl.template
         .ok_or_else(|| "No template expression found".into())
+}
+
+/// Parse separate filter and template expressions
+pub fn parse_separate_expressions(
+    filter_input: Option<&str>,
+    template_input: Option<&str>,
+) -> Result<ParsedDSL, Box<dyn std::error::Error>> {
+    DSLParser::parse_separate(filter_input, template_input).map_err(|e| e.into())
 }
 
 #[cfg(test)]
@@ -174,8 +304,7 @@ mod integration_tests {
         let reader = Cursor::new(input.as_bytes());
         let mut output = Vec::new();
 
-        // Filter for people over 25 and format output
-        process_with_filter(reader, &mut output, Some(r#"age > 25 $name is $age"#)).unwrap();
+        process_with_filter(reader, &mut output, Some(r#"age > 25 {${name} is ${age}}"#)).unwrap();
 
         let output_str = String::from_utf8(output).unwrap();
         let lines: Vec<&str> = output_str.trim().split('\n').collect();
@@ -192,11 +321,10 @@ mod integration_tests {
         let reader = Cursor::new(input.as_bytes());
         let mut output = Vec::new();
 
-        // Filter CSV and format
         process_with_filter(
             reader,
             &mut output,
-            Some(r#"field_1 > "25" $1: $3"#),
+            Some(r#"field_1 > "25" {${field_0}: ${field_2}}"#),
         )
         .unwrap();
 
@@ -210,18 +338,17 @@ mod integration_tests {
 
     #[test]
     fn test_end_to_end_logfmt_processing() {
-        let input = r#"level=info msg="Starting app" service=web
-level=error msg="DB connection failed" service=api
-level=info msg="Request processed" service=web"#;
+        let input = r#"level=info msg=\"Starting app\" service=web
+level=error msg=\"DB connection failed\" service=api
+level=info msg=\"Request processed\" service=web"#;
 
         let reader = Cursor::new(input.as_bytes());
         let mut output = Vec::new();
 
-        // Filter for errors and format
         process_with_filter(
             reader,
             &mut output,
-            Some(r#"level == "error" [ERROR] $service: $msg"#),
+            Some(r#"level == "error" {[ERROR] ${service}: ${msg}}"#),
         )
         .unwrap();
 
@@ -234,7 +361,6 @@ level=info msg="Request processed" service=web"#;
 
     #[test]
     fn test_mixed_format_processing() {
-        // Test processing different formats in sequence
         let formats = vec![
             (r#"{"name": "Alice", "type": "user"}"#, Format::Json),
             ("Alice,user,30", Format::Csv),
@@ -261,20 +387,17 @@ level=info msg="Request processed" service=web"#;
         let reader = Cursor::new(input.as_bytes());
         let mut output = Vec::new();
 
-        // Complex filter: (age > 25 AND active) OR name == "Bob"
         let filter_expr = r#"(age > 25 && active == true) || name == "Bob""#;
         process_with_filter(reader, &mut output, Some(filter_expr)).unwrap();
 
         let output_str = String::from_utf8(output).unwrap();
         let lines: Vec<&str> = output_str.trim().split('\n').collect();
 
-        // Should match Alice (30, active) and Bob (25, inactive but name matches) and Charlie (35, active)
         assert_eq!(lines.len(), 3);
     }
 
     #[test]
     fn test_utility_functions() {
-        // Test create_filter
         let filter = create_filter(r#"name == "Alice""#).unwrap();
         match filter {
             FilterExpr::Comparison { field, op, value } => {
@@ -285,9 +408,8 @@ level=info msg="Request processed" service=web"#;
             _ => panic!("Expected comparison"),
         }
 
-        // Test create_template
-        let template = create_template("$name is $age").unwrap();
-        assert_eq!(template.items.len(), 4);
+        let template = create_template("{${name} is ${age}}").unwrap();
+        assert_eq!(template.items.len(), 3);
     }
 
     #[test]
@@ -298,14 +420,12 @@ level=info msg="Request processed" service=web"#;
         let reader = Cursor::new(input.as_bytes());
         let mut output = Vec::new();
 
-        // No filter should pass everything through
         process_with_filter(reader, &mut output, None).unwrap();
 
         let output_str = String::from_utf8(output).unwrap();
         let lines: Vec<&str> = output_str.trim().split('\n').collect();
 
         assert_eq!(lines.len(), 2);
-        // Should be valid JSON output
         let _: Value = serde_json::from_str(lines[0]).unwrap();
         let _: Value = serde_json::from_str(lines[1]).unwrap();
     }

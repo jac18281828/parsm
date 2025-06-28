@@ -1,262 +1,449 @@
-# parsm - **Parse 'Em** - Multi-Format Data Processor Architecture
+# parsm - **Parse 'Em** - An 'everything' parser, Sedder, Awkker, Grokker, Grepper
+
+Parsm is the powerful command-line tool that understands structured text better than sed, awk, grep or grok.
+
+![cookie](eatcookie.jpg)
 
 ## Overview
 
-`parsm` is a powerful CLI tool that combines multi-format data parsing with advanced filtering and templating capabilities. It's designed to understand structured text better than traditional tools like `sed` or `awk`.
+`parsm` is a multi-format data processor that automatically detects and parses JSON, CSV, TOML, YAML, logfmt, and plain text. It provides powerful filtering and templating capabilities with a simple, intuitive syntax.
 
-## Architecture Components
+## Installation
 
-### 1. Multi-Format Parser (`parse.rs`)
-
-**Purpose**: Auto-detects and parses multiple data formats
-**Formats Supported**: JSON, CSV, YAML, TOML, logfmt, plain text
-
-```rust
-// Key types
-pub enum Format { Json, Csv, Toml, Yaml, Logfmt, Text }
-pub enum ParsedLine { Json(Value), Csv(StringRecord), ... }
-pub struct StreamingParser { format: Option<Format> }
-```
-
-**How it works**:
-1. **Auto-detection**: Uses heuristics to detect format from first line
-2. **Format persistence**: Once detected, all subsequent lines use same parser
-3. **Streaming**: Processes line-by-line for memory efficiency
-4. **Normalization**: Converts all formats to JSON for uniform processing
-
-### 2. Filter Engine (`filter.rs`)
-
-**Purpose**: Evaluates boolean expressions against parsed data
-
-```rust
-// Core AST types
-pub enum FilterExpr {
-    And(Box<FilterExpr>, Box<FilterExpr>),
-    Or(Box<FilterExpr>, Box<FilterExpr>),
-    Not(Box<FilterExpr>),
-    Comparison { field: FieldPath, op: ComparisonOp, value: FilterValue },
-}
-```
-
-**Features**:
-- **Nested field access**: `user.email`, `data.metrics.cpu`
-- **Rich operators**: `==`, `!=`, `<`, `>`, `contains`, `startswith`, `endswith`, `matches`
-- **Boolean logic**: `&&`, `||`, `!`
-- **Type-aware comparisons**: Handles strings, numbers, booleans, null
-
-### 3. Template Engine (`filter.rs`)
-
-**Purpose**: Formats output using field interpolation with `$` syntax
-
-```rust
-pub struct Template { items: Vec<TemplateItem> }
-pub enum TemplateItem {
-    Field(FieldPath),    // $name, ${user.email}, $1, $$
-    Literal(String),     // Plain text
-}
-```
-
-**Template Syntax:**
-- **`$$`** - Entire original input line
-- **`$1`, `$2`, `$3`** - Indexed fields (1-based for user convenience)
-- **`$name`** - Simple field names 
-- **`${name}`** - Braced field names for complex expressions
-- **`$name.field`** - Nested field access
-- **`$100`** - Literal dollar amounts (large numbers treated as literals)
-
-### 4. DSL Parser (`dsl_parser.rs`)
-
-**Purpose**: Converts user commands into AST using Pest parser
-
-**Grammar** (`parsm.pest`):
-- **Expressions**: `name == "Alice" && age > 25`
-- **Templates**: `$name is $age years old`
-- **Combined**: `age > 25 $name: $age`
-
-### 5. Integration Layer (`lib.rs`, `main.rs`)
-
-**Purpose**: Ties all components together with high-level API
-
-## Data Flow
-
-```
-Input Line → Auto-detect Format → Parse to AST → Convert to JSON
-     ↓
-Apply Filter → Pass/Fail → Apply Template → Output
-```
-
-## Usage Examples
-
-### Basic Filtering
 ```bash
-# Filter JSON
-echo '{"name": "Alice", "age": 30}' | parsm 'name == "Alice"'
-
-# Filter CSV (auto-indexed as field_0, field_1, etc.)
-echo 'Alice,30,Engineer' | parsm 'field_1 > "25"'
-
-# Filter logfmt logs
-echo 'level=error msg="timeout"' | parsm 'level == "error"'
+cargo install --path .
 ```
 
-### Advanced Features
+Or build from source:
+
 ```bash
-# Complex boolean logic
+git clone <repository-url>
+cd parsm
+cargo build --release
+./target/release/parsm --examples
+```
+
+## Quick Start
+
+```bash
+# Basic usage
+parsm [FILTER] [TEMPLATE]
+
+# Show comprehensive examples
+parsm --examples
+
+# Filter JSON data
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25'
+
+# Filter and format output
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25' '{${name} is ${age} years old}'
+
+# Extract specific fields
+echo '{"name": "Alice", "age": 30}' | parsm '"name"'
+```
+
+## Supported Input Formats
+
+`parsm` automatically detects and parses these formats:
+
+### JSON
+```json
+{"name": "Alice", "age": 30, "active": true}
+```
+
+### CSV
+```csv
+Alice,30,Engineer
+Bob,25,Designer
+```
+
+### YAML
+```yaml
+name: Alice
+age: 30
+active: true
+```
+
+### TOML
+```toml
+name = "Alice"
+age = 30
+active = true
+```
+
+### Logfmt
+```
+level=error msg="Database connection failed" service=api duration=1.2s
+```
+
+### Plain Text
+```
+Alice 30 Engineer
+Bob 25 Designer
+```
+
+## Filter Syntax
+
+### Comparison Operators
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `==` | Equal to | `name == "Alice"` |
+| `!=` | Not equal to | `status != "inactive"` |
+| `<` | Less than | `age < 30` |
+| `<=` | Less than or equal | `score <= 95` |
+| `>` | Greater than | `age > 18` |
+| `>=` | Greater than or equal | `score >= 90` |
+
+### String Operations
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `~` | Contains substring | `email ~ "@company.com"` |
+| `^=` | Starts with prefix | `name ^= "A"` |
+| `$=` | Ends with suffix | `file $= ".log"` |
+
+### Boolean Logic
+
+| Operator | Description | Example |
+|----------|-------------|---------|
+| `&&` | Logical AND | `age > 18 && active == true` |
+| `\|\|` | Logical OR | `role == "admin" \|\| role == "user"` |
+| `!` | Logical NOT | `!(status == "disabled")` |
+
+### Field Access
+
+#### Simple Fields
+```bash
+name == "Alice"
+age > 25
+active == true
+```
+
+#### Nested Fields (JSON/YAML/TOML)
+```bash
+user.email == "alice@example.com"
+config.database.host == "localhost"
+metrics.cpu.usage > 80
+```
+
+#### CSV Fields
+CSV columns are automatically named `field_0`, `field_1`, etc.:
+```bash
+field_0 == "Alice"    # First column
+field_1 > "25"        # Second column (string comparison)
+field_2 == "Engineer" # Third column
+```
+
+#### Text Words
+Plain text words are named `word_0`, `word_1`, etc.:
+```bash
+word_0 == "Alice"     # First word
+word_1 > "25"         # Second word
+word_2 == "Engineer"  # Third word
+```
+
+## Syntax Overview
+
+The parsm DSL has three main components with distinct, unambiguous syntax:
+
+### Templates
+Templates are **always** enclosed in braces `{...}` and contain literal text with variable substitutions:
+
+```bash
+{${name} is ${age} years old}    # Variables with ${...}
+{Hello $name}                    # Simple variables (non-numeric)  
+{${0}}                          # Original input (requires braces)
+{User: ${user.name}}            # Nested fields
+{Price: $$100}                  # Literal dollar signs ($$)
+```
+
+### Variables
+Variables use two formats depending on type:
+
+| Syntax | Use Case | Example |
+|--------|----------|---------|
+| `${variable}` | Recommended for all variables | `${name}`, `${user.email}` |
+| `${number}` | **Required** for numeric variables | `${0}`, `${1}`, `${2}` |
+| `$variable` | Simple non-numeric variables only | `$name`, `$user` |
+
+**Important**: `$0`, `$1`, etc. are treated as **literals** (like "$0 fee"), not variables. Only `${0}`, `${1}` access fields.
+
+### Field Selectors
+Extract specific fields using quoted strings:
+
+```bash
+"name"           # Simple field
+"user.email"     # Nested field  
+"field with spaces"  # Quoted when needed
+```
+
+### Examples
+
+```bash
+# Template with variables
+echo '{"name": "Alice", "age": 30}' | parsm '{${name} is ${age} years old}'
+
+# Original input variable  
+echo '{"name": "Alice"}' | parsm '{Original: ${0} → Name: ${name}}'
+
+# CSV positional fields
+echo 'Alice,30,Engineer' | parsm '{Employee: ${1}, Age: ${2}, Role: ${3}}'
+
+# Nested JSON fields
+echo '{"user": {"name": "Alice", "email": "alice@example.com"}}' | \
+  parsm '{User: ${user.name}, Email: ${user.email}}'
+
+# Literal dollar signs
+echo '{"item": "coffee", "price": 5}' | parsm '{${item} costs $$${price}}'
+```
+
+## Field Selection
+
+Extract specific fields using quoted syntax:
+
+```bash
+# Extract single field
+echo '{"name": "Alice", "age": 30}' | parsm '"name"'
+# Output: "Alice"
+
+# Extract nested field
+echo '{"user": {"email": "alice@example.com"}}' | parsm '"user.email"'
+# Output: "alice@example.com"
+
+# Extract complex object
+echo '{"state": {"status": "running", "pid": 1234}}' | parsm '"state"'
+# Output: {"status": "running", "pid": 1234}
+
+# Works with arrays too
+echo '[{"name": "Alice"}, {"name": "Bob"}]' | parsm '"name"'
+# Output:
+# "Alice"
+# "Bob"
+```
+
+## Complete Examples
+
+### JSON Processing
+
+```bash
+# Basic filtering
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25'
+
+# Filter and format
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25' '{${name} is ${age} years old}'
+
+# Complex nested data
+echo '{"user": {"name": "Alice", "profile": {"verified": true}}}' | \
+  parsm 'user.profile.verified == true' '{Verified user: ${user.name}}'
+
+# Field extraction
+echo '{"users": [{"name": "Alice"}, {"name": "Bob"}]}' | parsm '"users"'
+```
+
+### CSV Processing
+
+```bash
+# Filter CSV data
+echo 'Alice,30,Engineer' | parsm 'field_1 > "25"' '{${1} works as ${3}}'
+
+# Multiple conditions
+users.csv | parsm 'field_1 > "25" && field_2 == "Engineer"' '{${1} (${2} years old)}'
+
+# Include original data
+echo 'Alice,30,Engineer' | parsm '{${0} → Name: ${1}, Age: ${2}}'
+```
+
+### Log Processing
+
+```bash
+# Filter error logs
+echo 'level=error msg="DB connection failed" service=api' | \
+  parsm 'level == "error"' '{[${level}] ${msg}}'
+
+# Complex log filtering
+logs.txt | parsm 'level == "error" && service == "payment"' '{${timestamp}: ${msg}}'
+
+# Performance monitoring
+app.log | parsm 'duration > 1000' '{Slow request: ${path} took ${duration}ms}'
+```
+
+### YAML/TOML Processing
+
+```bash
+# Filter configuration
+config.yaml | parsm 'database.enabled == true' '{DB: ${database.host}:${database.port}}'
+
+# Convert format
+echo 'name: Alice\nage: 30' | parsm '{${name} is ${age} years old}'
+
+# Extract configuration sections
+config.toml | parsm '"server"'
+```
+
+### Multi-line Processing
+
+```bash
+# Process log files
+tail -f app.log | parsm 'level == "error"' '{${date}: ${msg}}'
+
+# Filter and transform data
+cat users.csv | parsm 'field_1 > "21"' '{{"name": "${1}", "age": ${2}}}'
+
+# Real-time monitoring
+docker stats --format "table {{.Name}},{{.CPUPerc}}" | \
+  parsm 'field_1 ~ "%"' '{Container ${1} using ${2} CPU}'
+```
+
+## Advanced Features
+
+### Complex Boolean Logic
+
+```bash
+# Multiple conditions
 parsm 'name == "Alice" && (age > 25 || active == true)'
 
-# Template formatting with indexed fields (CSV)
-echo 'Alice,30,Engineer' | parsm 'field_1 > "25"' '$1 is $2 years old'
+# Negation
+parsm '!(status == "disabled" || role == "guest")'
 
-# Template with entire input
-echo 'Alice,30,Engineer' | parsm '$$ → Name: $1'
-
-# Nested field access (JSON)
-echo '{"user": {"name": "Alice", "email": "alice@co.com"}}' | \
-  parsm 'user.email contains "@co.com"' 'User: ${user.name} <${user.email}>'
-
-# Mixed template syntax
-parsm 'age > 25' 'Hello $name, you are $age - Original: $$'
-
-# Literal dollar amounts
-parsm 'price > 50' 'Item costs $100 (field: $price)'
+# String operations
+parsm 'email ~ "@company.com" && name ^= "A"'
 ```
 
-## Template Syntax Reference
+### Error Handling
 
-### Field Access Patterns
+- **First line errors**: Fatal (format detection failure)
+- **Subsequent errors**: Warnings with continued processing
+- **Missing fields**: Warnings for templates, silent for filters
 
-| Syntax | Description | Example |
-|--------|-------------|---------|
-| `$$` | Entire original input line | `$$ (modified)` |
-| `$1`, `$2`, `$3` | Indexed fields (1-based) | `$1: $2` → `Alice: 30` |
-| `$name` | Simple field names | `Hello $name` |
-| `${name}` | Braced field syntax | `${user.email}` |
-| `$name.field` | Nested field access | `$user.profile.bio` |
-| `$100` | Literal dollar (large numbers) | `Cost: $100` |
+### Performance
 
-### Field Mapping by Format
+- **Streaming**: Processes line-by-line for constant memory usage
+- **Format detection**: Automatic with intelligent fallback
+- **Large files**: Efficient processing of gigabyte-scale data
 
-| Format | Field Names | Example Input | Available Fields |
-|--------|-------------|---------------|------------------|
-| **CSV** | `field_0`, `field_1`, `field_2` | `Alice,30,Engineer` | `$1`→`field_0`, `$2`→`field_1`, `$$`→`Alice,30,Engineer` |
-| **JSON** | Original field names | `{"name":"Alice","age":30}` | `$name`, `$age`, `$$` |
-| **Text** | `word_0`, `word_1`, `word_2` | `hello world test` | `$1`→`word_0`, `$2`→`word_1`, `$$` |
-| **logfmt** | Key names from pairs | `level=info msg=test` | `$level`, `$msg`, `$$` |
-
-### Template Examples
+## Command Line Interface
 
 ```bash
-# CSV with indexed access
-echo 'John,25,Designer' | parsm '$1 ($2) - $3'
-# Output: John (25) - Designer
+parsm [OPTIONS] [FILTER] [TEMPLATE]
 
-# JSON with named fields  
-echo '{"user":"Alice","score":95}' | parsm 'Score: $score for $user'
-# Output: Score: 95 for Alice
+Arguments:
+  [FILTER]     Filter expression (optional)
+  [TEMPLATE]   Template expression for output formatting (optional)
 
-# Mixed syntax with original input
-echo 'Alice,30' | parsm 'Processed $$ → $1 is $2'
-# Output: Processed Alice,30 → Alice is 30
-
-# Literal dollars
-echo 'item,50' | parsm 'Product $1 costs $50 (field: $2)'
-# Output: Product item costs $50 (field: 50)
+Options:
+  --examples   Show comprehensive usage examples
+  -h, --help   Print help information
+  -V, --version Print version information
 ```
 
-## Key Design Decisions
+### Usage Patterns
 
-### 1. **Auto-Detection Priority**
-```
-JSON → YAML → TOML → logfmt → CSV → Text
-```
-- Most specific formats first
-- Text as fallback (always succeeds)
+```bash
+# Just parsing (convert to JSON)
+cat data.yaml | parsm
 
-### 2. **JSON Normalization**
-All formats convert to JSON for uniform filtering:
-- **CSV**: `{"field_0": "Alice", "field_1": "30", "_array": ["Alice", "30"]}`
-- **Text**: `{"word_0": "hello", "word_1": "world", "_array": ["hello", "world"]}`
-- **logfmt**: `{"level": "info", "msg": "test"}`
+# Filtering only  
+cat data.json | parsm 'age > 25'
 
-### 3. **Streaming Architecture**
-- Line-by-line processing
-- Constant memory usage
-- Early exit on filter failures
-- Error tolerance (warns but continues)
+# Template only
+cat data.csv | parsm '' '{${1}: ${2}}'
 
-### 4. **Error Handling Strategy**
-- **First line failure**: Fatal (format detection failed)
-- **Subsequent line failure**: Warning + continue
-- **Parse errors**: Detailed error messages
-- **Filter errors**: Graceful fallback
+# Filter and template
+cat data.log | parsm 'level == "error"' '{[${timestamp}] ${msg}}'
 
-## Extension Points
-
-### Adding New Formats
-1. Add variant to `Format` enum
-2. Implement detection heuristic in `detect_format()`
-3. Add parsing function (e.g., `parse_xml()`)
-4. Add conversion to JSON in `convert_to_json()`
-
-### Adding New Operators
-1. Add variant to `ComparisonOp` enum
-2. Update grammar in `parsm.pest`
-3. Implement evaluation in `FilterEngine::evaluate_comparison()`
-4. Add parser support in `parse_comparison_op()`
-
-### Adding Template Functions
-```rust
-// Future enhancement: template functions
-// $name | uppercase, $age | format("years: {}")
-pub enum TemplateItem {
-    Field(FieldPath),
-    Function(String, Vec<TemplateItem>), // New
-    Literal(String),
-}
+# Field selection
+cat data.json | parsm '"user.email"'
 ```
 
-## Performance Characteristics
+## Comparison with Other Tools
 
-- **Memory**: O(1) - streaming processing
-- **CPU**: O(n) where n = number of input lines
-- **Format detection**: O(1) per format type
-- **Filter evaluation**: O(d) where d = expression depth
+| Feature | parsm | jq | awk | sed |
+|---------|-------|----|----- |----- |
+| **Multi-format input** | ✅ JSON, CSV, YAML, TOML, logfmt, text | JSON only | Text | Text |
+| **Auto-detection** | ✅ Automatic | Manual | Manual | Manual |
+| **Filter syntax** | Simple expressions | JQ query language | Programming | Regex |
+| **Template output** | ✅ `${field}` syntax | ✅ Complex | ✅ `${1}, ${2}` | Limited |
+| **Learning curve** | Low | Medium-High | High | Medium |
+| **Boolean logic** | ✅ `&&`, `\|\|`, `!` | ✅ Complex | ✅ Programming | Limited |
+| **Nested fields** | ✅ `user.email` | ✅ `.user.email` | Limited | No |
+| **Performance** | Good | Excellent | Excellent | Excellent |
 
-## Testing Strategy
+### When to use parsm
 
-### Unit Tests
-- Format detection accuracy
-- Filter expression evaluation
-- Template rendering
-- AST parsing correctness
+- **Multi-format data**: When working with mixed JSON, CSV, YAML, etc.
+- **Simple filtering**: When jq syntax is too complex
+- **Quick transformations**: When awk programming is overkill  
+- **Log processing**: Especially structured logs (JSON, logfmt)
+- **Data exploration**: Quick inspection and filtering of structured data
 
-### Integration Tests  
-- End-to-end processing pipelines
-- Mixed format handling
-- Error condition handling
-- Performance with large datasets
+### Migration from other tools
 
-## Future Enhancements
+```bash
+# From jq
+jq '.name' data.json              → parsm '"name"' < data.json
+jq 'select(.age > 25)' data.json  → parsm 'age > 25' < data.json
 
-1. **Header-aware CSV**: Use first row as field names
-2. **Regex matching**: Full regex support for `matches` operator
-3. **Template functions**: Formatting, string manipulation
-4. **Multiple output formats**: YAML, CSV, TSV output
-5. **Configuration files**: Custom format detection rules
-6. **Parallel processing**: Multi-threaded line processing
-7. **SQL-like syntax**: `SELECT name FROM data WHERE age > 25`
+# From awk  
+awk '$2 > 25' data.csv           → parsm 'field_1 > "25"' < data.csv
+awk '{print $1, $2}' data.txt    → parsm '{${1} ${2}}' < data.txt
 
-## Building and Running
+# From grep + cut
+grep "error" logs | cut -d' ' -f3  → parsm 'word_0 == "error"' '{${3}}' < logs
+```
+
+## Architecture Overview
+
+### Data Flow
+```
+Input → Auto-detect Format → Parse → Normalize to JSON → Filter → Template → Output
+```
+
+### Components
+
+- **Parser**: Auto-detects and parses multiple formats
+- **Filter Engine**: Evaluates boolean expressions
+- **Template Engine**: Renders output with field interpolation  
+- **DSL**: Simple domain-specific language for expressions
+
+### Key Design Decisions
+
+1. **JSON normalization**: All formats convert to JSON for uniform processing
+2. **Streaming processing**: Line-by-line for memory efficiency
+3. **Automatic format detection**: Users don't specify input format
+4. **Simple syntax**: Easy to learn and remember
+5. **Error tolerance**: Continues processing on non-fatal errors
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Add tests for new functionality
+4. Ensure all tests pass: `cargo test`
+5. Run formatting: `cargo fmt`
+6. Run linting: `cargo clippy`
+7. Submit a pull request
+
+### Development
 
 ```bash
 # Build
-cargo build --release
+cargo build
 
-# Test  
+# Test
 cargo test
 
-# Run examples
-echo '{"name": "Alice", "age": 30}' | cargo run -- 'age > 25' '$name: $age'
+# Run with examples
+cargo run -- --examples
+
+# Test with sample data
+echo '{"name": "Alice", "age": 30}' | cargo run -- 'age > 25' '{${name}: ${age}}'
 ```
 
-This architecture provides a solid foundation for a powerful data processing tool that combines the flexibility of format auto-detection with the expressiveness of a domain-specific filtering and templating language.
+## License
+
+[Add your license here]
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.

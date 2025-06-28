@@ -72,6 +72,12 @@ impl StreamingParser {
 
     fn looks_like_yaml(&self, line: &str) -> bool {
         // Simple heuristics for YAML detection
+        // Avoid false positives with logfmt by checking for logfmt patterns first
+        if self.looks_like_logfmt(line) {
+            return false;
+        }
+
+        // YAML patterns: key: value, list items, or document separators
         line.contains(": ") || line.starts_with("- ") || line.starts_with("---")
     }
 
@@ -288,22 +294,76 @@ fn parse_logfmt(line: &str) -> Option<serde_json::Value> {
 
         // Parse value
         let mut value = String::new();
-        let mut in_quotes = false;
-        let mut escaped = false;
 
-        while let Some(&next_ch) = chars.peek() {
-            if escaped {
-                value.push(chars.next().unwrap());
-                escaped = false;
-            } else if next_ch == '\\' {
-                chars.next();
-                escaped = true;
-            } else if next_ch == '"' {
-                chars.next();
-                in_quotes = !in_quotes;
-            } else if !in_quotes && next_ch.is_whitespace() {
-                break;
-            } else {
+        // Check if value starts with escaped quote \"
+        if let Some(&'\\') = chars.peek() {
+            let mut lookahead = chars.clone();
+            lookahead.next(); // consume backslash
+            if let Some(&'"') = lookahead.peek() {
+                // Value starts with escaped quote - consume it but don't add to value yet
+                chars.next(); // consume backslash
+                chars.next(); // consume quote
+
+                // Parse the quoted content until we find the closing \"
+                while let Some(ch) = chars.next() {
+                    if ch == '\\' {
+                        if let Some(&'"') = chars.peek() {
+                            // Found closing \"
+                            chars.next(); // consume the quote
+                            break;
+                        } else {
+                            // Handle escape sequences within escaped quotes
+                            if let Some(escaped_ch) = chars.next() {
+                                match escaped_ch {
+                                    '"' => value.push('"'),
+                                    '\\' => value.push('\\'),
+                                    'n' => value.push('\n'),
+                                    't' => value.push('\t'),
+                                    'r' => value.push('\r'),
+                                    _ => {
+                                        value.push('\\');
+                                        value.push(escaped_ch);
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        value.push(ch);
+                    }
+                }
+            }
+        } else if let Some(&'"') = chars.peek() {
+            // Regular quoted value
+            chars.next(); // consume opening quote
+
+            while let Some(ch) = chars.next() {
+                if ch == '"' {
+                    break; // Found closing quote
+                } else if ch == '\\' {
+                    // Handle escape sequences within quotes
+                    if let Some(escaped_ch) = chars.next() {
+                        match escaped_ch {
+                            '"' => value.push('"'),
+                            '\\' => value.push('\\'),
+                            'n' => value.push('\n'),
+                            't' => value.push('\t'),
+                            'r' => value.push('\r'),
+                            _ => {
+                                value.push('\\');
+                                value.push(escaped_ch);
+                            }
+                        }
+                    }
+                } else {
+                    value.push(ch);
+                }
+            }
+        } else {
+            // Unquoted value - parse until whitespace
+            while let Some(&next_ch) = chars.peek() {
+                if next_ch.is_whitespace() {
+                    break;
+                }
                 value.push(chars.next().unwrap());
             }
         }
@@ -917,6 +977,120 @@ this,is,csv,but,should,fail
                 assert_eq!(words, vec!["hello"]);
             }
             _ => panic!("Expected Text parsing result"),
+        }
+    }
+
+    #[test]
+    fn test_logfmt_escaped_quotes_comprehensive() {
+        let mut parser = StreamingParser::new();
+
+        // Test escaped quotes at start and end
+        let logfmt_line = r#"level=error msg=\"DB connection failed\" service=api"#;
+        let result = parser.parse_line(logfmt_line).unwrap();
+
+        match result {
+            ParsedLine::Logfmt(value) => {
+                assert_eq!(value["level"], "error");
+                assert_eq!(value["msg"], "DB connection failed");
+                assert_eq!(value["service"], "api");
+            }
+            _ => panic!("Expected logfmt parsing result"),
+        }
+    }
+
+    #[test]
+    fn test_logfmt_mixed_quote_styles() {
+        let mut parser = StreamingParser::new();
+
+        // Mix of escaped quotes, regular quotes, and unquoted values
+        let logfmt_line = r#"level=info msg=\"Server starting\" port=8080 env="production""#;
+        let result = parser.parse_line(logfmt_line).unwrap();
+
+        match result {
+            ParsedLine::Logfmt(value) => {
+                assert_eq!(value["level"], "info");
+                assert_eq!(value["msg"], "Server starting");
+                assert_eq!(value["port"], "8080");
+                assert_eq!(value["env"], "production");
+            }
+            _ => panic!("Expected logfmt parsing result"),
+        }
+    }
+
+    #[test]
+    fn test_logfmt_escaped_quotes_with_spaces() {
+        let mut parser = StreamingParser::new();
+
+        // Escaped quotes with internal spaces and special characters
+        let logfmt_line =
+            r#"action=login user=\"john doe\" reason=\"failed: invalid password\" attempts=3"#;
+        let result = parser.parse_line(logfmt_line).unwrap();
+
+        match result {
+            ParsedLine::Logfmt(value) => {
+                assert_eq!(value["action"], "login");
+                assert_eq!(value["user"], "john doe");
+                assert_eq!(value["reason"], "failed: invalid password");
+                assert_eq!(value["attempts"], "3");
+            }
+            _ => panic!("Expected logfmt parsing result"),
+        }
+    }
+
+    #[test]
+    fn test_logfmt_nested_escape_sequences() {
+        let mut parser = StreamingParser::new();
+
+        // Test various escape sequences within escaped quotes
+        let logfmt_line = r#"msg=\"Error: \\server\\path\\file.txt\" status=\"failed\""#;
+        let result = parser.parse_line(logfmt_line).unwrap();
+
+        match result {
+            ParsedLine::Logfmt(value) => {
+                assert_eq!(value["msg"], r"Error: \server\path\file.txt");
+                assert_eq!(value["status"], "failed");
+            }
+            _ => panic!("Expected logfmt parsing result"),
+        }
+    }
+
+    #[test]
+    fn test_logfmt_empty_escaped_quotes() {
+        let mut parser = StreamingParser::new();
+
+        // Empty string in escaped quotes
+        let logfmt_line = r#"level=debug msg=\"\" user=system"#;
+        let result = parser.parse_line(logfmt_line).unwrap();
+
+        match result {
+            ParsedLine::Logfmt(value) => {
+                assert_eq!(value["level"], "debug");
+                assert_eq!(value["msg"], "");
+                assert_eq!(value["user"], "system");
+            }
+            _ => panic!("Expected logfmt parsing result"),
+        }
+    }
+
+    #[test]
+    fn test_logfmt_malformed_escaped_quotes() {
+        let mut parser = StreamingParser::new();
+
+        // Test malformed escaped quote (missing closing escaped quote)
+        let logfmt_line = r#"level=error msg=\"unclosed quote service=api"#;
+        let result = parser.parse_line(logfmt_line).unwrap();
+
+        match result {
+            ParsedLine::Logfmt(value) => {
+                // Should gracefully handle malformed input
+                assert_eq!(value["level"], "error");
+                // The parser should treat the rest as the value since no closing \" was found
+                assert!(value["msg"]
+                    .as_str()
+                    .unwrap()
+                    .contains("unclosed quote service=api"));
+            }
+            _ => panic!("Expected logfmt parsing result"),
         }
     }
 }

@@ -3,7 +3,10 @@
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
 // Main program entry point
-program = { SOI ~ filter_expr? ~ template_expr? ~ EOI }
+program = { SOI ~ (filter_expr | field_selector)? ~ template_expr? ~ EOI }
+
+// Field selector for simple field extraction (unquoted identifier or quoted string)
+field_selector = { field_access | string_literal }
 
 // Filter expressions
 filter_expr = { condition }
@@ -15,28 +18,33 @@ and_expr = { comparison ~ (and_op ~ comparison)* }
 comparison = {
     field_access ~ comparison_op ~ value |
     "(" ~ condition ~ ")" |
-    not_op ~ comparison
+    not_op ~ comparison |
+    not_op ~ field_access |
+    field_access
 }
 
 // Operators
-or_op = { "||" | "or" }
-and_op = { "&&" | "and" }
-not_op = { "!" | "not" }
+or_op = { "||" }
+and_op = { "&&" }
+not_op = { "!" }
 comparison_op = { 
     "==" | "!=" | "<=" | ">=" | "<" | ">" | 
-    "contains" | "startswith" | "endswith" | "matches"
+    "~" | "^=" | "$=" | "*="
 }
 
-// Field access (supports nested fields like user.name)
-field_access = { identifier ~ ("." ~ identifier)* }
+// Field access (supports nested fields like user.name and array indices like items.0)
+field_access = { field_component ~ ("." ~ field_component)* }
+field_component = { identifier | numeric_identifier }
 identifier = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+numeric_identifier = { ASCII_DIGIT+ }
 
 // Values
 value = {
     string_literal |
     number |
     boolean |
-    null
+    null |
+    unquoted_value
 }
 
 string_literal = { "\"" ~ string_inner ~ "\"" | "'" ~ string_inner_single ~ "'" }
@@ -50,5 +58,12 @@ integer = { ASCII_DIGIT+ }
 boolean = { "true" | "false" }
 null = { "null" }
 
-// Template expressions (for output formatting)  
-template_expr = @{ (!EOI ~ ANY)+ }
+// Unquoted value for operators like contains, startswith, etc.
+unquoted_value = { (ASCII_ALPHANUMERIC | "_")+ }
+
+// Template expressions (for output formatting) - must be surrounded by braces
+template_expr = { "{" ~ template_content ~ "}" }
+template_content = { (template_variable | template_text)* }
+template_variable = { "${" ~ template_var_name ~ "}" }
+template_var_name = { (ASCII_ALPHANUMERIC | "_" | ".")+ }
+template_text = { (!(template_variable | "}") ~ ANY)+ }

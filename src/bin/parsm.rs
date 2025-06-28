@@ -1,20 +1,31 @@
-// main.rs - Fixed integrated application
-
 use clap::{Arg, Command};
 use std::io;
 
-use parsm::{parse_command, process_stream, FilterEngine, ParsedDSL, ParsedLine};
+use parsm::{
+    parse_command, parse_separate_expressions, process_stream, FilterEngine, ParsedDSL, ParsedLine,
+};
 
+/// Main entry point for the parsm command-line tool.
+///
+/// Parsm is a multi-format data processor that understands structured text better than sed or awk.
+/// It can parse JSON, CSV, TOML, YAML, logfmt, and plain text, applying filters and templates
+/// to transform and extract data.
 fn main() {
     let matches = Command::new("parsm")
-        .version("0.1.0")
+        .version(env!("CARGO_PKG_VERSION"))
         .author("John Cairns <john@2ad.com>")
         .about("Understands structured text better than sed or awk")
         .arg(
             Arg::new("filter")
-                .help("Filter and template expression")
-                .value_name("EXPRESSION")
+                .help("Filter expression (optional)")
+                .value_name("FILTER")
                 .index(1),
+        )
+        .arg(
+            Arg::new("template")
+                .help("Template expression for output formatting (optional)")
+                .value_name("TEMPLATE")
+                .index(2),
         )
         .arg(
             Arg::new("help-examples")
@@ -24,73 +35,182 @@ fn main() {
         )
         .get_matches();
 
-    // Show examples if requested
     if matches.get_flag("help-examples") {
         print_usage_examples();
         return;
     }
 
-    if let Some(filter_expr) = matches.get_one::<String>("filter") {
-        // Parse the filter and template expression
-        let parsed_dsl = match parse_command(filter_expr) {
-            Ok(dsl) => dsl,
-            Err(e) => {
-                eprintln!("Error parsing filter expression: {}", e);
+    let filter_expr = matches.get_one::<String>("filter");
+    let template_expr = matches.get_one::<String>("template");
+
+    match (filter_expr, template_expr) {
+        (Some(filter), Some(template)) if !filter.trim().is_empty() => {
+            let parsed_dsl = match parse_separate_expressions(Some(filter), Some(template)) {
+                Ok(dsl) => dsl,
+                Err(e) => {
+                    eprintln!("Error parsing filter and template expression: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(e) = process_stream_with_filter(parsed_dsl) {
+                eprintln!("Error processing stream: {}", e);
                 std::process::exit(1);
             }
-        };
-
-        // Process stream with filtering
-        if let Err(e) = process_stream_with_filter(parsed_dsl) {
-            eprintln!("Error processing stream: {}", e);
-            std::process::exit(1);
         }
-    } else {
-        // No filter provided, just convert formats
-        let stdin = io::stdin();
-        let stdout = io::stdout();
+        (Some(_), Some(template)) => {
+            let parsed_dsl = match parse_separate_expressions(None, Some(template)) {
+                Ok(dsl) => dsl,
+                Err(e) => {
+                    eprintln!("Error parsing template expression: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(e) = process_stream_with_filter(parsed_dsl) {
+                eprintln!("Error processing stream: {}", e);
+                std::process::exit(1);
+            }
+        }
+        (Some(filter), None) => {
+            let parsed_dsl = match parse_command(filter) {
+                Ok(dsl) => dsl,
+                Err(e) => {
+                    eprintln!("Error parsing expression: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(e) = process_stream_with_filter(parsed_dsl) {
+                eprintln!("Error processing stream: {}", e);
+                std::process::exit(1);
+            }
+        }
+        (None, Some(template)) => {
+            let parsed_dsl = match parse_separate_expressions(None, Some(template)) {
+                Ok(dsl) => dsl,
+                Err(e) => {
+                    eprintln!("Error parsing template expression: {}", e);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(e) = process_stream_with_filter(parsed_dsl) {
+                eprintln!("Error processing stream: {}", e);
+                std::process::exit(1);
+            }
+        }
+        (None, None) => {
+            let stdin = io::stdin();
+            let stdout = io::stdout();
 
-        if let Err(e) = process_stream(stdin.lock(), stdout) {
-            eprintln!("Error processing stream: {}", e);
-            std::process::exit(1);
+            if let Err(e) = process_stream(stdin.lock(), stdout) {
+                eprintln!("Error processing stream: {}", e);
+                std::process::exit(1);
+            }
         }
     }
 }
 
+/// Process input stream with the parsed DSL (filters, templates, field selectors).
+///
+/// This function handles different processing modes:
+/// - Field selection: Extract specific fields from JSON objects/arrays
+/// - Filtering: Apply boolean expressions to filter input lines
+/// - Templates: Format output using template expressions
+///
+/// # Arguments
+/// * `dsl` - Parsed DSL containing optional filter, template, and field selector
+///
+/// # Returns
+/// * `Ok(())` on successful processing
+/// * `Err(Box<dyn std::error::Error>)` on processing errors
 fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::Error>> {
     use parsm::StreamingParser;
-    use std::io::{BufRead, Write};
-
+    use std::io::{BufRead, Read, Write};
     let stdin = io::stdin();
-    let mut parser = StreamingParser::new();
     let stdout = io::stdout();
     let mut writer = stdout.lock();
+
+    if let Some(ref field_selector) = dsl.field_selector {
+        let mut input = String::new();
+        stdin.lock().read_to_string(&mut input)?;
+
+        if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&input) {
+            match &json_value {
+                serde_json::Value::Array(arr) => {
+                    for item in arr {
+                        if let Some(extracted) = field_selector.extract_field(item) {
+                            writeln!(writer, "{}", extracted)?;
+                        }
+                    }
+                }
+                _ => {
+                    if let Some(extracted) = field_selector.extract_field(&json_value) {
+                        writeln!(writer, "{}", extracted)?;
+                    }
+                }
+            }
+            return Ok(());
+        } else {
+            let lines = input.lines();
+            let mut parser = StreamingParser::new();
+            let mut line_count = 0;
+
+            for line in lines {
+                line_count += 1;
+
+                if line.trim().is_empty() {
+                    continue;
+                }
+
+                match parser.parse_line(line) {
+                    Ok(parsed_line) => {
+                        let json_value = convert_parsed_line_to_json(parsed_line, line)?;
+
+                        if let Some(extracted) = field_selector.extract_field(&json_value) {
+                            writeln!(writer, "{}", extracted)?;
+                        } else {
+                            writeln!(writer, "null")?;
+                            eprintln!(
+                                "Warning: Field '{}' not found in line {}",
+                                field_selector.parts.join("."),
+                                line_count
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        if line_count == 1 {
+                            return Err(Box::new(e));
+                        } else {
+                            eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
+                            eprintln!("Line content: {}", line);
+                        }
+                    }
+                }
+            }
+            return Ok(());
+        }
+    }
+
+    let mut parser = StreamingParser::new();
     let mut line_count = 0;
 
     for line_result in stdin.lock().lines() {
         let line = line_result?;
         line_count += 1;
 
-        // Skip empty lines
         if line.trim().is_empty() {
             continue;
         }
 
-        // Parse the line using our multi-format parser
         match parser.parse_line(&line) {
             Ok(parsed_line) => {
-                // Convert parsed line to JSON for filtering
                 let json_value = convert_parsed_line_to_json(parsed_line, &line)?;
 
-                // Apply filter if provided
                 let passes_filter = if let Some(ref filter) = dsl.filter {
                     FilterEngine::evaluate(filter, &json_value)
                 } else {
-                    true // No filter means everything passes
+                    true
                 };
 
                 if passes_filter {
-                    // Apply template if provided, otherwise output as JSON
                     let output = if let Some(ref template) = dsl.template {
                         template.render(&json_value)
                     } else {
@@ -102,10 +222,8 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
             }
             Err(e) => {
                 if line_count == 1 {
-                    // If we can't parse the first line, it's a fatal error
                     return Err(Box::new(e));
                 } else {
-                    // For subsequent lines, just warn and continue
                     eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
                     eprintln!("Line content: {}", line);
                 }
@@ -116,7 +234,18 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-// Convert ParsedLine to JSON Value for uniform processing
+/// Convert a parsed line to a JSON value.
+///
+/// This function takes a `ParsedLine` from the parser and converts it to a `serde_json::Value`
+/// for consistent processing. It also adds the original input as a special `$$` field.
+///
+/// # Arguments
+/// * `parsed_line` - The parsed line data structure
+/// * `original_input` - The original input string that was parsed
+///
+/// # Returns
+/// * `Ok(serde_json::Value)` - The converted JSON value
+/// * `Err(Box<dyn std::error::Error>)` - Conversion error
 fn convert_parsed_line_to_json(
     parsed_line: ParsedLine,
     original_input: &str,
@@ -125,21 +254,17 @@ fn convert_parsed_line_to_json(
 
     let json_value = match parsed_line {
         ParsedLine::Json(mut val) => {
-            // Add original input for $$ template
             if let Value::Object(ref mut obj) = val {
-                obj.insert("$$".to_string(), Value::String(original_input.to_string()));
+                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             }
             val
         }
         ParsedLine::Csv(record) => {
             let mut obj = serde_json::Map::new();
-            // Add the entire input line for $$ template
-            obj.insert("$$".to_string(), Value::String(original_input.to_string()));
-            // Add indexed fields
+            obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             for (i, field) in record.iter().enumerate() {
                 obj.insert(format!("field_{}", i), Value::String(field.to_string()));
             }
-            // Add array representation
             let values: Vec<Value> = record
                 .iter()
                 .map(|field| Value::String(field.to_string()))
@@ -150,32 +275,29 @@ fn convert_parsed_line_to_json(
         ParsedLine::Toml(val) => {
             let mut json_val = serde_json::to_value(val)?;
             if let Value::Object(ref mut obj) = json_val {
-                obj.insert("$$".to_string(), Value::String(original_input.to_string()));
+                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             }
             json_val
         }
         ParsedLine::Yaml(val) => {
             let mut json_val = serde_json::to_value(val)?;
             if let Value::Object(ref mut obj) = json_val {
-                obj.insert("$$".to_string(), Value::String(original_input.to_string()));
+                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             }
             json_val
         }
         ParsedLine::Logfmt(mut val) => {
             if let Value::Object(ref mut obj) = val {
-                obj.insert("$$".to_string(), Value::String(original_input.to_string()));
+                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             }
             val
         }
         ParsedLine::Text(words) => {
             let mut obj = serde_json::Map::new();
-            // Add the entire input line for $$ template
-            obj.insert("$$".to_string(), Value::String(original_input.to_string()));
-            // Add indexed words
+            obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             for (i, word) in words.iter().enumerate() {
                 obj.insert(format!("word_{}", i), Value::String(word.clone()));
             }
-            // Add array representation
             let values: Vec<Value> = words.into_iter().map(Value::String).collect();
             obj.insert("_array".to_string(), Value::Array(values));
             Value::Object(obj)
@@ -184,7 +306,10 @@ fn convert_parsed_line_to_json(
     Ok(json_value)
 }
 
-// Example usage demonstration
+/// Print comprehensive usage examples and help documentation.
+///
+/// This function displays detailed examples of how to use parsm for various data processing
+/// tasks including filtering, field selection, template formatting, and format conversion.
 fn print_usage_examples() {
     println!("parsm - Multi-format data processor");
     println!();
@@ -193,13 +318,19 @@ fn print_usage_examples() {
     println!("  # Filter JSON by field value:");
     println!(r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'name == "Alice"'"#);
     println!();
+    println!("  # Field selection (requires quotes):");
+    println!(r#"  echo '{{"name": "Alice", "age": 30}}' | parsm '"name"'"#);
+    println!();
     println!("  # Filter and format output:");
     println!(
         r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25' '$name is $age years old'"#
     );
     println!();
+    println!("  # Include original input with $0:");
+    println!(r#"  echo 'Alice,30' | parsm '$0 → $1 is $2'"#);
+    println!();
     println!("  # Filter CSV data (fields accessible as field_0, field_1, etc.):");
-    println!(r#"  echo 'Alice,30,Engineer' | parsm 'field_1 > "25"' '$field_0 - $field_2'"#);
+    println!(r#"  echo 'Alice,30,Engineer' | parsm 'field_1 > "25"' '$1 - $3'"#);
     println!();
     println!("  # Filter logfmt logs:");
     println!(
@@ -219,9 +350,16 @@ fn print_usage_examples() {
     println!();
     println!("FIELD ACCESS:");
     println!("  name                        # Simple field");
+    println!("  \"name\"                      # Field selection (quoted)");
     println!("  user.email                  # Nested field");
     println!("  field_0, field_1            # CSV columns");
     println!("  word_0, word_1              # Text words");
+    println!();
+    println!("TEMPLATE VARIABLES:");
+    println!("  $0                          # Entire original input (AWK style)");
+    println!("  $1, $2, $3                  # Indexed fields (1-based)");
+    println!("  $name, ${{user.email}}        # Named fields");
+    println!("  $100                        # Literal dollar amounts");
     println!();
 }
 
@@ -230,6 +368,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// Test JSON filtering with equality comparison.
     #[test]
     fn test_json_filtering() {
         let dsl = parse_command(r#"name == "Alice""#).unwrap();
@@ -245,9 +384,10 @@ mod tests {
         assert!(passes);
     }
 
+    /// Test template rendering with named field variables.
     #[test]
     fn test_template_rendering() {
-        let dsl = parse_command(r#"name == "Alice" $name is $age years old"#).unwrap();
+        let dsl = parse_command(r#"name == "Alice" {${name} is ${age} years old}"#).unwrap();
 
         let json_data = json!({"name": "Alice", "age": 30});
 
@@ -259,6 +399,7 @@ mod tests {
         }
     }
 
+    /// Test CSV data conversion to JSON format.
     #[test]
     fn test_csv_conversion() {
         use parsm::StreamingParser;
@@ -272,5 +413,72 @@ mod tests {
         assert_eq!(json_value["field_0"], "Alice");
         assert_eq!(json_value["field_1"], "30");
         assert_eq!(json_value["field_2"], "Engineer");
+    }
+
+    /// Test field selection parsing and extraction.
+    #[test]
+    fn test_field_selection() {
+        let dsl = parse_command("\"State\"").unwrap();
+
+        // Test that we have a field selector and no filter/template
+        assert!(dsl.field_selector.is_some());
+        assert!(dsl.filter.is_none());
+        assert!(dsl.template.is_none());
+
+        let field_selector = dsl.field_selector.unwrap();
+        assert_eq!(field_selector.parts, vec!["State"]);
+
+        let json_data = json!({
+            "Id": "123",
+            "State": {
+                "Status": "running",
+                "Running": true,
+                "Pid": 2034
+            },
+            "Name": "container"
+        });
+
+        let extracted = field_selector.extract_field(&json_data).unwrap();
+        let parsed_extracted: serde_json::Value = serde_json::from_str(&extracted).unwrap();
+
+        assert_eq!(parsed_extracted["Status"], "running");
+        assert_eq!(parsed_extracted["Running"], true);
+        assert_eq!(parsed_extracted["Pid"], 2034);
+    }
+
+    /// Test nested field selection (e.g., "State.Status").
+    #[test]
+    fn test_nested_field_selection() {
+        let dsl = parse_command("\"State.Status\"").unwrap();
+
+        assert!(dsl.field_selector.is_some());
+        let field_selector = dsl.field_selector.unwrap();
+        assert_eq!(field_selector.parts, vec!["State", "Status"]);
+
+        let json_data = json!({
+            "State": {
+                "Status": "running",
+                "Running": true
+            }
+        });
+
+        let extracted = field_selector.extract_field(&json_data).unwrap();
+        assert_eq!(extracted, "running");
+    }
+
+    /// Test field selection behavior when field doesn't exist.
+    #[test]
+    fn test_field_selection_not_found() {
+        let dsl = parse_command("\"NonExistent\"").unwrap();
+        let field_selector = dsl.field_selector.unwrap();
+
+        let json_data = json!({
+            "State": {
+                "Status": "running"
+            }
+        });
+
+        let result = field_selector.extract_field(&json_data);
+        assert!(result.is_none());
     }
 }
