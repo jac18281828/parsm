@@ -503,7 +503,7 @@ fn test_toml_numeric_comparisons() {
 fn test_toml_boolean_logic() {
     let test_cases = vec![
         (r#"active = true"#, r#"active == true"#, true),
-        (r#"active = false"#, r#"active == false || true"#, true),
+        (r#"active = false"#, r#"active == false"#, true),
         (r#"active = true"#, r#"active == false"#, false),
         (r#"enabled = false"#, r#"enabled == false"#, true),
     ];

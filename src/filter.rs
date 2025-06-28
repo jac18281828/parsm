@@ -27,13 +27,21 @@ impl FieldPath {
         Self { parts: vec![name] }
     }
 
-    // Navigate nested JSON/object structures
+    // Navigate nested JSON/object structures and arrays
     pub fn get_value<'a>(&self, data: &'a Value) -> Option<&'a Value> {
         let mut current = data;
         for part in &self.parts {
             match current {
                 Value::Object(map) => {
                     current = map.get(part)?;
+                }
+                Value::Array(arr) => {
+                    // Try to parse the part as an array index
+                    if let Ok(index) = part.parse::<usize>() {
+                        current = arr.get(index)?;
+                    } else {
+                        return None;
+                    }
                 }
                 _ => return None,
             }

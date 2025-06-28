@@ -32,14 +32,20 @@ parsm [FILTER] [TEMPLATE]
 # Show comprehensive examples
 parsm --examples
 
-# Filter JSON data
+# Extract a field (most common operation)
+echo '{"name": "Alice", "age": 30}' | parsm 'name'
+
+# Extract nested fields
+echo '{"user": {"email": "alice@example.com"}}' | parsm 'user.email'
+
+# Filter data based on field values
 echo '{"name": "Alice", "age": 30}' | parsm 'age > 25'
 
 # Filter and format output
-echo '{"name": "Alice", "age": 30}' | parsm 'age > 25' '{${name} is ${age} years old}'
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years old}'
 
-# Extract specific fields
-echo '{"name": "Alice", "age": 30}' | parsm '"name"'
+# Simple template output
+echo '{"name": "Alice", "age": 30}' | parsm '$name'
 ```
 
 ## Supported Input Formats
@@ -147,98 +153,172 @@ word_2 == "Engineer"  # Third word
 
 The parsm DSL has three main components with distinct, unambiguous syntax:
 
-### Templates
-Templates are **always** enclosed in braces `{...}` and contain literal text with variable substitutions:
+### Field Selectors (Data Extraction)
+Extract specific fields using simple, unambiguous syntax - **the most common operation**:
+
+```bash
+name                     # Simple field extraction
+user.email               # Nested field access
+items.0                  # Array element access  
+"field with spaces"      # Quoted field names (when needed)
+'special-field'          # Single-quoted alternatives
+```
+
+**Key principle**: Bare identifiers like `name` are ALWAYS field selectors, never filters or templates.
+
+### Templates (Dynamic Output)
+Templates format output with field values using explicit variable syntax:
 
 ```bash
 {${name} is ${age} years old}    # Variables with ${...}
-{Hello $name}                    # Simple variables (non-numeric)  
+$name                            # Simple variable shorthand
+{Hello ${name}!}                 # Mixed template with literals
 {${0}}                          # Original input (requires braces)
-{User: ${user.name}}            # Nested fields
-{Price: $$100}                  # Literal dollar signs ($$)
+{User: ${user.name}}            # Nested fields in templates
 ```
 
-### Variables
-Variables use two formats depending on type:
-
-| Syntax | Use Case | Example |
-|--------|----------|---------|
-| `${variable}` | Recommended for all variables | `${name}`, `${user.email}` |
-| `${number}` | **Required** for numeric variables | `${0}`, `${1}`, `${2}` |
-| `$variable` | Simple non-numeric variables only | `$name`, `$user` |
-
-**Important**: `$0`, `$1`, etc. are treated as **literals** (like "$0 fee"), not variables. Only `${0}`, `${1}` access fields.
-
-### Field Selectors
-Extract specific fields using quoted strings:
+### Literal Text (Static Output)
+Braces without variables produce literal text:
 
 ```bash
-"name"           # Simple field
-"user.email"     # Nested field  
-"field with spaces"  # Quoted when needed
+{name}                   # Outputs literal text "name"
+{Hello world}            # Outputs literal text "Hello world"
+{Price: $100}            # Outputs literal text with dollar sign
+```
+
+### Filters (Data Processing)
+Filter data using comparison operators with field selectors:
+
+```bash
+age > 25                 # Numeric comparison
+name == "Alice"          # String equality
+user.active == true      # Boolean comparison
+!(status == "disabled")  # Negation
+name == "Alice" && age > 25  # Boolean logic
 ```
 
 ### Examples
 
 ```bash
-# Template with variables
+# Field extraction (most common - simple syntax)
+echo '{"name": "Alice", "age": 30}' | parsm 'name'
+# Output: "Alice"
+
+echo '{"user": {"email": "alice@example.com"}}' | parsm 'user.email'  
+# Output: "alice@example.com"
+
+# Template with variables (dynamic output)
 echo '{"name": "Alice", "age": 30}' | parsm '{${name} is ${age} years old}'
+# Output: Alice is 30 years old
+
+echo '{"name": "Alice", "age": 30}' | parsm '$name'
+# Output: Alice
+
+# Literal templates (static output)
+echo '{"name": "Alice", "age": 30}' | parsm '{name}'
+# Output: name
+
+# Filtering with field selectors
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25'
+# Output: {"name": "Alice", "age": 30}
+
+# Combined filtering and templating
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years old}'
+# Output: Alice is 30 years old
 
 # Original input variable  
 echo '{"name": "Alice"}' | parsm '{Original: ${0} → Name: ${name}}'
+# Output: Original: {"name": "Alice"} → Name: Alice
 
 # CSV positional fields
 echo 'Alice,30,Engineer' | parsm '{Employee: ${1}, Age: ${2}, Role: ${3}}'
+# Output: Employee: Alice, Age: 30, Role: Engineer
 
 # Nested JSON fields
 echo '{"user": {"name": "Alice", "email": "alice@example.com"}}' | \
   parsm '{User: ${user.name}, Email: ${user.email}}'
-
-# Literal dollar signs
-echo '{"item": "coffee", "price": 5}' | parsm '{${item} costs $$${price}}'
+# Output: User: Alice, Email: alice@example.com
 ```
 
 ## Field Selection
 
-Extract specific fields using quoted syntax:
+Extract specific fields with simple, unambiguous syntax - the most intuitive operation in parsm:
 
 ```bash
-# Extract single field
-echo '{"name": "Alice", "age": 30}' | parsm '"name"'
+# Simple field extraction (bare identifiers)
+echo '{"name": "Alice", "age": 30}' | parsm 'name'
 # Output: "Alice"
 
-# Extract nested field
-echo '{"user": {"email": "alice@example.com"}}' | parsm '"user.email"'
+echo '{"name": "Alice", "age": 30}' | parsm 'age'
+# Output: 30
+
+# Nested field access (dot notation)
+echo '{"user": {"email": "alice@example.com"}}' | parsm 'user.email'
 # Output: "alice@example.com"
 
-# Extract complex object
-echo '{"state": {"status": "running", "pid": 1234}}' | parsm '"state"'
+echo '{"config": {"database": {"host": "localhost"}}}' | parsm 'config.database.host'
+# Output: "localhost"
+
+# Array element access (index notation)
+echo '{"items": ["apple", "banana", "cherry"]}' | parsm 'items.0'
+# Output: "apple"
+
+echo '{"scores": [95, 87, 92]}' | parsm 'scores.1'
+# Output: 87
+
+# Complex nested structures
+echo '{"users": [{"name": "Alice", "role": "admin"}]}' | parsm 'users.0.name'
+# Output: "Alice"
+
+# Special field names (quoted when needed)
+echo '{"field name": "value"}' | parsm '"field name"'
+# Output: "value"
+
+echo '{"special-field": "data"}' | parsm "'special-field'"
+# Output: "data"
+
+# Extract entire objects or arrays
+echo '{"state": {"status": "running", "pid": 1234}}' | parsm 'state'
 # Output: {"status": "running", "pid": 1234}
 
-# Works with arrays too
-echo '[{"name": "Alice"}, {"name": "Bob"}]' | parsm '"name"'
+echo '[{"name": "Alice"}, {"name": "Bob"}]' | parsm 'name'
 # Output:
 # "Alice"
 # "Bob"
 ```
+
+**Key Benefits:**
+- **Simplest syntax**: `name` extracts the "name" field - no quotes needed
+- **Unambiguous**: Bare identifiers are ALWAYS field selectors, never filters  
+- **Intuitive**: Works exactly as users expect for the most common operation
+- **Powerful**: Supports nested objects, arrays, and complex data structures
+
+## Complete Examples
 
 ## Complete Examples
 
 ### JSON Processing
 
 ```bash
+# Extract specific fields (simple syntax)
+echo '{"name": "Alice", "age": 30}' | parsm 'name'
+echo '{"user": {"email": "alice@example.com"}}' | parsm 'user.email'
+
 # Basic filtering
 echo '{"name": "Alice", "age": 30}' | parsm 'age > 25'
 
 # Filter and format
-echo '{"name": "Alice", "age": 30}' | parsm 'age > 25' '{${name} is ${age} years old}'
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years old}'
 
 # Complex nested data
 echo '{"user": {"name": "Alice", "profile": {"verified": true}}}' | \
-  parsm 'user.profile.verified == true' '{Verified user: ${user.name}}'
+  parsm 'user.profile.verified == true {Verified user: ${user.name}}'
 
-# Field extraction
-echo '{"users": [{"name": "Alice"}, {"name": "Bob"}]}' | parsm '"users"'
+# Array processing
+echo '{"users": [{"name": "Alice"}, {"name": "Bob"}]}' | parsm 'users.0.name'
+
+# Extract entire objects
+echo '{"users": [{"name": "Alice"}, {"name": "Bob"}]}' | parsm 'users'
 ```
 
 ### CSV Processing
@@ -343,17 +423,24 @@ Options:
 # Just parsing (convert to JSON)
 cat data.yaml | parsm
 
+# Field extraction (most common - simple syntax)
+cat data.json | parsm 'name'
+cat data.json | parsm 'user.email'
+
 # Filtering only  
 cat data.json | parsm 'age > 25'
 
-# Template only
-cat data.csv | parsm '' '{${1}: ${2}}'
+# Template only (simple variable)
+cat data.csv | parsm '$name'
+
+# Template only (complex formatting)
+cat data.csv | parsm '{${1}: ${2}}'
 
 # Filter and template
-cat data.log | parsm 'level == "error"' '{[${timestamp}] ${msg}}'
+cat data.log | parsm 'level == "error" {[${timestamp}] ${msg}}'
 
-# Field selection
-cat data.json | parsm '"user.email"'
+# Literal text output
+cat data.json | parsm '{User Profile}'
 ```
 
 ## Comparison with Other Tools
@@ -362,26 +449,30 @@ cat data.json | parsm '"user.email"'
 |---------|-------|----|----- |----- |
 | **Multi-format input** | ✅ JSON, CSV, YAML, TOML, logfmt, text | JSON only | Text | Text |
 | **Auto-detection** | ✅ Automatic | Manual | Manual | Manual |
-| **Filter syntax** | Simple expressions | JQ query language | Programming | Regex |
+| **Field extraction** | ✅ Simple `name` syntax | ✅ `.name` syntax | Limited | No |
+| **Filter syntax** | ✅ Simple expressions | JQ query language | Programming | Regex |
 | **Template output** | ✅ `${field}` syntax | ✅ Complex | ✅ `${1}, ${2}` | Limited |
-| **Learning curve** | Low | Medium-High | High | Medium |
+| **Learning curve** | ✅ Low | Medium-High | High | Medium |
 | **Boolean logic** | ✅ `&&`, `\|\|`, `!` | ✅ Complex | ✅ Programming | Limited |
 | **Nested fields** | ✅ `user.email` | ✅ `.user.email` | Limited | No |
 | **Performance** | Good | Excellent | Excellent | Excellent |
 
 ### When to use parsm
 
+- **Field extraction**: When you need simple `name` syntax instead of jq's `.name`
 - **Multi-format data**: When working with mixed JSON, CSV, YAML, etc.
 - **Simple filtering**: When jq syntax is too complex
 - **Quick transformations**: When awk programming is overkill  
 - **Log processing**: Especially structured logs (JSON, logfmt)
 - **Data exploration**: Quick inspection and filtering of structured data
+- **Intuitive syntax**: When you want field access to "just work" without quotes or dots
 
 ### Migration from other tools
 
 ```bash
 # From jq
-jq '.name' data.json              → parsm '"name"' < data.json
+jq '.name' data.json              → parsm 'name' < data.json
+jq '.user.email' data.json        → parsm 'user.email' < data.json
 jq 'select(.age > 25)' data.json  → parsm 'age > 25' < data.json
 
 # From awk  
@@ -389,7 +480,7 @@ awk '$2 > 25' data.csv           → parsm 'field_1 > "25"' < data.csv
 awk '{print $1, $2}' data.txt    → parsm '{${1} ${2}}' < data.txt
 
 # From grep + cut
-grep "error" logs | cut -d' ' -f3  → parsm 'word_0 == "error"' '{${3}}' < logs
+grep "error" logs | cut -d' ' -f3  → parsm 'word_0 == "error" ${3}' < logs
 ```
 
 ## Architecture Overview
@@ -408,11 +499,12 @@ Input → Auto-detect Format → Parse → Normalize to JSON → Filter → Temp
 
 ### Key Design Decisions
 
-1. **JSON normalization**: All formats convert to JSON for uniform processing
-2. **Streaming processing**: Line-by-line for memory efficiency
-3. **Automatic format detection**: Users don't specify input format
-4. **Simple syntax**: Easy to learn and remember
-5. **Error tolerance**: Continues processing on non-fatal errors
+1. **Unambiguous field selection**: Bare identifiers like `name` are always field selectors
+2. **JSON normalization**: All formats convert to JSON for uniform processing
+3. **Streaming processing**: Line-by-line for memory efficiency
+4. **Automatic format detection**: Users don't specify input format
+5. **Simple syntax**: Easy to learn and remember, prioritizing the most common operations
+6. **Error tolerance**: Continues processing on non-fatal errors
 
 ## Contributing
 

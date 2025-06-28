@@ -1,26 +1,37 @@
-// parsm.pest - Complete grammar for the filtering DSL
+// parsm.pest - Complete grammar for the filtering DSL with relaxed template syntax
 
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
-// Main program entry point
-program = { SOI ~ (filter_expr | field_selector)? ~ template_expr? ~ EOI }
+// Main program entry point - updated to support new expression types
+program = { SOI ~ expression? ~ EOI }
+
+// Main expression types with relaxed syntax - reordered for proper precedence
+expression = {
+    combined_expr |     // filter + template: "age > 25 {name}"
+    filter_expr |       // filters: "age > 25", "name == 'Alice'" (try filters before field selectors)
+    template_expr |     // templates: "{name}", "$name", "Hello $name"  
+    field_selector      // field selectors: "name", "user.email" (simple field access only, last resort)
+}
+
+// Combined filter and template expression
+combined_expr = { filter_expr ~ template_expr }
 
 // Field selector for simple field extraction (unquoted identifier or quoted string)
-field_selector = { field_access | string_literal }
+field_selector = { quoted_field | field_access }
+quoted_field = { string_literal }
 
-// Filter expressions
+// Filter expressions with explicit whitespace handling
 filter_expr = { condition }
 
 condition = { or_expr }
-or_expr = { and_expr ~ (or_op ~ and_expr)* }
-and_expr = { comparison ~ (and_op ~ comparison)* }
+or_expr = { and_expr ~ (WHITESPACE* ~ or_op ~ WHITESPACE* ~ and_expr)* }
+and_expr = { comparison ~ (WHITESPACE* ~ and_op ~ WHITESPACE* ~ comparison)* }
 
 comparison = {
     field_access ~ comparison_op ~ value |
     "(" ~ condition ~ ")" |
     not_op ~ comparison |
-    not_op ~ field_access |
-    field_access
+    not_op ~ field_access
 }
 
 // Operators
@@ -34,6 +45,7 @@ comparison_op = {
 
 // Field access (supports nested fields like user.name and array indices like items.0)
 field_access = { field_component ~ ("." ~ field_component)* }
+field_path = { field_component ~ ("." ~ field_component)* }
 field_component = { identifier | numeric_identifier }
 identifier = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
 numeric_identifier = { ASCII_DIGIT+ }
@@ -61,9 +73,32 @@ null = { "null" }
 // Unquoted value for operators like contains, startswith, etc.
 unquoted_value = { (ASCII_ALPHANUMERIC | "_")+ }
 
-// Template expressions (for output formatting) - must be surrounded by braces
-template_expr = { "{" ~ template_content ~ "}" }
-template_content = { (template_variable | template_text)* }
-template_variable = { "${" ~ template_var_name ~ "}" }
-template_var_name = { (ASCII_ALPHANUMERIC | "_" | ".")+ }
-template_text = { (!(template_variable | "}") ~ ANY)+ }
+// RELAXED TEMPLATES - Much more permissive
+template_expr = {
+    braced_template |           // {name}, {Hello $name}, {$name}, ${name}
+    interpolated_text |         // Hello $name, $name is $age  
+    simple_variable             // $name, $user.email (must come last to avoid conflicts)
+}
+
+// Braced template with support for bare fields - preserves whitespace  
+braced_template = { "{" ~ template_content_atomic ~ "}" }
+template_content_atomic = @{ template_content_chars* }
+template_content_chars = _{ 
+    ("${" ~ var_content ~ "}") |        // ${name} variable
+    ("$" ~ simple_var_name) |           // $name variable  
+    (!("}") ~ ANY)                      // any other character except closing brace
+}
+
+// Simple variable syntax: $name (but not ${name} - that's a braced template)
+simple_variable = { "$" ~ simple_var_name }
+
+// Interpolated text with variables: "Hello $name"
+interpolated_text = { (literal_text ~ template_variable)+ ~ literal_text? | literal_text ~ (template_variable ~ literal_text?)+ }
+
+// Template variables: ${name} or $name (for interpolation)
+template_variable = { "${" ~ var_content ~ "}" | "$" ~ simple_var_name }
+var_content = { (ASCII_ALPHANUMERIC | "_" | ".")+ }
+simple_var_name = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | ".")* }
+
+// Template text that's not a variable - must preserve spaces
+literal_text = { (!("$" | "{" | "}") ~ ANY)+ }

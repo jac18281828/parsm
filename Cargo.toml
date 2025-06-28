@@ -35,23 +35,32 @@ path = "src/bin/parsm.rs"
 # // Filter JSON
 # echo '{"name": "Alice", "age": 30}' | parsm 'name == "Alice"'
 # 
-# // Filter and template
-# echo '{"name": "Alice", "age": 30}' | parsm 'age > 25' '$name is $age'
+# // Filter and template (combined syntax)
+# echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years old}'
+# 
+# // Filter and template (separate arguments)
+# echo '{"name": "Alice", "age": 30}' | parsm 'age > 25' '${name} is ${age} years old'
+# 
+# // Field selection
+# echo '{"name": "Alice", "age": 30}' | parsm 'name'
 # 
 # // Filter CSV (auto-converts to indexed fields)
-# echo 'Alice,30,Engineer' | parsm 'field_1 > "25"' '$field_0: $field_2'
+# echo 'Alice,30,Engineer' | parsm 'field_1 > "25" {${field_0}: ${field_2}}'
 # 
 # // Filter logfmt
-# echo 'level=error msg="timeout" service=api' | parsm 'level == "error"' '[$level] $msg'
+# echo 'level=error msg="timeout" service=api' | parsm 'level == "error" {[${level}] ${msg}}'
+# 
+# // Simple template variables
+# echo '{"name": "Alice", "age": 30}' | parsm '$name is $age years old'
 # 
 # // Complex filters
-# parsm 'name == "Alice" && (age > 25 || status == "active")' '$name: $status'
+# parsm 'name == "Alice" && age > 25 {${name}: active}'
 # ```
 #
 # Advanced features:
 # - Auto-detects JSON, CSV, YAML, TOML, logfmt, and plain text
 # - Supports nested field access (user.email)
 # - Rich comparison operators (==, !=, <, >, contains, startswith, etc.)
-# - Boolean logic (&&, ||, !)
-# - Template-based output formatting
+# - Boolean logic (&&, ||, !) with explicit comparisons
+# - Template-based output formatting with ${variable} syntax
 # - Streaming processing for large datasets

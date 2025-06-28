@@ -98,9 +98,9 @@ fn main() {
         }
         (None, None) => {
             let stdin = io::stdin();
-            let stdout = io::stdout();
+            let mut stdout = io::stdout();
 
-            if let Err(e) = process_stream(stdin.lock(), stdout) {
+            if let Err(e) = process_stream(stdin.lock(), &mut stdout) {
                 eprintln!("Error processing stream: {}", e);
                 std::process::exit(1);
             }
@@ -318,27 +318,37 @@ fn print_usage_examples() {
     println!("  # Filter JSON by field value:");
     println!(r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'name == "Alice"'"#);
     println!();
-    println!("  # Field selection (requires quotes):");
-    println!(r#"  echo '{{"name": "Alice", "age": 30}}' | parsm '"name"'"#);
+    println!("  # Field selection:");
+    println!(r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'name'"#);
     println!();
-    println!("  # Filter and format output:");
+    println!("  # Filter and format output (combined):");
     println!(
-        r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25' '$name is $age years old'"#
+        r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25 {{${{name}} is ${{age}} years old}}'"#
     );
     println!();
+    println!("  # Filter and format output (separate arguments):");
+    println!(
+        r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25' '${{name}} is ${{age}} years old'"#
+    );
+    println!();
+    println!("  # Simple template variables:");
+    println!(r#"  echo '{{"name": "Alice", "age": 30}}' | parsm '$name is $age years old'"#);
+    println!();
     println!("  # Include original input with $0:");
-    println!(r#"  echo 'Alice,30' | parsm '$0 → $1 is $2'"#);
+    println!(r#"  echo 'Alice,30' | parsm '${{0}} → ${{1}} is ${{2}}'"#);
     println!();
     println!("  # Filter CSV data (fields accessible as field_0, field_1, etc.):");
-    println!(r#"  echo 'Alice,30,Engineer' | parsm 'field_1 > "25"' '$1 - $3'"#);
+    println!(
+        r#"  echo 'Alice,30,Engineer' | parsm 'field_1 > "25" {{${{field_0}} - ${{field_2}}}}'"#
+    );
     println!();
     println!("  # Filter logfmt logs:");
     println!(
-        r#"  echo 'level=error msg="DB error" service=api' | parsm 'level == "error"' '[$level] $msg'"#
+        r#"  echo 'level=error msg="DB error" service=api' | parsm 'level == "error" {{[${{level}}] ${{msg}}}}'"#
     );
     println!();
     println!("  # Complex conditions:");
-    println!(r#"  parsm 'name == "Alice" && age > 25 || status == "active"' '$name: $status'"#);
+    println!(r#"  parsm 'name == "Alice" && age > 25 {{${{name}}: active}}'"#);
     println!();
     println!("  # Just convert formats (no filter):");
     println!("  echo 'name: Alice' | parsm  # YAML to JSON");
@@ -349,17 +359,17 @@ fn print_usage_examples() {
     println!("  &&, ||, !                   # Boolean logic");
     println!();
     println!("FIELD ACCESS:");
-    println!("  name                        # Simple field");
+    println!("  name                        # Field selection (bare identifier)");
     println!("  \"name\"                      # Field selection (quoted)");
     println!("  user.email                  # Nested field");
     println!("  field_0, field_1            # CSV columns");
     println!("  word_0, word_1              # Text words");
     println!();
     println!("TEMPLATE VARIABLES:");
-    println!("  $0                          # Entire original input (AWK style)");
-    println!("  $1, $2, $3                  # Indexed fields (1-based)");
-    println!("  $name, ${{user.email}}        # Named fields");
-    println!("  $100                        # Literal dollar amounts");
+    println!("  ${{0}}                        # Entire original input");
+    println!("  ${{1}}, ${{2}}, ${{3}}              # Indexed fields (1-based, requires braces)");
+    println!("  $name, ${{user.email}}        # Named fields ($simple or ${{complex}})");
+    println!("  $100                        # Literal dollar amounts (invalid variable names)");
     println!();
 }
 

@@ -192,12 +192,28 @@ fn test_text_format_detection() {
 
     assert_eq!(lines.len(), 1);
 
-    // Verify it's parsed as JSON array (text gets converted to JSON array)
+    // Verify it's parsed as JSON object with _array field (text gets converted to JSON object)
     let parsed: serde_json::Value = serde_json::from_str(lines[0]).expect("parse JSON");
-    assert_eq!(parsed.as_array().unwrap().len(), 7);
-    assert_eq!(parsed[0], "this");
-    assert_eq!(parsed[1], "is");
-    assert_eq!(parsed[6], "formatting");
+
+    // Text format creates a JSON object with word_N fields and an _array field
+    let array = parsed
+        .get("_array")
+        .expect("should have _array field")
+        .as_array()
+        .expect("_array should be an array");
+
+    assert_eq!(array.len(), 7);
+    assert_eq!(array[0], "this");
+    assert_eq!(array[1], "is");
+    assert_eq!(array[6], "formatting");
+
+    // Also verify the word_N fields exist
+    assert_eq!(parsed.get("word_0").expect("should have word_0"), "this");
+    assert_eq!(parsed.get("word_1").expect("should have word_1"), "is");
+    assert_eq!(
+        parsed.get("word_6").expect("should have word_6"),
+        "formatting"
+    );
 }
 
 #[test]
