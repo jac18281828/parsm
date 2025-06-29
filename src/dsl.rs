@@ -936,8 +936,8 @@ fn try_parse_single_boolean_term(term: &str) -> Result<FilterExpr, Box<dyn std::
     let trimmed = term.trim();
 
     // Handle NOT operations
-    if trimmed.starts_with('!') {
-        let field_part = &trimmed[1..].trim();
+    if let Some(stripped) = trimmed.strip_prefix('!') {
+        let field_part = stripped.trim();
         if is_known_boolean_field(field_part) {
             let field_path = parse_field_name_for_truthy(field_part);
             return Ok(FilterExpr::Not(Box::new(FilterExpr::FieldTruthy(

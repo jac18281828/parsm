@@ -444,7 +444,6 @@ fn print_usage_examples() {
     println!();
 }
 
-
 fn is_likely_toml(input: &str) -> bool {
     let lines: Vec<&str> = input.lines().take(10).collect(); // Check first 10 lines
 
@@ -502,31 +501,6 @@ fn is_likely_yaml(input: &str) -> bool {
     }
 
     has_yaml_structure
-}
-
-/// Try to parse input as JSON and process it
-fn try_parse_as_json(
-    input: &str,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<Option<()>, Box<dyn std::error::Error>> {
-    let trimmed = input.trim();
-
-    // Check if this looks like a large JSON array that should be streamed
-    if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.len() > 1024 * 1024 {
-        // For large JSON arrays (>1MB), use streaming parser to avoid loading entire array into memory
-        if let Ok(()) = parse_json_array_streaming(trimmed, dsl, writer) {
-            return Ok(Some(()));
-        }
-    }
-
-    // For single JSON objects or smaller arrays, use the standard parser
-    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(input) {
-        process_structured_value(json_value, input, dsl, writer)?;
-        Ok(Some(()))
-    } else {
-        Ok(None)
-    }
 }
 
 /// Try to parse input as TOML and process it
@@ -635,124 +609,6 @@ fn process_single_value(
             writeln!(writer, "{}", output)?;
         }
     }
-    Ok(())
-}
-
-/// Parse a JSON array in streaming mode to avoid loading entire array into memory
-fn parse_json_array_streaming(
-    input: &str,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut chars = input.chars().peekable();
-    let mut depth = 0;
-    let mut current_object = String::new();
-    let mut in_string = false;
-    let mut escape_next = false;
-
-    // Skip the opening '['
-    if chars.next() != Some('[') {
-        return Err("Expected '[' at start of JSON array".into());
-    }
-
-    // Skip whitespace after opening bracket
-    while let Some(&ch) = chars.peek() {
-        if ch.is_whitespace() {
-            chars.next();
-        } else {
-            break;
-        }
-    }
-
-    loop {
-        // Check if we've reached the end of the array
-        if let Some(&']') = chars.peek() {
-            // Process any remaining object
-            if !current_object.trim().is_empty() {
-                process_json_object_string(&current_object, input, dsl, writer)?;
-            }
-            break;
-        }
-
-        // Read characters until we have a complete JSON object
-        while let Some(ch) = chars.next() {
-            if escape_next {
-                current_object.push(ch);
-                escape_next = false;
-                continue;
-            }
-
-            match ch {
-                '\\' if in_string => {
-                    current_object.push(ch);
-                    escape_next = true;
-                }
-                '"' => {
-                    current_object.push(ch);
-                    in_string = !in_string;
-                }
-                '{' if !in_string => {
-                    current_object.push(ch);
-                    depth += 1;
-                }
-                '}' if !in_string => {
-                    current_object.push(ch);
-                    depth -= 1;
-
-                    // If we've closed all braces, we have a complete object
-                    if depth == 0 {
-                        // Process this object
-                        process_json_object_string(&current_object, input, dsl, writer)?;
-                        current_object.clear();
-
-                        // Skip whitespace and comma
-                        while let Some(&next_ch) = chars.peek() {
-                            if next_ch.is_whitespace() || next_ch == ',' {
-                                chars.next();
-                            } else {
-                                break;
-                            }
-                        }
-                        break;
-                    }
-                }
-                _ => {
-                    current_object.push(ch);
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Process a single JSON object from a string
-fn process_json_object_string(
-    object_str: &str,
-    original_input: &str,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let trimmed = object_str.trim();
-    if trimmed.is_empty() {
-        return Ok(());
-    }
-
-    // Parse the individual object
-    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(trimmed) {
-        let mut value_with_original = json_value;
-
-        // Add $0 field with original input
-        if let serde_json::Value::Object(ref mut obj) = value_with_original {
-            obj.insert(
-                "$0".to_string(),
-                serde_json::Value::String(original_input.trim().to_string()),
-            );
-        }
-
-        process_single_value(&value_with_original, dsl, writer)?;
-    }
-
     Ok(())
 }
 
