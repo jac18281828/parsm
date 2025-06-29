@@ -128,9 +128,9 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
     let stdout = io::stdout();
     let mut writer = stdout.lock();
 
-    // Only read entire input for field selectors or when necessary for document parsing
-    if let Some(ref field_selector) = dsl.field_selector {
-        // Field selectors need the entire input to handle JSON arrays
+    // Only read entire input for field selectors, templates, or when necessary for document parsing
+    if dsl.field_selector.is_some() || dsl.template.is_some() {
+        // Field selectors and templates need the entire input to handle structured documents
         let mut input = String::new();
         stdin.lock().read_to_string(&mut input)?;
 
@@ -138,18 +138,46 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
         if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&input) {
             match &json_value {
                 serde_json::Value::Array(arr) => {
-                    for item in arr {
-                        if let Some(extracted) = field_selector.extract_field(item) {
-                            writeln!(writer, "{}", extracted)?;
+                    if let Some(ref field_selector) = dsl.field_selector {
+                        for item in arr {
+                            if let Some(extracted) = field_selector.extract_field(item) {
+                                writeln!(writer, "{}", extracted)?;
+                            }
                         }
+                        return Ok(());
+                    } else {
+                        // For templates, process each array item
+                        for item in arr {
+                            let mut item_with_original = item.clone();
+                            if let serde_json::Value::Object(ref mut obj) = item_with_original {
+                                obj.insert(
+                                    "$0".to_string(),
+                                    serde_json::Value::String(input.trim().to_string()),
+                                );
+                            }
+                            process_single_value(&item_with_original, &dsl, &mut writer)?;
+                        }
+                        return Ok(());
                     }
-                    return Ok(());
                 }
                 _ => {
-                    if let Some(extracted) = field_selector.extract_field(&json_value) {
-                        writeln!(writer, "{}", extracted)?;
+                    if let Some(ref field_selector) = dsl.field_selector {
+                        if let Some(extracted) = field_selector.extract_field(&json_value) {
+                            writeln!(writer, "{}", extracted)?;
+                        }
+                        return Ok(());
+                    } else {
+                        // For templates, process the single value
+                        let mut value_with_original = json_value.clone();
+                        if let serde_json::Value::Object(ref mut obj) = value_with_original {
+                            obj.insert(
+                                "$0".to_string(),
+                                serde_json::Value::String(input.trim().to_string()),
+                            );
+                        }
+                        process_single_value(&value_with_original, &dsl, &mut writer)?;
+                        return Ok(());
                     }
-                    return Ok(());
                 }
             }
         }
@@ -164,37 +192,67 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
         }
 
         // Fall back to line-by-line processing for field selectors
-        let lines = input.lines();
-        let mut parser = StreamingParser::new();
-        let mut line_count = 0;
+        if let Some(ref field_selector) = dsl.field_selector {
+            let lines = input.lines();
+            let mut parser = StreamingParser::new();
+            let mut line_count = 0;
 
-        for line in lines {
-            line_count += 1;
+            for line in lines {
+                line_count += 1;
 
-            if line.trim().is_empty() {
-                continue;
-            }
+                if line.trim().is_empty() {
+                    continue;
+                }
 
-            match parser.parse_line(line) {
-                Ok(parsed_line) => {
-                    let json_value = convert_parsed_line_to_json(parsed_line, line)?;
-                    if let Some(extracted) = field_selector.extract_field(&json_value) {
-                        writeln!(writer, "{}", extracted)?;
-                    } else {
-                        writeln!(writer)?;
-                        eprintln!(
-                            "Warning: Field '{}' not found in line {}",
-                            field_selector.parts.join("."),
-                            line_count
-                        );
+                match parser.parse_line(line) {
+                    Ok(parsed_line) => {
+                        let json_value = convert_parsed_line_to_json(parsed_line, line)?;
+                        if let Some(extracted) = field_selector.extract_field(&json_value) {
+                            writeln!(writer, "{}", extracted)?;
+                        } else {
+                            writeln!(writer)?;
+                            eprintln!(
+                                "Warning: Field '{}' not found in line {}",
+                                field_selector.parts.join("."),
+                                line_count
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        if line_count == 1 {
+                            return Err(Box::new(e));
+                        } else {
+                            eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
+                            eprintln!("Line content: {}", line);
+                        }
                     }
                 }
-                Err(e) => {
-                    if line_count == 1 {
-                        return Err(Box::new(e));
-                    } else {
-                        eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
-                        eprintln!("Line content: {}", line);
+            }
+        } else {
+            // For templates, fall back to line-by-line processing
+            let lines = input.lines();
+            let mut parser = StreamingParser::new();
+            let mut line_count = 0;
+
+            for line in lines {
+                line_count += 1;
+
+                if line.trim().is_empty() {
+                    continue;
+                }
+
+                match parser.parse_line(line) {
+                    Ok(parsed_line) => {
+                        let json_value = convert_parsed_line_to_json(parsed_line, line)?;
+                        process_single_value(&json_value, &dsl, &mut writer)?;
+                    }
+                    Err(e) => {
+                        if line_count == 1 {
+                            return Err(Box::new(e));
+                        } else {
+                            eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
+                            eprintln!("Line content: {}", line);
+                        }
                     }
                 }
             }
@@ -386,38 +444,7 @@ fn print_usage_examples() {
     println!();
 }
 
-/// Determines if the input should be parsed as a complete document
-/// based on content analysis and first character(s).
-fn should_parse_entire_document(input: &str) -> bool {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        return false;
-    }
 
-    let first_char = trimmed.chars().next().unwrap();
-
-    match first_char {
-        // JSON objects and arrays - parse as complete document
-        '{' | '[' => true,
-
-        // TOML typically starts with [section] or key = value
-        // (Note: '[' is already handled above for JSON arrays)
-
-        // Check for TOML key = value pattern at start
-        _ if is_likely_toml(trimmed) => true,
-
-        // YAML documents - check for YAML indicators
-        _ if is_likely_yaml(trimmed) => true,
-
-        // Quote-started content might be a single JSON string, but more likely line-by-line
-        '"' => false,
-
-        // Everything else (plain text, CSV, logfmt) - process line by line
-        _ => false,
-    }
-}
-
-/// Check if content looks like TOML format
 fn is_likely_toml(input: &str) -> bool {
     let lines: Vec<&str> = input.lines().take(10).collect(); // Check first 10 lines
 
