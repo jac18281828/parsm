@@ -101,7 +101,7 @@ fn test_yaml_nonexistent_field() {
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert_eq!(stdout.trim(), "null");
+    assert_eq!(stdout.trim(), "");
 }
 
 /// Test YAML template with ${var} syntax

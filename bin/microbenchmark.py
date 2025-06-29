@@ -61,7 +61,7 @@ class DataGenerator:
     
     @staticmethod
     def generate_json_objects(count: int) -> str:
-        """Generate JSON array with specified number of objects"""
+        """Generate JSON array with specified number of simple objects"""
         objects = []
         for i in range(count):
             obj = {
@@ -71,20 +71,7 @@ class DataGenerator:
                 "active": i % 3 == 0,
                 "score": round(50 + (i % 50) + (i * 0.1) % 10, 2),
                 "email": f"user{i}@example.com",
-                "department": ["Engineering", "Sales", "Marketing", "Support"][i % 4],
-                "profile": {
-                    "level": ["junior", "mid", "senior"][i % 3],
-                    "skills": ["python", "rust", "javascript", "go"][:(i % 4) + 1],
-                    "location": {
-                        "city": ["New York", "San Francisco", "London", "Tokyo"][i % 4],
-                        "country": ["US", "US", "UK", "JP"][i % 4]
-                    }
-                },
-                "metrics": {
-                    "login_count": i * 10 + (i % 100),
-                    "last_active": f"2025-06-{(i % 28) + 1:02d}T{(i % 24):02d}:00:00Z",
-                    "performance_score": round(70 + (i % 30) + (i * 0.05) % 5, 1)
-                }
+                "department": ["Engineering", "Sales", "Marketing", "Support"][i % 4]
             }
             objects.append(obj)
         return json.dumps(objects, indent=2)
@@ -115,7 +102,7 @@ class DataGenerator:
     
     @staticmethod
     def generate_yaml_data(count: int) -> str:
-        """Generate YAML data with specified number of objects"""
+        """Generate YAML data with specified number of simple objects"""
         objects = []
         for i in range(count):
             obj = {
@@ -125,14 +112,7 @@ class DataGenerator:
                 'active': i % 3 == 0,
                 'score': round(50 + (i % 50) + (i * 0.1) % 10, 2),
                 'email': f"user{i}@example.com",
-                'department': ["Engineering", "Sales", "Marketing", "Support"][i % 4],
-                'profile': {
-                    'level': ["junior", "mid", "senior"][i % 3],
-                    'location': {
-                        'city': ["New York", "San Francisco", "London", "Tokyo"][i % 4],
-                        'country': ["US", "US", "UK", "JP"][i % 4]
-                    }
-                }
+                'department': ["Engineering", "Sales", "Marketing", "Support"][i % 4]
             }
             objects.append(obj)
         return yaml.dump(objects, default_flow_style=False)
@@ -250,7 +230,7 @@ class ParmsBenchmark:
         self.results.append(result)
         return result
     
-    def run_format_benchmarks(self, format_name: str, data_small: str, data_large: str):
+    def run_format_benchmarks(self, format_name: str, data_small: str, data_medium: str):
         """Run all benchmark operations for a specific data format"""
         print(f"\nBenchmarking {format_name.upper()} format:")
         
@@ -306,10 +286,10 @@ class ParmsBenchmark:
         else:
             operations = [("basic_parse", [])]
         
-        # Run benchmarks on small and large datasets
+        # Run benchmarks on small and medium datasets
         for op_name, args in operations:
             self.benchmark_operation(f"{op_name}_small", format_name, "small", data_small, args)
-            self.benchmark_operation(f"{op_name}_large", format_name, "large", data_large, args)
+            self.benchmark_operation(f"{op_name}_medium", format_name, "medium", data_medium, args)
     
     def run_all_benchmarks(self):
         """Run comprehensive benchmark suite"""
@@ -328,43 +308,43 @@ class ParmsBenchmark:
         logfmt_small = generator.generate_logfmt_data(100)
         text_small = generator.generate_text_data(100)
         
-        # Large datasets (10,000 records)
-        json_large = generator.generate_json_objects(10000)
-        csv_large = generator.generate_csv_data(10000)
-        yaml_large = generator.generate_yaml_data(10000)
-        logfmt_large = generator.generate_logfmt_data(10000)
-        text_large = generator.generate_text_data(10000)
+        # Medium datasets (1,000 records)
+        json_medium = generator.generate_json_objects(1000)
+        csv_medium = generator.generate_csv_data(1000)
+        yaml_medium = generator.generate_yaml_data(1000)
+        logfmt_medium = generator.generate_logfmt_data(1000)
+        text_medium = generator.generate_text_data(1000)
         
-        # Extra large datasets (100,000 records) for performance testing
-        print("Generating extra large datasets for performance testing...")
-        json_xl = generator.generate_json_objects(100000)
-        csv_xl = generator.generate_csv_data(100000)
+        # Large datasets (5,000 records) for performance testing
+        print("Generating large datasets for performance testing...")
+        json_large = generator.generate_json_objects(5000)
+        csv_large = generator.generate_csv_data(5000)
         
-        print(f"Generated datasets - Small: ~100 records, Large: ~10,000 records, XL: ~100,000 records")
+        print(f"Generated datasets - Small: ~100 records, Medium: ~1,000 records, Large: ~5,000 records")
         
         # Run format-specific benchmarks
         formats_data = [
-            ("json", json_small, json_large),
-            ("csv", csv_small, csv_large),
-            ("yaml", yaml_small, yaml_large),
-            ("logfmt", logfmt_small, logfmt_large),
-            ("text", text_small, text_large),
+            ("json", json_small, json_medium),
+            ("csv", csv_small, csv_medium),
+            ("yaml", yaml_small, yaml_medium),
+            ("logfmt", logfmt_small, logfmt_medium),
+            ("text", text_small, text_medium),
         ]
         
-        for format_name, small_data, large_data in formats_data:
-            self.run_format_benchmarks(format_name, small_data, large_data)
+        for format_name, small_data, medium_data in formats_data:
+            self.run_format_benchmarks(format_name, small_data, medium_data)
         
-        # Performance stress tests on extra large datasets
-        print(f"\nRunning performance stress tests on extra large datasets:")
-        stress_operations = [
-            ("field_selection_xl", "json", "xl", json_xl, ["name"]),
-            ("template_complex_xl", "json", "xl", json_xl, ["${name} (${age}) - ${department}"]),
-            ("filter_complex_xl", "json", "xl", json_xl, ["age > 30 && active == true"]),
-            ("csv_field_xl", "csv", "xl", csv_xl, ["field_1"]),
-            ("csv_filter_xl", "csv", "xl", csv_xl, ["field_2 > \"30\""]),
+        # Performance tests on large datasets
+        print(f"\nRunning performance tests on large datasets:")
+        performance_operations = [
+            ("field_selection_large", "json", "large", json_large, ["name"]),
+            ("template_simple_large", "json", "large", json_large, ["${name} (${age})"]),
+            ("filter_simple_large", "json", "large", json_large, ["age > 30"]),
+            ("csv_field_large", "csv", "large", csv_large, ["field_1"]),
+            ("csv_filter_large", "csv", "large", csv_large, ["field_2 > \"30\""]),
         ]
         
-        for op_name, format_name, size_name, data, args in stress_operations:
+        for op_name, format_name, size_name, data, args in performance_operations:
             self.benchmark_operation(op_name, format_name, size_name, data, args, iterations=3)
         
         # Special test with real JSON file if available

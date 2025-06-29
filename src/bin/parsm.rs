@@ -11,9 +11,9 @@ use parsm::{
 /// It can parse JSON, CSV, TOML, YAML, logfmt, and plain text, applying filters and templates
 /// to transform and extract data.
 fn main() {
-    let matches = Command::new("parsm")
+    let matches = Command::new(env!("CARGO_PKG_NAME"))
         .version(env!("CARGO_PKG_VERSION"))
-        .author("John Cairns <john@2ad.com>")
+        .author(env!("CARGO_PKG_AUTHORS"))
         .about("Understands structured text better than sed or awk")
         .arg(
             Arg::new("filter")
@@ -128,10 +128,13 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
     let stdout = io::stdout();
     let mut writer = stdout.lock();
 
+    // Only read entire input for field selectors or when necessary for document parsing
     if let Some(ref field_selector) = dsl.field_selector {
+        // Field selectors need the entire input to handle JSON arrays
         let mut input = String::new();
         stdin.lock().read_to_string(&mut input)?;
 
+        // Try JSON array parsing first
         if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&input) {
             match &json_value {
                 serde_json::Value::Array(arr) => {
@@ -140,92 +143,102 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
                             writeln!(writer, "{}", extracted)?;
                         }
                     }
+                    return Ok(());
                 }
                 _ => {
                     if let Some(extracted) = field_selector.extract_field(&json_value) {
                         writeln!(writer, "{}", extracted)?;
                     }
+                    return Ok(());
                 }
             }
+        }
+
+        // Try other document formats
+        if try_parse_as_toml(&input, &dsl, &mut writer)?.is_some() {
             return Ok(());
-        } else {
-            let lines = input.lines();
-            let mut parser = StreamingParser::new();
-            let mut line_count = 0;
+        }
 
-            for line in lines {
-                line_count += 1;
+        if try_parse_as_yaml(&input, &dsl, &mut writer)?.is_some() {
+            return Ok(());
+        }
 
-                if line.trim().is_empty() {
-                    continue;
-                }
+        // Fall back to line-by-line processing for field selectors
+        let lines = input.lines();
+        let mut parser = StreamingParser::new();
+        let mut line_count = 0;
 
-                match parser.parse_line(line) {
-                    Ok(parsed_line) => {
-                        let json_value = convert_parsed_line_to_json(parsed_line, line)?;
+        for line in lines {
+            line_count += 1;
 
-                        if let Some(extracted) = field_selector.extract_field(&json_value) {
-                            writeln!(writer, "{}", extracted)?;
-                        } else {
-                            writeln!(writer, "null")?;
-                            eprintln!(
-                                "Warning: Field '{}' not found in line {}",
-                                field_selector.parts.join("."),
-                                line_count
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        if line_count == 1 {
-                            return Err(Box::new(e));
-                        } else {
-                            eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
-                            eprintln!("Line content: {}", line);
-                        }
-                    }
-                }
+            if line.trim().is_empty() {
+                continue;
             }
-            return Ok(());
-        }
-    }
 
-    let mut parser = StreamingParser::new();
-    let mut line_count = 0;
-
-    for line_result in stdin.lock().lines() {
-        let line = line_result?;
-        line_count += 1;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        match parser.parse_line(&line) {
-            Ok(parsed_line) => {
-                let json_value = convert_parsed_line_to_json(parsed_line, &line)?;
-
-                let passes_filter = if let Some(ref filter) = dsl.filter {
-                    FilterEngine::evaluate(filter, &json_value)
-                } else {
-                    true
-                };
-
-                if passes_filter {
-                    let output = if let Some(ref template) = dsl.template {
-                        template.render(&json_value)
+            match parser.parse_line(line) {
+                Ok(parsed_line) => {
+                    let json_value = convert_parsed_line_to_json(parsed_line, line)?;
+                    if let Some(extracted) = field_selector.extract_field(&json_value) {
+                        writeln!(writer, "{}", extracted)?;
                     } else {
-                        serde_json::to_string(&json_value)?
+                        writeln!(writer)?;
+                        eprintln!(
+                            "Warning: Field '{}' not found in line {}",
+                            field_selector.parts.join("."),
+                            line_count
+                        );
+                    }
+                }
+                Err(e) => {
+                    if line_count == 1 {
+                        return Err(Box::new(e));
+                    } else {
+                        eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
+                        eprintln!("Line content: {}", line);
+                    }
+                }
+            }
+        }
+    } else {
+        // For filters and templates, use true streaming (line-by-line processing)
+        let reader = stdin.lock();
+        let mut parser = StreamingParser::new();
+        let mut line_count = 0;
+
+        for line_result in reader.lines() {
+            let line = line_result?;
+            line_count += 1;
+
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            match parser.parse_line(&line) {
+                Ok(parsed_line) => {
+                    let json_value = convert_parsed_line_to_json(parsed_line, &line)?;
+
+                    let passes_filter = if let Some(ref filter) = dsl.filter {
+                        FilterEngine::evaluate(filter, &json_value)
+                    } else {
+                        true
                     };
 
-                    writeln!(writer, "{}", output)?;
+                    if passes_filter {
+                        let output = if let Some(ref template) = dsl.template {
+                            template.render(&json_value)
+                        } else {
+                            serde_json::to_string(&json_value)?
+                        };
+                        writeln!(writer, "{}", output)?;
+                    }
                 }
-            }
-            Err(e) => {
-                if line_count == 1 {
-                    return Err(Box::new(e));
-                } else {
-                    eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
-                    eprintln!("Line content: {}", line);
+                Err(e) => {
+                    if line_count == 1 {
+                        return Err(Box::new(e));
+                    } else {
+                        eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
+                        eprintln!("Line content: {}", line);
+                    }
                 }
             }
         }
@@ -371,6 +384,349 @@ fn print_usage_examples() {
     println!("  $name, ${{user.email}}        # Named fields ($simple or ${{complex}})");
     println!("  $100                        # Literal dollar amounts (invalid variable names)");
     println!();
+}
+
+/// Determines if the input should be parsed as a complete document
+/// based on content analysis and first character(s).
+fn should_parse_entire_document(input: &str) -> bool {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    let first_char = trimmed.chars().next().unwrap();
+
+    match first_char {
+        // JSON objects and arrays - parse as complete document
+        '{' | '[' => true,
+
+        // TOML typically starts with [section] or key = value
+        // (Note: '[' is already handled above for JSON arrays)
+
+        // Check for TOML key = value pattern at start
+        _ if is_likely_toml(trimmed) => true,
+
+        // YAML documents - check for YAML indicators
+        _ if is_likely_yaml(trimmed) => true,
+
+        // Quote-started content might be a single JSON string, but more likely line-by-line
+        '"' => false,
+
+        // Everything else (plain text, CSV, logfmt) - process line by line
+        _ => false,
+    }
+}
+
+/// Check if content looks like TOML format
+fn is_likely_toml(input: &str) -> bool {
+    let lines: Vec<&str> = input.lines().take(10).collect(); // Check first 10 lines
+
+    for line in &lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        // Look for key = value pattern typical of TOML
+        if trimmed.contains(" = ") && !trimmed.starts_with('"') {
+            return true;
+        }
+
+        // Look for TOML section headers
+        if trimmed.starts_with('[') && trimmed.ends_with(']') {
+            return true;
+        }
+    }
+
+    false
+}
+
+/// Check if content looks like YAML format
+fn is_likely_yaml(input: &str) -> bool {
+    let lines: Vec<&str> = input.lines().take(10).collect(); // Check first 10 lines
+
+    // YAML document start indicator
+    if input.trim_start().starts_with("---") {
+        return true;
+    }
+
+    let mut has_yaml_structure = false;
+
+    for line in &lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        // Look for YAML key: value pattern (with colon and space)
+        if trimmed.contains(": ") && !trimmed.starts_with('"') {
+            has_yaml_structure = true;
+        }
+
+        // Look for YAML list items
+        if trimmed.starts_with("- ") {
+            has_yaml_structure = true;
+        }
+
+        // Look for indented structure (common in YAML)
+        if line.starts_with("  ") && (line.contains(": ") || line.trim().starts_with("- ")) {
+            return true; // Strong indicator of YAML structure
+        }
+    }
+
+    has_yaml_structure
+}
+
+/// Try to parse input as JSON and process it
+fn try_parse_as_json(
+    input: &str,
+    dsl: &ParsedDSL,
+    writer: &mut std::io::StdoutLock,
+) -> Result<Option<()>, Box<dyn std::error::Error>> {
+    let trimmed = input.trim();
+
+    // Check if this looks like a large JSON array that should be streamed
+    if trimmed.starts_with('[') && trimmed.ends_with(']') && trimmed.len() > 1024 * 1024 {
+        // For large JSON arrays (>1MB), use streaming parser to avoid loading entire array into memory
+        if let Ok(()) = parse_json_array_streaming(trimmed, dsl, writer) {
+            return Ok(Some(()));
+        }
+    }
+
+    // For single JSON objects or smaller arrays, use the standard parser
+    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(input) {
+        process_structured_value(json_value, input, dsl, writer)?;
+        Ok(Some(()))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Try to parse input as TOML and process it
+fn try_parse_as_toml(
+    input: &str,
+    dsl: &ParsedDSL,
+    writer: &mut std::io::StdoutLock,
+) -> Result<Option<()>, Box<dyn std::error::Error>> {
+    // Only try TOML parsing if the input actually looks like TOML
+    if !is_likely_toml(input) {
+        return Ok(None);
+    }
+
+    if let Ok(toml_value) = toml::from_str::<toml::Value>(input) {
+        let json_value = serde_json::to_value(toml_value)?;
+        process_structured_value(json_value, input, dsl, writer)?;
+        Ok(Some(()))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Try to parse input as YAML and process it
+fn try_parse_as_yaml(
+    input: &str,
+    dsl: &ParsedDSL,
+    writer: &mut std::io::StdoutLock,
+) -> Result<Option<()>, Box<dyn std::error::Error>> {
+    // Only try YAML parsing if the input actually looks like YAML
+    if !is_likely_yaml(input) {
+        return Ok(None);
+    }
+
+    if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(input) {
+        let json_value = serde_json::to_value(yaml_value)?;
+        process_structured_value(json_value, input, dsl, writer)?;
+        Ok(Some(()))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Process a structured value (JSON object/array, converted TOML/YAML)
+fn process_structured_value(
+    json_value: serde_json::Value,
+    original_input: &str,
+    dsl: &ParsedDSL,
+    writer: &mut std::io::StdoutLock,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match &json_value {
+        serde_json::Value::Array(arr) => {
+            // Process each item in array
+            for item in arr {
+                let mut item_with_original = item.clone();
+                if let serde_json::Value::Object(ref mut obj) = item_with_original {
+                    obj.insert(
+                        "$0".to_string(),
+                        serde_json::Value::String(original_input.trim().to_string()),
+                    );
+                }
+
+                process_single_value(&item_with_original, dsl, writer)?;
+            }
+        }
+        _ => {
+            // Single object/value
+            let mut value_with_original = json_value.clone();
+            if let serde_json::Value::Object(ref mut obj) = value_with_original {
+                obj.insert(
+                    "$0".to_string(),
+                    serde_json::Value::String(original_input.trim().to_string()),
+                );
+            }
+
+            process_single_value(&value_with_original, dsl, writer)?;
+        }
+    }
+    Ok(())
+}
+
+/// Process a single value with filter and template/field selector
+fn process_single_value(
+    value: &serde_json::Value,
+    dsl: &ParsedDSL,
+    writer: &mut std::io::StdoutLock,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::Write;
+
+    let passes_filter = if let Some(ref filter) = dsl.filter {
+        FilterEngine::evaluate(filter, value)
+    } else {
+        true
+    };
+
+    if passes_filter {
+        if let Some(ref field_selector) = dsl.field_selector {
+            if let Some(extracted) = field_selector.extract_field(value) {
+                writeln!(writer, "{}", extracted)?;
+            }
+        } else {
+            let output = if let Some(ref template) = dsl.template {
+                template.render(value)
+            } else {
+                serde_json::to_string(value)?
+            };
+            writeln!(writer, "{}", output)?;
+        }
+    }
+    Ok(())
+}
+
+/// Parse a JSON array in streaming mode to avoid loading entire array into memory
+fn parse_json_array_streaming(
+    input: &str,
+    dsl: &ParsedDSL,
+    writer: &mut std::io::StdoutLock,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut chars = input.chars().peekable();
+    let mut depth = 0;
+    let mut current_object = String::new();
+    let mut in_string = false;
+    let mut escape_next = false;
+
+    // Skip the opening '['
+    if chars.next() != Some('[') {
+        return Err("Expected '[' at start of JSON array".into());
+    }
+
+    // Skip whitespace after opening bracket
+    while let Some(&ch) = chars.peek() {
+        if ch.is_whitespace() {
+            chars.next();
+        } else {
+            break;
+        }
+    }
+
+    loop {
+        // Check if we've reached the end of the array
+        if let Some(&']') = chars.peek() {
+            // Process any remaining object
+            if !current_object.trim().is_empty() {
+                process_json_object_string(&current_object, input, dsl, writer)?;
+            }
+            break;
+        }
+
+        // Read characters until we have a complete JSON object
+        while let Some(ch) = chars.next() {
+            if escape_next {
+                current_object.push(ch);
+                escape_next = false;
+                continue;
+            }
+
+            match ch {
+                '\\' if in_string => {
+                    current_object.push(ch);
+                    escape_next = true;
+                }
+                '"' => {
+                    current_object.push(ch);
+                    in_string = !in_string;
+                }
+                '{' if !in_string => {
+                    current_object.push(ch);
+                    depth += 1;
+                }
+                '}' if !in_string => {
+                    current_object.push(ch);
+                    depth -= 1;
+
+                    // If we've closed all braces, we have a complete object
+                    if depth == 0 {
+                        // Process this object
+                        process_json_object_string(&current_object, input, dsl, writer)?;
+                        current_object.clear();
+
+                        // Skip whitespace and comma
+                        while let Some(&next_ch) = chars.peek() {
+                            if next_ch.is_whitespace() || next_ch == ',' {
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+                _ => {
+                    current_object.push(ch);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Process a single JSON object from a string
+fn process_json_object_string(
+    object_str: &str,
+    original_input: &str,
+    dsl: &ParsedDSL,
+    writer: &mut std::io::StdoutLock,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let trimmed = object_str.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+
+    // Parse the individual object
+    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        let mut value_with_original = json_value;
+
+        // Add $0 field with original input
+        if let serde_json::Value::Object(ref mut obj) = value_with_original {
+            obj.insert(
+                "$0".to_string(),
+                serde_json::Value::String(original_input.trim().to_string()),
+            );
+        }
+
+        process_single_value(&value_with_original, dsl, writer)?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

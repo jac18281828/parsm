@@ -1,6 +1,6 @@
 [package]
 name = "parsm"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["John Cairns <john@2ad.com>"]
 description = "Multi-format data processor that understands structured text better than sed or awk. Supports JSON, CSV, YAML, TOML, logfmt, and plain text with powerful filtering and templating."
@@ -10,6 +10,7 @@ documentation = "https://docs.rs/parsm"
 readme = "README.md"
 keywords = ["parser", "filter", "template", "json", "csv", "yaml", "toml", "logfmt"]
 categories = ["command-line-utilities", "parsing", "text-processing"]
+
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }

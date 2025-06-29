@@ -33,10 +33,9 @@ active = true"#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    assert_eq!(lines.len(), 3);
+    // With proper TOML parsing, we get a single result for the field extraction
+    assert_eq!(lines.len(), 1);
     assert_eq!(lines[0], "Alice");
-    assert_eq!(lines[1], "null"); // age line doesn't have name field
-    assert_eq!(lines[2], "null"); // active line doesn't have name field
 }
 
 /// Test TOML field selection with different data types
@@ -120,28 +119,12 @@ port = 8080"#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    // Should have lines for each TOML declaration (6 lines total)
-    assert_eq!(lines.len(), 6);
-
-    // The section header itself doesn't have a "database" field, so should be null
-    // But the key-value pairs under it also don't have "database" field
-    for (i, line) in lines.iter().enumerate() {
-        if i == 0 {
-            // First line is the [database] section header, which becomes an empty object
-            assert!(
-                *line == "{}" || *line == "null",
-                "Expected empty object or null for section header, got '{}'",
-                line
-            );
-        } else {
-            assert!(
-                *line == "null" || line.is_empty(),
-                "Expected null or empty for line {}, got '{}'",
-                i,
-                line
-            );
-        }
-    }
+    // With document-level TOML parsing, we get the database section as pretty-printed JSON
+    assert_eq!(lines.len(), 4);
+    assert_eq!(lines[0], "{");
+    assert!(lines[1].contains("host") && lines[1].contains("localhost"));
+    assert!(lines[2].contains("port") && lines[2].contains("5432"));
+    assert_eq!(lines[3], "}");
 }
 
 /// Test TOML nested field access (dot notation in keys)
@@ -176,10 +159,9 @@ server.host = "0.0.0.0""#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    assert_eq!(lines.len(), 3);
+    // With document-level TOML parsing, we get one result for the nested key
+    assert_eq!(lines.len(), 1);
     assert_eq!(lines[0], "localhost");
-    assert_eq!(lines[1], "null"); // database.port line doesn't have database.host
-    assert_eq!(lines[2], "null"); // server.host line doesn't have database.host
 }
 
 /// Test TOML nonexistent field
@@ -213,9 +195,9 @@ age = 30"#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0], "null");
-    assert_eq!(lines[1], "null");
+    // With document-level TOML parsing, nonexistent field returns empty output
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0], "");
 }
 
 /// Test TOML arrays
@@ -249,14 +231,14 @@ numbers = [1, 2, 3]"#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    assert_eq!(lines.len(), 6); // Pretty-printed array takes 4 lines + 1 null line + 1 warning
-                                // Check that we have the pretty-printed array
+    // With document-level TOML parsing, we get the fruits array formatted as JSON
+    assert!(lines.len() >= 4); // Pretty-printed array takes multiple lines
+                               // Check that we have the pretty-printed array
     assert!(lines[0] == "[");
     assert!(lines[1].contains("apple"));
     assert!(lines[2].contains("banana"));
     assert!(lines[3].contains("cherry"));
     assert!(lines[4] == "]");
-    assert_eq!(lines[5], "null"); // numbers line doesn't have fruits field
 }
 
 /// Test TOML template with variable syntax ${field}
@@ -290,9 +272,9 @@ version = "1.0.0""#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0], "User: Bob v"); // First line missing version
-    assert_eq!(lines[1], "User:  v1.0.0"); // Second line missing name
+    // With document-level TOML parsing, we get a single template result
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0], "User: Bob v1.0.0");
 }
 
 /// Test TOML template replacement
@@ -327,10 +309,12 @@ debug = false"#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    assert_eq!(lines.len(), 3);
-    assert_eq!(lines[0], "App myapp running in  mode (debug: )"); // Has app but not env/debug
-    assert_eq!(lines[1], "App  running in production mode (debug: )"); // Has env but not app/debug
-    assert_eq!(lines[2], "App  running in  mode (debug: false)"); // Has debug but not app/env
+    // With document-level TOML parsing, we get a single template result
+    assert_eq!(lines.len(), 1);
+    assert_eq!(
+        lines[0],
+        "App myapp running in production mode (debug: false)"
+    );
 }
 
 /// Test TOML original input template
@@ -364,9 +348,10 @@ other = "value2""#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
+    // With proper TOML document parsing, the ${0} contains newlines so we get 2 output lines
     assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0], r#"Original: key = "value1" | Key: value1"#);
-    assert_eq!(lines[1], r#"Original: other = "value2" | Key:"#); // Second line has no 'key' field
+    assert_eq!(lines[0], r#"Original: key = "value1""#);
+    assert_eq!(lines[1], r#"other = "value2" | Key: value1"#);
 }
 
 /// Test TOML string operations with filtering
@@ -704,14 +689,13 @@ client = { timeout = 30 }"#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    assert_eq!(lines.len(), 5); // Pretty-printed object takes 4 lines + 1 null line
-                                // First part should contain the server table as pretty-printed JSON
+    // With document-level TOML parsing, we get the server object formatted as pretty-printed JSON
+    assert!(lines.len() >= 3); // Pretty-printed object takes multiple lines
+                               // First part should contain the server table as pretty-printed JSON
     assert!(lines[0] == "{");
     assert!(lines[1].contains("host") && lines[1].contains("localhost"));
     assert!(lines[2].contains("port") && lines[2].contains("8080"));
     assert!(lines[3] == "}");
-    // Last line should be null (client line doesn't have server field)
-    assert_eq!(lines[4], "null");
 }
 
 /// Test TOML with mixed data types and complex structures
@@ -751,17 +735,9 @@ retry_count = 3"#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    // Should process each TOML line/declaration
-    assert!(lines.len() >= 4);
-
-    // The first few lines should have the expected template replacements
-    assert!(
-        lines
-            .iter()
-            .any(|line| line.contains("Title: TOML Example")),
-        "Expected to find template replacement in output: {:?}",
-        lines
-    );
+    // With document-level TOML parsing, we get a single template result
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0], "Title: TOML Example, Count: 42, Enabled: true");
 }
 
 /// Test TOML empty values and whitespace
@@ -796,21 +772,7 @@ zero = 0"#;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
-    assert_eq!(lines.len(), 3);
-    // Should properly handle empty string, spaced string, and zero
-    assert!(
-        lines.iter().any(|line| line.contains("Empty: ''")),
-        "Expected empty string handling in: {:?}",
-        lines
-    );
-    assert!(
-        lines.iter().any(|line| line.contains("spaced")),
-        "Expected spaced string in: {:?}",
-        lines
-    );
-    assert!(
-        lines.iter().any(|line| line.contains("Zero: 0")),
-        "Expected zero value in: {:?}",
-        lines
-    );
+    // With document-level TOML parsing, we get a single template result
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0], "Empty: '', Name: '   spaced   ', Zero: 0");
 }

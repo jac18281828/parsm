@@ -293,8 +293,8 @@ fn test_csv_nonexistent_field() {
 
     let result = child.wait_with_output().expect("wait for output");
     let stdout = String::from_utf8_lossy(&result.stdout);
-    // Non-existent field should return null
-    assert_eq!(stdout.trim(), "null");
+    // Non-existent field should return ""
+    assert_eq!(stdout.trim(), "");
 }
 
 #[test]

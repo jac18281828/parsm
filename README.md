@@ -2,7 +2,7 @@
 
 Parsm is the powerful command-line tool that understands structured text better than sed, awk, grep or grok.
 
-![cookie](eatcookie.jpg)
+<img src="eatcookie.jpg" alt="cookie" width="25%">
 
 ## Overview
 
@@ -46,6 +46,9 @@ echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years o
 
 # Simple template output
 echo '{"name": "Alice", "age": 30}' | parsm '$name'
+
+# Parse and understand text
+echo "a dog is an excellent companion" | parsm 'word_1 == "dog" {The cat would not say $word_4}'
 ```
 
 ## Supported Input Formats
@@ -162,9 +165,20 @@ user.email               # Nested field access
 items.0                  # Array element access  
 "field with spaces"      # Quoted field names (when needed)
 'special-field'          # Single-quoted alternatives
+"dev-dependencies.lib"   # Complex nested paths with special characters
 ```
 
 **Key principle**: Bare identifiers like `name` are ALWAYS field selectors, never filters or templates.
+
+**Cross-format compatibility**: Field selector syntax works identically across JSON, YAML, TOML, and other structured formats:
+
+```bash
+# These work the same for JSON, YAML, and TOML:
+parsm 'package.name'           # Extract nested field
+parsm '"package.name"'         # Same with quotes  
+parsm '"field-with-hyphens"'   # Special characters
+parsm '"field with spaces"'    # Spaces in field names
+```
 
 ### Templates (Dynamic Output)
 Templates format output with field values using explicit variable syntax:
@@ -277,6 +291,21 @@ echo '{"field name": "value"}' | parsm '"field name"'
 echo '{"special-field": "data"}' | parsm "'special-field'"
 # Output: "data"
 
+# Works consistently across all formats
+echo '{"package": {"name": "test"}}' | parsm 'package.name'           # JSON
+echo 'package: {name: test}' | parsm 'package.name'                  # YAML  
+echo '[package]\nname = "test"' | parsm 'package.name'               # TOML
+
+# Quoted syntax works the same way
+echo '{"package": {"name": "test"}}' | parsm '"package.name"'         # JSON
+echo 'package: {name: test}' | parsm '"package.name"'                # YAML
+echo '[package]\nname = "test"' | parsm '"package.name"'             # TOML
+
+# Complex field names across formats
+echo '{"dev-dependencies": {"my-lib": "1.0"}}' | parsm '"dev-dependencies.my-lib"'   # JSON
+echo 'dev-dependencies:\n  my-lib: 1.0' | parsm '"dev-dependencies.my-lib"'         # YAML  
+echo '[dev-dependencies]\nmy-lib = "1.0"' | parsm '"dev-dependencies.my-lib"'       # TOML
+
 # Extract entire objects or arrays
 echo '{"state": {"status": "running", "pid": 1234}}' | parsm 'state'
 # Output: {"status": "running", "pid": 1234}
@@ -292,6 +321,13 @@ echo '[{"name": "Alice"}, {"name": "Bob"}]' | parsm 'name'
 - **Unambiguous**: Bare identifiers are ALWAYS field selectors, never filters  
 - **Intuitive**: Works exactly as users expect for the most common operation
 - **Powerful**: Supports nested objects, arrays, and complex data structures
+- **Cross-format**: Same syntax works for JSON, YAML, TOML, and other formats
+- **Flexible quoting**: Use quotes only when field names have special characters or spaces
+
+**Quoting Rules:**
+- **Unquoted**: `name`, `user.email`, `items.0` - for simple field names
+- **Quoted**: `"field-name"`, `"field name"`, `"special.field"` - when needed for special characters or spaces  
+- **Both work**: `package.name` and `"package.name"` are identical - use whichever you prefer
 
 ## Complete Examples
 
@@ -351,14 +387,25 @@ app.log | parsm 'duration > 1000' '{Slow request: ${path} took ${duration}ms}'
 ### YAML/TOML Processing
 
 ```bash
+# Extract configuration values
+cat Cargo.toml | parsm 'package.name'                    # Get package name
+cat Cargo.toml | parsm 'package.version'                 # Get version
+cat Cargo.toml | parsm '"dependencies.serde_json"'       # Get dependency version
+
 # Filter configuration
 config.yaml | parsm 'database.enabled == true' '{DB: ${database.host}:${database.port}}'
 
-# Convert format
-echo 'name: Alice\nage: 30' | parsm '{${name} is ${age} years old}'
+# Convert format with nested access
+echo 'name: Alice\nconfig: {debug: true}' | parsm '{${name}: debug=${config.debug}}'
 
 # Extract configuration sections
-config.toml | parsm '"server"'
+config.toml | parsm '"server"'                           # Get entire server section
+config.toml | parsm '"dev-dependencies"'                 # Get dev dependencies
+
+# Real-world Cargo.toml examples
+cat Cargo.toml | parsm 'package.description'            # Project description
+cat Cargo.toml | parsm '"dependencies.clap"'             # Specific dependency
+cat Cargo.toml | parsm 'package.keywords'                # Keywords array
 ```
 
 ### Multi-line Processing
@@ -534,7 +581,7 @@ echo '{"name": "Alice", "age": 30}' | cargo run -- 'age > 25' '{${name}: ${age}}
 
 ## License
 
-[Add your license here]
+[LICENSE](LICENSE)
 
 ## Changelog
 

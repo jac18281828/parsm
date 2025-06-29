@@ -1,11 +1,11 @@
-// parsm.pest - Complete grammar for the filtering DSL with relaxed template syntax
+// parsm.pest - Complete grammar for the filtering DSL
 
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 
 // Main program entry point - updated to support new expression types
 program = { SOI ~ expression? ~ EOI }
 
-// Main expression types with relaxed syntax - reordered for proper precedence
+// Main expression types
 expression = {
     combined_expr |     // filter + template: "age > 25 {name}"
     filter_expr |       // filters: "age > 25", "name == 'Alice'" (try filters before field selectors)
