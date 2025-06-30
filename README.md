@@ -2,7 +2,7 @@
 
 Parsm is the powerful command-line tool that understands structured text better than sed, awk, grep or grok.
 
-<img src="eatcookie.jpg" alt="cookie" width="25%">
+<img src="eatcookie.jpg" alt="Eat more cookie!" width="25%">
 
 ## Overview
 
