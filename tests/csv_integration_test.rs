@@ -9,7 +9,7 @@ fn test_csv_basic_field_selection() {
     let input = "Alice,30,Engineer\nBob,25,Designer\nCharlie,35,Manager";
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
         .arg("\"field_0\"") // Select first field
@@ -17,7 +17,7 @@ fn test_csv_basic_field_selection() {
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Should output the first field from each row
@@ -43,7 +43,7 @@ fn test_csv_multiple_field_selection() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -75,7 +75,7 @@ fn test_csv_filtering_numeric() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -115,7 +115,7 @@ fn test_csv_filtering_string() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -155,7 +155,7 @@ fn test_csv_template_replacement() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -187,7 +187,7 @@ fn test_csv_positional_template_replacement() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -219,7 +219,7 @@ fn test_csv_original_input_template() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -254,7 +254,7 @@ fn test_csv_complex_filtering() {
 
         let stdin = child.stdin.take().expect("get stdin");
         let mut stdin = stdin;
-        write!(stdin, "{}", input).expect("write to stdin");
+        write!(stdin, "{input}").expect("write to stdin");
         drop(stdin);
 
         let result = child.wait_with_output().expect("wait for output");
@@ -263,12 +263,11 @@ fn test_csv_complex_filtering() {
         if should_match {
             assert!(
                 !stdout.trim().is_empty(),
-                "Expected output for input: {}",
-                input
+                "Expected output for input: {input}",
             );
             assert!(stdout.contains("Found:"));
         } else {
-            assert_eq!(stdout.trim(), "", "Expected no output for input: {}", input);
+            assert_eq!(stdout.trim(), "", "Expected no output for input: {input}",);
         }
     }
 }
@@ -288,7 +287,7 @@ fn test_csv_nonexistent_field() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -312,7 +311,7 @@ fn test_csv_quoted_fields() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -341,7 +340,7 @@ fn test_csv_empty_fields() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -382,7 +381,7 @@ fn test_csv_numeric_comparisons() {
 
         let stdin = child.stdin.take().expect("get stdin");
         let mut stdin = stdin;
-        write!(stdin, "{}", input).expect("write to stdin");
+        write!(stdin, "{input}").expect("write to stdin");
         drop(stdin);
 
         let result = child.wait_with_output().expect("wait for output");
@@ -391,17 +390,13 @@ fn test_csv_numeric_comparisons() {
         if should_match {
             assert!(
                 stdout.contains("Match:"),
-                "Expected match for: {} with filter: {}",
-                input,
-                filter
+                "Expected match for: {input} with filter: {filter}",
             );
         } else {
             assert_eq!(
                 stdout.trim(),
                 "",
-                "Expected no match for: {} with filter: {}",
-                input,
-                filter
+                "Expected no match for: {input} with filter: {filter}",
             );
         }
     }
@@ -422,7 +417,7 @@ fn test_csv_string_operations() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -458,22 +453,20 @@ fn test_csv_boolean_logic() {
             .expect("spawn parsm");
         let stdin = child.stdin.take().expect("get stdin");
         let mut stdin = stdin;
-        write!(stdin, "{}", input).expect("write to stdin");
+        write!(stdin, "{input}").expect("write to stdin");
         drop(stdin);
         let result = child.wait_with_output().expect("wait for output");
         let stdout = String::from_utf8_lossy(&result.stdout);
         if should_match {
             assert!(
                 stdout.contains("Boolean test passed"),
-                "Expected match for filter: {}",
-                filter_with_template
+                "Expected match for filter: {filter_with_template}",
             );
         } else {
             assert_eq!(
                 stdout.trim(),
                 "",
-                "Expected no match for filter: {}",
-                filter_with_template
+                "Expected no match for filter: {filter_with_template}",
             );
         }
     }
@@ -494,7 +487,7 @@ fn test_csv_braced_field_syntax() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -524,7 +517,7 @@ Bob,25,Designer"#;
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -550,7 +543,7 @@ fn test_csv_replacement_template() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -579,7 +572,7 @@ fn test_csv_different_lengths() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -612,7 +605,7 @@ fn test_csv_single_column() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");

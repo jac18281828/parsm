@@ -69,7 +69,7 @@ fn test_yaml_field_types() {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let result = stdout.trim();
-        assert_eq!(result, expected, "Failed for input: {}", input);
+        assert_eq!(result, expected, "Failed for input: {input}");
     }
 }
 
@@ -271,9 +271,9 @@ fn test_yaml_numeric_comparisons() {
         let result = stdout.trim();
 
         if should_match {
-            assert_eq!(result, "match", "Expected match for filter '{}'", filter);
+            assert_eq!(result, "match", "Expected match for filter '{filter}'");
         } else {
-            assert_eq!(result, "", "Expected empty output for filter '{}'", filter);
+            assert_eq!(result, "", "Expected empty output for filter '{filter}'");
         }
     }
 }
@@ -320,9 +320,9 @@ fn test_yaml_string_operations() {
         let result = stdout.trim();
 
         if should_match {
-            assert_eq!(result, "match", "Expected match for filter '{}'", filter);
+            assert_eq!(result, "match", "Expected match for filter '{filter}'");
         } else {
-            assert_eq!(result, "", "Expected empty output for filter '{}'", filter);
+            assert_eq!(result, "", "Expected empty output for filter '{filter}'");
         }
     }
 }
@@ -394,9 +394,9 @@ fn test_yaml_boolean_logic() {
         let result = stdout.trim();
 
         if should_match {
-            assert_eq!(result, "match", "Expected match for filter '{}'", filter);
+            assert_eq!(result, "match", "Expected match for filter '{filter}'");
         } else {
-            assert_eq!(result, "", "Expected empty output for filter '{}'", filter);
+            assert_eq!(result, "", "Expected empty output for filter '{filter}'");
         }
     }
 }
@@ -442,8 +442,7 @@ fn test_yaml_flow_syntax() {
         let result = stdout.trim();
         assert_eq!(
             result, expected,
-            "Failed for selector: {} with input: {}",
-            field_selector, input
+            "Failed for selector: {field_selector} with input: {input}",
         );
     }
 }
@@ -524,7 +523,7 @@ fn test_yaml_nested_field_access() {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let result = stdout.trim();
-        assert_eq!(result, expected, "Failed for selector: {}", field_selector);
+        assert_eq!(result, expected, "Failed for selector: {field_selector}");
     }
 }
 
@@ -584,9 +583,9 @@ fn test_yaml_complex_filtering() {
         let result = stdout.trim();
 
         if should_match {
-            assert_eq!(result, "match", "Expected match for filter '{}'", filter);
+            assert_eq!(result, "match", "Expected match for filter '{filter}'");
         } else {
-            assert_eq!(result, "", "Expected empty output for filter '{}'", filter);
+            assert_eq!(result, "", "Expected empty output for filter '{filter}'");
         }
     }
 }
@@ -695,6 +694,6 @@ fn test_yaml_empty_values() {
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let result = stdout.trim();
-        assert_eq!(result, expected, "Failed for input: {}", input);
+        assert_eq!(result, expected, "Failed for input: {input}",);
     }
 }

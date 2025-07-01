@@ -527,7 +527,7 @@ pub fn process_stream<R: BufRead, W: Write>(
                 if line_count == 1 {
                     return Err(Box::new(e));
                 } else {
-                    eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
+                    eprintln!("Warning: Failed to parse line {line_count}: {e}");
                 }
             }
         }
@@ -560,7 +560,7 @@ pub fn process_stream_with_dsl<R: BufRead, W: Write>(
                 // Handle field selection
                 if let Some(ref field_selector) = dsl.field_selector {
                     if let Some(field_value) = field_selector.extract_field(&json_value) {
-                        writeln!(writer, "{}", field_value)?;
+                        writeln!(writer, "{field_value}")?;
                     }
                     continue;
                 }
@@ -579,14 +579,14 @@ pub fn process_stream_with_dsl<R: BufRead, W: Write>(
                         serde_json::to_string(&json_value)?
                     };
 
-                    writeln!(writer, "{}", output)?;
+                    writeln!(writer, "{output}")?;
                 }
             }
             Err(e) => {
                 if line_count == 1 {
                     return Err(Box::new(e));
                 } else {
-                    eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
+                    eprintln!("Warning: Failed to parse line {line_count}: {e}");
                 }
             }
         }
@@ -612,7 +612,7 @@ fn convert_to_json(
             let mut obj = serde_json::Map::new();
             obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             for (i, field) in record.iter().enumerate() {
-                obj.insert(format!("field_{}", i), Value::String(field.to_string()));
+                obj.insert(format!("field_{i}"), Value::String(field.to_string()));
             }
             let values: Vec<Value> = record
                 .iter()
@@ -645,7 +645,8 @@ fn convert_to_json(
             let mut obj = serde_json::Map::new();
             obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             for (i, word) in words.iter().enumerate() {
-                obj.insert(format!("word_{}", i), Value::String(word.clone()));
+                let word = Value::String(word.clone());
+                obj.insert(format!("word_{i}"), word);
             }
             let values: Vec<Value> = words.into_iter().map(Value::String).collect();
             obj.insert("_array".to_string(), Value::Array(values));

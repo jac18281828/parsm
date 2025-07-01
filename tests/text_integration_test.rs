@@ -9,7 +9,7 @@ fn test_text_field_selection() {
     let input = "hello world test\nquick brown fox\njumps over lazy";
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
         .arg("word_0") // First word
@@ -17,7 +17,7 @@ fn test_text_field_selection() {
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -42,11 +42,11 @@ fn test_text_array_access() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -71,11 +71,11 @@ fn test_text_template_rendering() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -101,11 +101,11 @@ fn test_text_dollar_template_syntax() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -123,7 +123,7 @@ fn test_text_filter_operations() {
         "error connection failed\ninfo server started\nerror database timeout\nwarn memory high";
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     // Test filtering by first word
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -132,7 +132,7 @@ fn test_text_filter_operations() {
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -149,7 +149,7 @@ fn test_text_filter_with_template() {
     let input = "error connection failed retry\ninfo server started successfully\nerror database timeout critical\nwarn memory high alert";
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     // Filter error entries and format them
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -158,7 +158,7 @@ fn test_text_filter_with_template() {
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -181,11 +181,11 @@ fn test_text_format_detection() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -222,7 +222,7 @@ fn test_text_empty_lines() {
     let input = "hello world\n\n   \nfoo bar\n";
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
         .arg("word_0")
@@ -230,7 +230,7 @@ fn test_text_empty_lines() {
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -255,11 +255,11 @@ fn test_text_single_word() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -285,11 +285,11 @@ fn test_text_multiple_spaces() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -314,11 +314,11 @@ fn test_text_nonexistent_field() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -341,11 +341,11 @@ fn test_text_original_input_template() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -361,7 +361,7 @@ fn test_text_complex_filtering() {
     let input = "error network timeout critical\ninfo server started normal\nerror disk full critical\nwarn memory high normal\ninfo backup completed normal";
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     // Filter for errors that are critical
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -370,7 +370,7 @@ fn test_text_complex_filtering() {
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -387,7 +387,7 @@ fn test_text_error_handling() {
     let input = "good line one\n\nbad line with weird characters: @#$%\ngood line two";
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
         .arg("word_0")
@@ -396,7 +396,7 @@ fn test_text_error_handling() {
         .expect("run parsm");
 
     // Should succeed and process all lines (text format is very permissive)
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -412,11 +412,11 @@ fn test_text_performance_large_dataset() {
     // Test performance with a larger text dataset
     let mut input = String::new();
     for i in 1..=100 {
-        input.push_str(&format!("entry {} processing data item number {}\n", i, i));
+        input.push_str(&format!("entry {i} processing data item number {i}\n"));
     }
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     let start_time = std::time::Instant::now();
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -426,7 +426,7 @@ fn test_text_performance_large_dataset() {
         .expect("run parsm");
     let duration = start_time.elapsed();
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -437,8 +437,7 @@ fn test_text_performance_large_dataset() {
     // Should process reasonably quickly
     assert!(
         duration.as_millis() < 1000,
-        "Processing took too long: {:?}",
-        duration
+        "Processing took too long: {duration:?}"
     );
 }
 
@@ -448,7 +447,7 @@ fn test_text_string_operations() {
     let input = "user alice logged in\nuser bob failed login\nuser charlie logged out\nadmin alice system check";
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     // Filter for lines containing "alice"
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -457,7 +456,7 @@ fn test_text_string_operations() {
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -483,11 +482,11 @@ fn test_text_mixed_content() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();

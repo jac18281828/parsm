@@ -167,8 +167,8 @@ impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParseError::UnknownFormat => write!(f, "Unable to detect format"),
-            ParseError::InvalidFormat(format) => write!(f, "Invalid {:?} format", format),
-            ParseError::IoError(err) => write!(f, "IO error: {}", err),
+            ParseError::InvalidFormat(format) => write!(f, "Invalid {format:?} format"),
+            ParseError::IoError(err) => write!(f, "IO error: {err}"),
         }
     }
 }
@@ -235,8 +235,8 @@ pub fn process_stream<R: BufRead, W: Write>(
                     return Err(Box::new(e));
                 } else {
                     // For subsequent lines, just warn and continue
-                    eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
-                    eprintln!("Line content: {}", line);
+                    eprintln!("Warning: Failed to parse line {line_count}: {e}");
+                    eprintln!("Line content: {line}");
                 }
             }
         }
@@ -742,8 +742,7 @@ name = "Charlie""#;
         let mut input = String::new();
         for i in 1..=100 {
             input.push_str(&format!(
-                r#"{{"id": {}, "user": "user{}", "active": true}}"#,
-                i, i
+                r#"{{"id": {i}, "user": "user{i}", "active": true}}"#,
             ));
             input.push('\n');
         }
@@ -805,10 +804,7 @@ this,is,csv,but,should,fail
         // This test uses a reasonable number of records to verify streaming behavior
         let mut input = String::new();
         for i in 1..=50 {
-            input.push_str(&format!(
-                r#"level=info msg="Processing record {}" id={}"#,
-                i, i
-            ));
+            input.push_str(&format!(r#"level=info msg="Processing record {i}" id={i}"#));
             input.push('\n');
         }
 

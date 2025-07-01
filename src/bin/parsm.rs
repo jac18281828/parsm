@@ -48,12 +48,12 @@ fn main() {
             let parsed_dsl = match parse_separate_expressions(Some(filter), Some(template)) {
                 Ok(dsl) => dsl,
                 Err(e) => {
-                    eprintln!("Error parsing filter and template expression: {}", e);
+                    eprintln!("Error parsing filter and template expression: {e}");
                     std::process::exit(1);
                 }
             };
             if let Err(e) = process_stream_with_filter(parsed_dsl) {
-                eprintln!("Error processing stream: {}", e);
+                eprintln!("Error processing stream: {e}");
                 std::process::exit(1);
             }
         }
@@ -61,12 +61,12 @@ fn main() {
             let parsed_dsl = match parse_separate_expressions(None, Some(template)) {
                 Ok(dsl) => dsl,
                 Err(e) => {
-                    eprintln!("Error parsing template expression: {}", e);
+                    eprintln!("Error parsing template expression: {e}");
                     std::process::exit(1);
                 }
             };
             if let Err(e) = process_stream_with_filter(parsed_dsl) {
-                eprintln!("Error processing stream: {}", e);
+                eprintln!("Error processing stream: {e}");
                 std::process::exit(1);
             }
         }
@@ -74,12 +74,12 @@ fn main() {
             let parsed_dsl = match parse_command(filter) {
                 Ok(dsl) => dsl,
                 Err(e) => {
-                    eprintln!("Error parsing expression: {}", e);
+                    eprintln!("Error parsing expression: {e}");
                     std::process::exit(1);
                 }
             };
             if let Err(e) = process_stream_with_filter(parsed_dsl) {
-                eprintln!("Error processing stream: {}", e);
+                eprintln!("Error processing stream: {e}");
                 std::process::exit(1);
             }
         }
@@ -87,12 +87,12 @@ fn main() {
             let parsed_dsl = match parse_separate_expressions(None, Some(template)) {
                 Ok(dsl) => dsl,
                 Err(e) => {
-                    eprintln!("Error parsing template expression: {}", e);
+                    eprintln!("Error parsing template expression: {e}");
                     std::process::exit(1);
                 }
             };
             if let Err(e) = process_stream_with_filter(parsed_dsl) {
-                eprintln!("Error processing stream: {}", e);
+                eprintln!("Error processing stream: {e}");
                 std::process::exit(1);
             }
         }
@@ -101,7 +101,7 @@ fn main() {
             let mut stdout = io::stdout();
 
             if let Err(e) = process_stream(stdin.lock(), &mut stdout) {
-                eprintln!("Error processing stream: {}", e);
+                eprintln!("Error processing stream: {e}");
                 std::process::exit(1);
             }
         }
@@ -141,7 +141,7 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
                     if let Some(ref field_selector) = dsl.field_selector {
                         for item in arr {
                             if let Some(extracted) = field_selector.extract_field(item) {
-                                writeln!(writer, "{}", extracted)?;
+                                writeln!(writer, "{extracted}")?;
                             }
                         }
                         return Ok(());
@@ -163,7 +163,7 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
                 _ => {
                     if let Some(ref field_selector) = dsl.field_selector {
                         if let Some(extracted) = field_selector.extract_field(&json_value) {
-                            writeln!(writer, "{}", extracted)?;
+                            writeln!(writer, "{extracted}")?;
                         }
                         return Ok(());
                     } else {
@@ -208,7 +208,7 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
                     Ok(parsed_line) => {
                         let json_value = convert_parsed_line_to_json(parsed_line, line)?;
                         if let Some(extracted) = field_selector.extract_field(&json_value) {
-                            writeln!(writer, "{}", extracted)?;
+                            writeln!(writer, "{extracted}")?;
                         } else {
                             writeln!(writer)?;
                             eprintln!(
@@ -222,8 +222,8 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
                         if line_count == 1 {
                             return Err(Box::new(e));
                         } else {
-                            eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
-                            eprintln!("Line content: {}", line);
+                            eprintln!("Warning: Failed to parse line {line_count}: {e}");
+                            eprintln!("Line content: {line}");
                         }
                     }
                 }
@@ -250,8 +250,8 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
                         if line_count == 1 {
                             return Err(Box::new(e));
                         } else {
-                            eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
-                            eprintln!("Line content: {}", line);
+                            eprintln!("Warning: Failed to parse line {line_count}: {e}");
+                            eprintln!("Line content: {line}");
                         }
                     }
                 }
@@ -287,15 +287,15 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
                         } else {
                             serde_json::to_string(&json_value)?
                         };
-                        writeln!(writer, "{}", output)?;
+                        writeln!(writer, "{output}")?;
                     }
                 }
                 Err(e) => {
                     if line_count == 1 {
                         return Err(Box::new(e));
                     } else {
-                        eprintln!("Warning: Failed to parse line {}: {}", line_count, e);
-                        eprintln!("Line content: {}", line);
+                        eprintln!("Warning: Failed to parse line {line_count}: {e}");
+                        eprintln!("Line content: {line}");
                     }
                 }
             }
@@ -334,7 +334,7 @@ fn convert_parsed_line_to_json(
             let mut obj = serde_json::Map::new();
             obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             for (i, field) in record.iter().enumerate() {
-                obj.insert(format!("field_{}", i), Value::String(field.to_string()));
+                obj.insert(format!("field_{i}"), Value::String(field.to_string()));
             }
             let values: Vec<Value> = record
                 .iter()
@@ -367,7 +367,7 @@ fn convert_parsed_line_to_json(
             let mut obj = serde_json::Map::new();
             obj.insert("$0".to_string(), Value::String(original_input.to_string()));
             for (i, word) in words.iter().enumerate() {
-                obj.insert(format!("word_{}", i), Value::String(word.clone()));
+                obj.insert(format!("word_{i}"), Value::String(word.clone()));
             }
             let values: Vec<Value> = words.into_iter().map(Value::String).collect();
             obj.insert("_array".to_string(), Value::Array(values));
@@ -598,7 +598,7 @@ fn process_single_value(
     if passes_filter {
         if let Some(ref field_selector) = dsl.field_selector {
             if let Some(extracted) = field_selector.extract_field(value) {
-                writeln!(writer, "{}", extracted)?;
+                writeln!(writer, "{extracted}")?;
             }
         } else {
             let output = if let Some(ref template) = dsl.template {
@@ -606,7 +606,7 @@ fn process_single_value(
             } else {
                 serde_json::to_string(value)?
             };
-            writeln!(writer, "{}", output)?;
+            writeln!(writer, "{output}")?;
         }
     }
     Ok(())

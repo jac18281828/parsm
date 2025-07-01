@@ -12,7 +12,7 @@ fn test_json_array_field_selection() {
     ]"#;
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
         .arg("\"State\"")
@@ -20,7 +20,7 @@ fn test_json_array_field_selection() {
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     // Should output two pretty-printed State objects
@@ -45,7 +45,7 @@ fn test_json_object_field_selection() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -74,7 +74,7 @@ fn test_json_nested_field_selection() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -103,7 +103,7 @@ fn test_json_filter_and_template() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -135,7 +135,7 @@ fn test_json_template_with_original_input() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -147,7 +147,7 @@ fn test_json_template_with_original_input() {
 
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(stdout.contains("Result: Dana scored 95 points"));
-    assert!(stdout.contains(&format!("Original: {}", input)));
+    assert!(stdout.contains(&format!("Original: {input}")));
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn test_json_complex_filtering() {
 
         let stdin = child.stdin.take().expect("get stdin");
         let mut stdin = stdin;
-        write!(stdin, "{}", input).expect("write to stdin");
+        write!(stdin, "{input}").expect("write to stdin");
         drop(stdin);
 
         let result = child.wait_with_output().expect("wait for output");
@@ -188,12 +188,11 @@ fn test_json_complex_filtering() {
         if should_match {
             assert!(
                 !stdout.trim().is_empty(),
-                "Expected output for input: {}",
-                input
+                "Expected output for input: {input}"
             );
             assert!(stdout.contains("Found:"));
         } else {
-            assert_eq!(stdout.trim(), "", "Expected no output for input: {}", input);
+            assert_eq!(stdout.trim(), "", "Expected no output for input: {input}");
         }
     }
 }
@@ -213,7 +212,7 @@ fn test_json_field_selection_nonexistent() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -237,7 +236,7 @@ fn test_json_array_of_primitives() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -264,7 +263,7 @@ fn test_json_malformed_input() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -291,7 +290,7 @@ fn test_json_replacement_template() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -324,7 +323,7 @@ fn test_json_string_operations() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -345,7 +344,7 @@ fn test_json_numeric_comparisons() {
 
     for (input, filter, should_match) in test_cases {
         let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
-            .arg(format!("{} {{Match found - ${{score}}}}", filter))
+            .arg(format!("{filter} {{Match found - ${{score}}}}"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -354,7 +353,7 @@ fn test_json_numeric_comparisons() {
 
         let stdin = child.stdin.take().expect("get stdin");
         let mut stdin = stdin;
-        write!(stdin, "{}", input).expect("write to stdin");
+        write!(stdin, "{input}").expect("write to stdin");
         drop(stdin);
 
         let result = child.wait_with_output().expect("wait for output");
@@ -363,17 +362,13 @@ fn test_json_numeric_comparisons() {
         if should_match {
             assert!(
                 stdout.contains("Match found"),
-                "Expected match for: {} with filter: {}",
-                input,
-                filter
+                "Expected match for: {input} with filter: {filter}"
             );
         } else {
             assert_eq!(
                 stdout.trim(),
                 "",
-                "Expected no match for: {} with filter: {}",
-                input,
-                filter
+                "Expected no match for: {input} with filter: {filter}"
             );
         }
     }
@@ -395,7 +390,7 @@ fn test_json_boolean_logic() {
 
     for (filter, should_match) in test_cases {
         let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
-            .arg(format!("{} {{Boolean test passed - ${{active}}}}", filter))
+            .arg(format!("{filter} {{Boolean test passed - ${{active}}}}"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -404,7 +399,7 @@ fn test_json_boolean_logic() {
 
         let stdin = child.stdin.take().expect("get stdin");
         let mut stdin = stdin;
-        write!(stdin, "{}", input).expect("write to stdin");
+        write!(stdin, "{input}").expect("write to stdin");
         drop(stdin);
 
         let result = child.wait_with_output().expect("wait for output");
@@ -413,16 +408,10 @@ fn test_json_boolean_logic() {
         if should_match {
             assert!(
                 stdout.contains("Boolean test passed"),
-                "Expected match for filter: {}",
-                filter
+                "Expected match for filter: {filter}",
             );
         } else {
-            assert_eq!(
-                stdout.trim(),
-                "",
-                "Expected no match for filter: {}",
-                filter
-            );
+            assert_eq!(stdout.trim(), "", "Expected no match for filter: {filter}",);
         }
     }
 }
@@ -442,7 +431,7 @@ fn test_json_braced_field_syntax() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");
@@ -472,7 +461,7 @@ fn test_json_null_handling() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let result = child.wait_with_output().expect("wait for output");

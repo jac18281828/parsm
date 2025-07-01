@@ -76,9 +76,7 @@ fn test_toml_field_types() {
         assert_eq!(
             stdout.trim(),
             expected,
-            "Mismatch for input '{}' with field '{}'",
-            input,
-            field
+            "Mismatch for input '{input}' with field '{field}'",
         );
     }
 }
@@ -400,21 +398,16 @@ fn test_toml_string_operations() {
         if should_match {
             assert!(
                 !stdout.trim().is_empty(),
-                "Expected match for '{}' with filter '{}'",
-                input,
-                filter
+                "Expected match for '{input}' with filter '{filter}'"
             );
             assert!(
                 stdout.contains("String ops test"),
-                "Expected output to contain test message for '{}'",
-                input
+                "Expected output to contain test message for '{input}'"
             );
         } else {
             assert!(
                 stdout.trim().is_empty(),
-                "Expected no match for '{}' with filter '{}'",
-                input,
-                filter
+                "Expected no match for '{input}' with filter '{filter}'"
             );
         }
     }
@@ -463,21 +456,16 @@ fn test_toml_numeric_comparisons() {
         if should_match {
             assert!(
                 !stdout.trim().is_empty(),
-                "Expected match for '{}' with filter '{}'",
-                input,
-                filter
+                "Expected match for '{input}' with filter '{filter}'"
             );
             assert!(
                 stdout.contains("Numeric test"),
-                "Expected output to contain test message for '{}'",
-                input
+                "Expected output to contain test message for '{input}'"
             );
         } else {
             assert!(
                 stdout.trim().is_empty(),
-                "Expected no match for '{}' with filter '{}'",
-                input,
-                filter
+                "Expected no match for '{input}' with filter '{filter}'"
             );
         }
     }
@@ -523,19 +511,16 @@ fn test_toml_boolean_logic() {
         if should_match {
             assert!(
                 !stdout.trim().is_empty(),
-                "Expected match for filter '{}'",
-                filter
+                "Expected match for filter '{filter}'"
             );
             assert!(
                 stdout.contains("Boolean test passed"),
-                "Expected output to contain test message for '{}'",
-                filter
+                "Expected output to contain test message for '{filter}'"
             );
         } else {
             assert!(
                 stdout.trim().is_empty(),
-                "Expected no match for filter '{}'",
-                filter
+                "Expected no match for filter '{filter}'"
             );
         }
     }
@@ -602,9 +587,7 @@ score = 85.5"#;
             // Should match no lines (empty output)
             assert!(
                 lines.is_empty() || (lines.len() == 1 && lines[0].is_empty()),
-                "Expected no matches for filter '{}', got {:?}",
-                filter,
-                lines
+                "Expected no matches for filter '{filter}', got {lines:?}",
             );
         }
     }
@@ -653,7 +636,7 @@ fn test_toml_malformed_input() {
             );
         } else {
             // If failed, that's also acceptable for malformed input
-            println!("Malformed input '{}' correctly rejected", input);
+            println!("Malformed input '{input}' correctly rejected");
         }
     }
 }

@@ -11,7 +11,7 @@ level=error msg="Database connection failed" service=api code=500
 level=warn msg="High memory usage" service=worker memory=85%"#;
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
         .arg("level")
@@ -19,7 +19,7 @@ level=warn msg="High memory usage" service=worker memory=85%"#;
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -45,11 +45,11 @@ timestamp="2023-12-01T10:01:00Z" level=info msg="User logout" user_id=456 user_n
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -68,7 +68,7 @@ level=info msg="Request completed" duration=100ms status=200
 level=warn msg="Slow request" duration=3000ms status=200"#;
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     // Test filtering by level
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -77,7 +77,7 @@ level=warn msg="Slow request" duration=3000ms status=200"#;
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -103,11 +103,11 @@ timestamp="2023-12-01T10:01:00Z" level=warn msg="Failed login attempt" user_id=4
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -126,7 +126,7 @@ level=error msg="Request" method=GET status=500 duration=5000ms
 level=info msg="Request" method=PUT status=200 duration=200ms"#;
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     // Filter successful requests and format them
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -135,7 +135,7 @@ level=info msg="Request" method=PUT status=200 duration=200ms"#;
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -160,11 +160,11 @@ level=error msg=\"Failed to load config file\" error=\"not found\""#;
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -181,7 +181,7 @@ fn test_logfmt_mixed_value_types() {
 timestamp=1701417661 level=error msg="Database error" endpoint="/orders" response_time=5000 success=false error_code=DB_TIMEOUT"#;
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     // Test template with mixed value types
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -190,7 +190,7 @@ timestamp=1701417661 level=error msg="Database error" endpoint="/orders" respons
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -209,7 +209,7 @@ level=info service=worker method=PUT status=200 duration=150
 level=warn service=worker method=DELETE status=404 duration=200"#;
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     // Filter for API service with successful status codes
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -218,7 +218,7 @@ level=warn service=worker method=DELETE status=404 duration=200"#;
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -244,11 +244,11 @@ level=warn msg="Rate limit exceeded" user=bob action=api_call timestamp=17014176
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -265,7 +265,7 @@ fn test_logfmt_empty_and_special_values() {
 level=debug msg="Special chars: []{}()" path="/api/v1/test" query="?param=value&other=test""#;
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     // Test field selection on empty values
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -274,7 +274,7 @@ level=debug msg="Special chars: []{}()" path="/api/v1/test" query="?param=value&
         .output()
         .expect("run parsm");
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.split('\n').collect();
     // Remove only the last empty line if it exists (from final newline)
@@ -303,11 +303,11 @@ fn test_logfmt_format_detection() {
 
     let stdin = child.stdin.take().expect("get stdin");
     let mut stdin = stdin;
-    write!(stdin, "{}", input).expect("write to stdin");
+    write!(stdin, "{input}").expect("write to stdin");
     drop(stdin);
 
     let output = child.wait_with_output().expect("wait for parsm");
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
@@ -330,7 +330,7 @@ malformed entry without equals
 level=error msg="Another good entry" status=500"#;
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
         .arg("level")
@@ -339,7 +339,7 @@ level=error msg="Another good entry" status=500"#;
         .expect("run parsm");
 
     // Should succeed but only process valid logfmt lines
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -355,16 +355,16 @@ fn test_logfmt_performance_large_dataset() {
     let mut input = String::new();
     for i in 1..=100 {
         input.push_str(&format!(
-            "timestamp={} level=info msg=\"Processing request {}\" user_id={} duration={}ms\n",
-            1701417600 + i,
-            i,
-            1000 + i,
-            50 + (i % 200)
+            "timestamp={timestamp} level=info msg=\"Processing request {i}\" user_id={user_id} duration={duration}ms\n",
+            timestamp = 1701417600 + i,
+            i = i,
+            user_id = 1000 + i,
+            duration = 50 + (i % 200)
         ));
     }
 
     let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{}", input).expect("write temp file");
+    write!(file, "{input}").expect("write temp file");
 
     let start_time = std::time::Instant::now();
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
@@ -374,7 +374,7 @@ fn test_logfmt_performance_large_dataset() {
         .expect("run parsm");
     let duration = start_time.elapsed();
 
-    assert!(output.status.success(), "parsm failed: {:?}", output);
+    assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
@@ -385,7 +385,6 @@ fn test_logfmt_performance_large_dataset() {
     // Should process reasonably quickly
     assert!(
         duration.as_millis() < 1000,
-        "Processing took too long: {:?}",
-        duration
+        "Processing took too long: {duration:?}"
     );
 }

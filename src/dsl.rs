@@ -145,8 +145,7 @@ impl DSLParser {
                     return Err(Box::new(pest::error::Error::new_from_pos(
                         pest::error::ErrorVariant::CustomError {
                             message: format!(
-                                "Could not parse '{}' as filter expression or field selector",
-                                filter_str
+                                "Could not parse '{filter_str}' as filter expression or field selector",
                             ),
                         },
                         pest::Position::new(filter_str, 0).unwrap(),
@@ -156,8 +155,7 @@ impl DSLParser {
                 return Err(Box::new(pest::error::Error::new_from_pos(
                     pest::error::ErrorVariant::CustomError {
                         message: format!(
-                            "Could not parse '{}' as filter expression or field selector",
-                            filter_str
+                            "Could not parse '{filter_str}' as filter expression or field selector",
                         ),
                     },
                     pest::Position::new(filter_str, 0).unwrap(),
@@ -171,7 +169,7 @@ impl DSLParser {
             } else {
                 return Err(Box::new(pest::error::Error::new_from_pos(
                     pest::error::ErrorVariant::CustomError {
-                        message: format!("Could not parse '{}' as template", template_str),
+                        message: format!("Could not parse '{template_str}' as template"),
                     },
                     pest::Position::new(template_str, 0).unwrap(),
                 )));
@@ -634,8 +632,7 @@ pub fn parse_command(input: &str) -> Result<ParsedDSL, Box<dyn std::error::Error
 
             // If all else fails, provide a helpful error
             Err(format!(
-                "Could not parse '{}'. Try:\n  - Templates: {{name}}, $name, or Hello $name\n  - Filters: name == \"value\" or age > 25\n  - Field selectors: name or \"field name\"",
-                trimmed
+                "Could not parse '{trimmed}'. Try:\n  - Templates: {{name}}, $name, or Hello $name\n  - Filters: name == \"value\" or age > 25\n  - Field selectors: name or \"field name\""
             ).into())
         }
     }
@@ -883,7 +880,7 @@ fn parse_simple_filter(input: &str) -> Result<FilterExpr, Box<dyn std::error::Er
     Err("Could not parse as simple filter".into())
 }
 
-/// Try to parse boolean expressions with truthy field evaluation
+/// Try to parse boolean expressions with truthy fields
 fn try_boolean_with_truthy_fields(input: &str) -> Result<ParsedDSL, Box<dyn std::error::Error>> {
     // Very conservative approach: only handle expressions with explicit boolean operators
     // AND only if the expression contains some explicit comparisons OR looks like pure field boolean logic
@@ -945,8 +942,7 @@ fn try_parse_single_boolean_term(term: &str) -> Result<FilterExpr, Box<dyn std::
             ))));
         } else {
             return Err(format!(
-                "Cannot parse '!{}' as boolean term - field not recognized for truthy evaluation",
-                field_part
+                "Cannot parse '!{field_part}' as boolean term - field not recognized for truthy evaluation"
             )
             .into());
         }
@@ -968,11 +964,7 @@ fn try_parse_single_boolean_term(term: &str) -> Result<FilterExpr, Box<dyn std::
         let field_path = parse_field_name_for_truthy(trimmed);
         Ok(FilterExpr::FieldTruthy(field_path))
     } else {
-        Err(format!(
-            "Cannot parse '{}' as boolean term - use explicit comparison",
-            trimmed
-        )
-        .into())
+        Err(format!("Cannot parse '{trimmed}' as boolean term - use explicit comparison").into())
     }
 }
 
@@ -1202,7 +1194,7 @@ mod tests {
     fn test_combined_expression_simple() {
         // Test a simple combined filter + template
         let simple_pattern = r#"field_1 > "25" {name: ${field_0}}"#;
-        println!("Testing simple pattern: {}", simple_pattern);
+        println!("Testing simple pattern: {simple_pattern}");
 
         match parse_command(simple_pattern) {
             Ok(result) => {
@@ -1212,13 +1204,13 @@ mod tests {
                 println!("  Field selector: {:?}", result.field_selector.is_some());
             }
             Err(e) => {
-                println!("✗ Simple pattern failed: {}", e);
+                println!("✗ Simple pattern failed: {e}");
             }
         }
 
         // Test the complex pattern
         let complex_pattern = r#"field_1 > "25" {{"name": "${field_0}", "age": "${field_1}", "role": "${field_2}", "senior": true}}"#;
-        println!("\nTesting complex pattern: {}", complex_pattern);
+        println!("\nTesting complex pattern: {complex_pattern}");
 
         match parse_command(complex_pattern) {
             Ok(result) => {
@@ -1228,7 +1220,7 @@ mod tests {
                 println!("  Field selector: {:?}", result.field_selector.is_some());
             }
             Err(e) => {
-                println!("✗ Complex pattern failed: {}", e);
+                println!("✗ Complex pattern failed: {e}");
             }
         }
     }
@@ -1375,135 +1367,108 @@ mod tests {
 
             match expected_type {
                 "template" => {
-                    assert!(result.is_ok(), "Template '{}' should parse", input);
+                    assert!(result.is_ok(), "Template '{input}' should parse");
                     let parsed = result.unwrap();
                     assert!(
                         parsed.template.is_some(),
-                        "Input '{}' should be template",
-                        input
+                        "Input '{input}' should be template"
                     );
                     assert!(
                         parsed.filter.is_none(),
-                        "Input '{}' should not be filter",
-                        input
+                        "Input '{input}' should not be filter"
                     );
                     assert!(
                         parsed.field_selector.is_none(),
-                        "Input '{}' should not be field selector",
-                        input
+                        "Input '{input}' should not be field selector"
                     );
                 }
                 "field_selector" => {
-                    assert!(result.is_ok(), "Field selector '{}' should parse", input);
+                    assert!(result.is_ok(), "Field selector '{input}' should parse");
                     let parsed = result.unwrap();
                     assert!(
                         parsed.field_selector.is_some(),
-                        "Input '{}' should be field selector",
-                        input
+                        "Input '{input}' should be field selector"
                     );
                     assert!(
                         parsed.filter.is_none(),
-                        "Input '{}' should not be filter",
-                        input
+                        "Input '{input}' should not be filter"
                     );
                     assert!(
                         parsed.template.is_none(),
-                        "Input '{}' should not be template",
-                        input
+                        "Input '{input}' should not be template"
                     );
                 }
                 "filter" => {
-                    assert!(result.is_ok(), "Filter '{}' should parse", input);
+                    assert!(result.is_ok(), "Filter '{input}' should parse");
                     let parsed = result.unwrap();
-                    assert!(
-                        parsed.filter.is_some(),
-                        "Input '{}' should be filter",
-                        input
-                    );
+                    assert!(parsed.filter.is_some(), "Input '{input}' should be filter");
                     assert!(
                         parsed.template.is_none(),
-                        "Input '{}' should not be template",
-                        input
+                        "Input '{input}' should not be template"
                     );
                     assert!(
                         parsed.field_selector.is_none(),
-                        "Input '{}' should not be field selector",
-                        input
+                        "Input '{input}' should not be field selector"
                     );
                 }
                 "combined" => {
-                    assert!(result.is_ok(), "Combined '{}' should parse", input);
+                    assert!(result.is_ok(), "Combined '{input}' should parse");
                     let parsed = result.unwrap();
                     assert!(
                         parsed.filter.is_some(),
-                        "Input '{}' should have filter",
-                        input
+                        "Input '{input}' should have filter"
                     );
                     assert!(
                         parsed.template.is_some(),
-                        "Input '{}' should have template",
-                        input
+                        "Input '{input}' should have template"
                     );
                     assert!(
                         parsed.field_selector.is_none(),
-                        "Input '{}' should not be field selector",
-                        input
+                        "Input '{input}' should not be field selector"
                     );
                 }
                 "literal_template" => {
-                    assert!(result.is_ok(), "Literal template '{}' should parse", input);
+                    assert!(result.is_ok(), "Literal template '{input}' should parse");
                     let parsed = result.unwrap();
                     assert!(
                         parsed.template.is_some(),
-                        "Input '{}' should be template",
-                        input
+                        "Input '{input}' should be template"
                     );
                     assert!(
                         parsed.filter.is_none(),
-                        "Input '{}' should not be filter",
-                        input
+                        "Input '{input}' should not be filter"
                     );
                     assert!(
                         parsed.field_selector.is_none(),
-                        "Input '{}' should not be field selector",
-                        input
+                        "Input '{input}' should not be field selector"
                     );
                     // Check that it's a literal, not a field
                     let template = parsed.template.unwrap();
                     if template.items.len() == 1 {
-                        match &template.items[0] {
-                            TemplateItem::Literal(_) => {
-                                // Expected behavior
-                            }
-                            TemplateItem::Field(_) => {
-                                panic!(
-                                    "Input '{}' should be literal template, not field template",
-                                    input
-                                );
-                            }
+                        if let TemplateItem::Literal(_) = &template.items[0] {
+                            // ok
+                        } else {
+                            panic!(
+                                "Input '{input}' should be literal template, not field template"
+                            );
                         }
                     }
                 }
                 "literal_or_error" => {
-                    if result.is_ok() {
-                        let parsed = result.unwrap();
-                        if parsed.template.is_some() {
-                            // If it parses as template, check that it's literal
-                            let template = parsed.template.unwrap();
+                    // Accept either literal template or error
+                    if let Ok(parsed) = result {
+                        if let Some(template) = parsed.template {
                             if template.items.len() == 1 {
-                                match &template.items[0] {
-                                    TemplateItem::Literal(text) => assert_eq!(text, input),
-                                    _ => {
-                                        // Acceptable - might be parsed differently
-                                    }
+                                if let TemplateItem::Literal(_) = &template.items[0] {
+                                    // ok
+                                } else {
+                                    panic!("Input '{input}' should be literal template, not field template");
                                 }
                             }
                         }
-                        // Other parse results are also acceptable for invalid syntax
                     }
-                    // Errors are also acceptable for invalid syntax
                 }
-                _ => panic!("Unknown expected type: {}", expected_type),
+                _ => panic!("Unknown expected type: {expected_type}"),
             }
         }
     }
@@ -1523,18 +1488,18 @@ mod tests {
         ];
 
         for test in test_cases {
-            println!("\nTesting: {}", test);
+            println!("\nTesting: {test}");
             match parse_command(test) {
                 Ok(result) => {
                     println!("  Filter: {:?}", result.filter.is_some());
                     println!("  Template: {:?}", result.template.is_some());
                     println!("  Field selector: {:?}", result.field_selector.is_some());
                     if let Some(filter) = result.filter {
-                        println!("  Filter type: {:?}", filter);
+                        println!("  Filter type: {filter:?}");
                     }
                 }
                 Err(e) => {
-                    println!("  Error: {}", e);
+                    println!("  Error: {e}");
                 }
             }
         }
@@ -1554,18 +1519,18 @@ mod tests {
         ];
 
         for test in test_cases {
-            println!("\nTesting: {}", test);
+            println!("\nTesting: {test}");
             match parse_command(test) {
                 Ok(result) => {
                     println!("  Filter: {:?}", result.filter.is_some());
                     println!("  Template: {:?}", result.template.is_some());
                     println!("  Field selector: {:?}", result.field_selector.is_some());
                     if let Some(filter) = result.filter {
-                        println!("  Filter type: {:?}", filter);
+                        println!("  Filter type: {filter:?}");
                     }
                 }
                 Err(e) => {
-                    println!("  Error: {}", e);
+                    println!("  Error: {e}");
                 }
             }
         }
@@ -1579,7 +1544,7 @@ mod tests {
                 assert!(result.filter.is_some(), "Should parse as filter");
                 println!("✓ field_2 && field_3 parsed successfully");
             }
-            Err(e) => panic!("field_2 && field_3 should work: {}", e),
+            Err(e) => panic!("field_2 && field_3 should work: {e}"),
         }
 
         // Test that undefined_field && field_2 fails (undefined field)
@@ -1602,7 +1567,7 @@ mod tests {
                 assert!(result.filter.is_none(), "Should not be filter");
                 println!("✓ bare 'name' correctly parsed as field selector");
             }
-            Err(e) => panic!("bare 'name' should work: {}", e),
+            Err(e) => panic!("bare 'name' should work: {e}"),
         }
 
         // Test that random_field is a field selector, not treated as truthy filter
@@ -1612,7 +1577,7 @@ mod tests {
                 assert!(result.filter.is_none(), "Should not be filter");
                 println!("✓ 'random_field' correctly parsed as field selector");
             }
-            Err(e) => panic!("'random_field' should work as field selector: {}", e),
+            Err(e) => panic!("'random_field' should work as field selector: {e}"),
         }
     }
 
@@ -1620,7 +1585,7 @@ mod tests {
     fn test_debug_csv_pattern() {
         let pattern = r#"field_1 > "25" {{"name": "${field_0}", "age": "${field_1}", "role": "${field_2}", "senior": true}}"#;
 
-        println!("Testing pattern: {}", pattern);
+        println!("Testing pattern: {pattern}");
         match parse_command(pattern) {
             Ok(result) => {
                 println!("✓ Parsed successfully:");
@@ -1629,14 +1594,14 @@ mod tests {
                 println!("  Field selector: {:?}", result.field_selector.is_some());
 
                 if let Some(filter) = &result.filter {
-                    println!("  Filter details: {:?}", filter);
+                    println!("  Filter details: {filter:?}");
                 }
                 if let Some(template) = &result.template {
                     println!("  Template items: {}", template.items.len());
                 }
             }
             Err(e) => {
-                println!("✗ Failed to parse: {}", e);
+                println!("✗ Failed to parse: {e}");
             }
         }
     }
@@ -1649,8 +1614,8 @@ mod tests {
         if let Some((filter_part, template_part)) = split_filter_template_manually(complex_pattern)
         {
             println!("✓ Manual split successful:");
-            println!("  Filter part: '{}'", filter_part);
-            println!("  Template part: '{}'", template_part);
+            println!("  Filter part: '{filter_part}'");
+            println!("  Template part: '{template_part}'");
 
             // Test parsing each part individually
             println!("\nTesting filter part...");
@@ -1662,7 +1627,7 @@ mod tests {
                     );
                 }
                 Err(e) => {
-                    println!("  ✗ Filter part failed: {}", e);
+                    println!("  ✗ Filter part failed: {e}");
                 }
             }
 
@@ -1675,7 +1640,7 @@ mod tests {
                     );
                 }
                 Err(e) => {
-                    println!("  ✗ Template part failed: {}", e);
+                    println!("  ✗ Template part failed: {e}");
                 }
             }
         } else {
@@ -1751,6 +1716,4 @@ mod tests {
             assert_eq!(field_selector.parts, vec!["users", "0", "name"]);
         }
     }
-
-    // ...existing code...
 }
