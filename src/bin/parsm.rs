@@ -518,19 +518,15 @@ fn try_parse_as_csv(
         return Ok(None);
     }
 
-    // Try to parse as CSV with headers
-    let mut rdr = csv::ReaderBuilder::new()
-        .has_headers(true)
+    // First try parsing without headers to capture all rows as data
+    let mut rdr_no_headers = csv::ReaderBuilder::new()
+        .has_headers(false)
         .from_reader(input.as_bytes());
 
-    let headers = match rdr.headers() {
-        Ok(headers) => headers.clone(),
-        Err(_) => return Ok(None),
-    };
-
     let mut records = Vec::new();
+    let lines: Vec<&str> = input.lines().collect();
 
-    for result in rdr.records() {
+    for (line_idx, result) in rdr_no_headers.records().enumerate() {
         let record = match result {
             Ok(record) => record,
             Err(_) => continue,
@@ -538,15 +534,15 @@ fn try_parse_as_csv(
 
         let mut obj = Map::new();
 
-        // Add original line
-        obj.insert("$0".to_string(), Value::String(input.trim().to_string()));
+        // Add original line (use the specific line, not the entire input)
+        if let Some(original_line) = lines.get(line_idx) {
+            obj.insert("$0".to_string(), Value::String(original_line.to_string()));
+        } else {
+            obj.insert("$0".to_string(), Value::String(input.trim().to_string()));
+        }
 
-        // Add fields by header name
+        // Add indexed fields (field_0, field_1, etc.)
         for (i, field) in record.iter().enumerate() {
-            if let Some(header_name) = headers.get(i) {
-                obj.insert(header_name.to_string(), Value::String(field.to_string()));
-            }
-            // Also add indexed fields for backward compatibility
             obj.insert(format!("field_{i}"), Value::String(field.to_string()));
         }
 
