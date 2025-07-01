@@ -135,66 +135,96 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
         let mut input = String::new();
         stdin.lock().read_to_string(&mut input)?;
 
-        // Try JSON array parsing first
-        if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&input) {
-            match &json_value {
-                serde_json::Value::Array(arr) => {
-                    if let Some(ref field_selector) = dsl.field_selector {
-                        for item in arr {
-                            if let Some(extracted) = field_selector.extract_field(item) {
-                                writeln!(writer, "{extracted}")?;
+        // Use format detector to determine the most likely format
+        let detected_formats = FormatDetector::detect(&input);
+
+        // Try parsing in order of confidence
+        for (format, confidence) in detected_formats {
+            if confidence < 0.5 {
+                break; // Skip low-confidence formats
+            }
+
+            match format {
+                DetectedFormat::Json => {
+                    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&input) {
+                        if !matches!(json_value, serde_json::Value::Array(_)) {
+                            // Single JSON object
+                            if let Some(ref field_selector) = dsl.field_selector {
+                                if let Some(extracted) = field_selector.extract_field(&json_value) {
+                                    writeln!(writer, "{extracted}")?;
+                                }
+                                return Ok(());
+                            } else {
+                                // For templates, process the single value
+                                let mut value_with_original = json_value.clone();
+                                if let serde_json::Value::Object(ref mut obj) = value_with_original
+                                {
+                                    obj.insert(
+                                        "$0".to_string(),
+                                        serde_json::Value::String(input.trim().to_string()),
+                                    );
+                                }
+                                process_single_value(&value_with_original, &dsl, &mut writer)?;
+                                return Ok(());
                             }
                         }
-                        return Ok(());
-                    } else {
-                        // For templates, process each array item
-                        for item in arr {
-                            let mut item_with_original = item.clone();
-                            if let serde_json::Value::Object(ref mut obj) = item_with_original {
-                                obj.insert(
-                                    "$0".to_string(),
-                                    serde_json::Value::String(input.trim().to_string()),
-                                );
+                    }
+                }
+                DetectedFormat::JsonArray => {
+                    if let Ok(serde_json::Value::Array(arr)) =
+                        serde_json::from_str::<serde_json::Value>(&input)
+                    {
+                        if let Some(ref field_selector) = dsl.field_selector {
+                            for item in &arr {
+                                if let Some(extracted) = field_selector.extract_field(item) {
+                                    writeln!(writer, "{extracted}")?;
+                                }
                             }
-                            process_single_value(&item_with_original, &dsl, &mut writer)?;
+                            return Ok(());
+                        } else {
+                            // For templates, process each array item
+                            for item in &arr {
+                                let mut item_with_original = item.clone();
+                                if let serde_json::Value::Object(ref mut obj) = item_with_original {
+                                    obj.insert(
+                                        "$0".to_string(),
+                                        serde_json::Value::String(input.trim().to_string()),
+                                    );
+                                }
+                                process_single_value(&item_with_original, &dsl, &mut writer)?;
+                            }
+                            return Ok(());
                         }
+                    }
+                }
+                DetectedFormat::Toml => {
+                    if let Ok(toml_value) = toml::from_str::<toml::Value>(&input) {
+                        let json_value = serde_json::to_value(toml_value)?;
+                        process_structured_value(json_value, &input, &dsl, &mut writer)?;
                         return Ok(());
                     }
                 }
-                _ => {
-                    if let Some(ref field_selector) = dsl.field_selector {
-                        if let Some(extracted) = field_selector.extract_field(&json_value) {
-                            writeln!(writer, "{extracted}")?;
-                        }
-                        return Ok(());
-                    } else {
-                        // For templates, process the single value
-                        let mut value_with_original = json_value.clone();
-                        if let serde_json::Value::Object(ref mut obj) = value_with_original {
-                            obj.insert(
-                                "$0".to_string(),
-                                serde_json::Value::String(input.trim().to_string()),
-                            );
-                        }
-                        process_single_value(&value_with_original, &dsl, &mut writer)?;
+                DetectedFormat::Yaml => {
+                    if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(&input) {
+                        let json_value = serde_json::to_value(yaml_value)?;
+                        process_structured_value(json_value, &input, &dsl, &mut writer)?;
                         return Ok(());
                     }
+                }
+                DetectedFormat::Csv => {
+                    if parse_csv_document(&input, &dsl, &mut writer)? {
+                        return Ok(());
+                    }
+                }
+                DetectedFormat::Logfmt => {
+                    // Logfmt is typically handled line-by-line, skip document parsing
+                    continue;
+                }
+                DetectedFormat::PlainText => {
+                    // Plain text is handled line-by-line, skip document parsing
+                    continue;
                 }
             }
-        }
-
-        // Try other document formats
-        if try_parse_as_toml(&input, &dsl, &mut writer)?.is_some() {
-            return Ok(());
-        }
-
-        if try_parse_as_yaml(&input, &dsl, &mut writer)?.is_some() {
-            return Ok(());
-        }
-
-        // Try CSV document parsing with headers
-        if try_parse_as_csv(&input, &dsl, &mut writer)?.is_some() {
-            return Ok(());
         }
 
         // Fall back to line-by-line processing for field selectors
@@ -450,73 +480,14 @@ fn print_usage_examples() {
     println!();
 }
 
-/// Try to parse input as TOML and process it
-fn try_parse_as_toml(
+/// Parse CSV document and process it
+/// Returns true if parsing was successful, false otherwise
+fn parse_csv_document(
     input: &str,
     dsl: &ParsedDSL,
     writer: &mut std::io::StdoutLock,
-) -> Result<Option<()>, Box<dyn std::error::Error>> {
-    // Use format detector to check if input looks like TOML
-    let detected_formats = FormatDetector::detect(input);
-    let is_toml = detected_formats
-        .iter()
-        .any(|(format, confidence)| format == &DetectedFormat::Toml && *confidence > 0.5);
-
-    if !is_toml {
-        return Ok(None);
-    }
-
-    if let Ok(toml_value) = toml::from_str::<toml::Value>(input) {
-        let json_value = serde_json::to_value(toml_value)?;
-        process_structured_value(json_value, input, dsl, writer)?;
-        Ok(Some(()))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Try to parse input as YAML and process it
-fn try_parse_as_yaml(
-    input: &str,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<Option<()>, Box<dyn std::error::Error>> {
-    // Use format detector to check if input looks like YAML
-    let detected_formats = FormatDetector::detect(input);
-    let is_yaml = detected_formats
-        .iter()
-        .any(|(format, confidence)| format == &DetectedFormat::Yaml && *confidence > 0.5);
-
-    if !is_yaml {
-        return Ok(None);
-    }
-
-    if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(input) {
-        let json_value = serde_json::to_value(yaml_value)?;
-        process_structured_value(json_value, input, dsl, writer)?;
-        Ok(Some(()))
-    } else {
-        Ok(None)
-    }
-}
-
-/// Try to parse input as CSV and process it
-fn try_parse_as_csv(
-    input: &str,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<Option<()>, Box<dyn std::error::Error>> {
+) -> Result<bool, Box<dyn std::error::Error>> {
     use serde_json::{Map, Value};
-
-    // Use format detector to check if input looks like CSV
-    let detected_formats = FormatDetector::detect(input);
-    let is_csv = detected_formats
-        .iter()
-        .any(|(format, confidence)| format == &DetectedFormat::Csv && *confidence > 0.5);
-
-    if !is_csv {
-        return Ok(None);
-    }
 
     // First try parsing without headers to capture all rows as data
     let mut rdr_no_headers = csv::ReaderBuilder::new()
@@ -557,7 +528,7 @@ fn try_parse_as_csv(
     }
 
     if records.is_empty() {
-        return Ok(None);
+        return Ok(false);
     }
 
     // Process each record
@@ -571,7 +542,7 @@ fn try_parse_as_csv(
         }
     }
 
-    Ok(Some(()))
+    Ok(true)
 }
 
 /// Process a structured value (JSON object/array, converted TOML/YAML)

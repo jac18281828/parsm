@@ -48,7 +48,7 @@ echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years o
 echo '{"name": "Alice", "age": 30}' | parsm '$name'
 
 # Parse and understand text
-echo "a dog is an excellent companion" | parsm 'word_1 == "dog" {The cat would not say $word_4}'
+echo "a dog is an excellent companion" | parsm 'word_1 == "dog" {The cat would not say $word_4}'I
 ```
 
 ## Supported Input Formats

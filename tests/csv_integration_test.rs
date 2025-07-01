@@ -620,3 +620,107 @@ fn test_csv_single_column() {
         }
     }
 }
+
+#[test]
+fn test_csv_with_headers_field_selection() {
+    // Test CSV with header row - should treat all lines as data since we use no-headers mode
+    let input = "Name,Age,Job\nAlice,30,Engineer\nBob,25,Designer\nCharlie,35,Manager";
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        .arg("\"field_0\"") // Select first field
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn parsm");
+
+    let stdin = child.stdin.take().expect("get stdin");
+    let mut stdin = stdin;
+    write!(stdin, "{input}").expect("write to stdin");
+    drop(stdin);
+
+    let result = child.wait_with_output().expect("wait for output");
+    assert!(
+        result.status.success(),
+        "parsm failed: stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let lines: Vec<&str> = stdout.trim().split('\n').collect();
+
+    // Should include the header row as data since we parse without headers
+    assert_eq!(lines.len(), 4);
+    assert_eq!(lines[0], "Name"); // Header row treated as data
+    assert_eq!(lines[1], "Alice");
+    assert_eq!(lines[2], "Bob");
+    assert_eq!(lines[3], "Charlie");
+}
+
+#[test]
+fn test_csv_with_headers_template_replacement() {
+    // Test template replacement with CSV that has headers
+    let input = "Name,Age,Job\nAlice,30,Engineer\nBob,25,Designer";
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        .arg("field_1 != \"Age\" {${field_0} works as ${field_2}}")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn parsm");
+
+    let stdin = child.stdin.take().expect("get stdin");
+    let mut stdin = stdin;
+    write!(stdin, "{input}").expect("write to stdin");
+    drop(stdin);
+
+    let result = child.wait_with_output().expect("wait for output");
+    assert!(
+        result.status.success(),
+        "parsm failed: stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let lines: Vec<&str> = stdout.trim().split('\n').collect();
+
+    // Should filter out the header row (field_1 == "Age") and process data rows
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0], "Alice works as Engineer");
+    assert_eq!(lines[1], "Bob works as Designer");
+}
+
+#[test]
+fn test_csv_with_headers_numeric_filter() {
+    // Test numeric filtering with CSV that has headers
+    let input = "Name,Age,Salary\nAlice,30,50000\nBob,25,40000\nCharlie,35,60000\nDana,22,35000";
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        .arg("field_1 > \"27\" {${field_0}: ${field_1} years old, $${field_2}}")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn parsm");
+
+    let stdin = child.stdin.take().expect("get stdin");
+    let mut stdin = stdin;
+    write!(stdin, "{input}").expect("write to stdin");
+    drop(stdin);
+
+    let result = child.wait_with_output().expect("wait for output");
+    assert!(
+        result.status.success(),
+        "parsm failed: stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    let lines: Vec<&str> = stdout.trim().split('\n').collect();
+
+    // Should match Alice (30) and Charlie (35), but not the header or other entries
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0], "Alice: 30 years old, $50000");
+    assert_eq!(lines[1], "Charlie: 35 years old, $60000");
+}
