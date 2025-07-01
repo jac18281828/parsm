@@ -3,6 +3,12 @@ on:
   push:
     tags:
       - '*'
+
+# Add explicit permissions
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest

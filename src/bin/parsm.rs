@@ -1,8 +1,9 @@
 use clap::{Arg, Command};
-use std::io;
+use std::io::{self, Write};
 
 use parsm::{
-    parse_command, parse_separate_expressions, process_stream, FilterEngine, ParsedDSL, ParsedLine,
+    parse_command, parse_separate_expressions, process_stream, DetectedFormat, FilterEngine,
+    FormatDetector, ParsedDSL, ParsedLine,
 };
 
 /// Main entry point for the parsm command-line tool.
@@ -188,6 +189,11 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
         }
 
         if try_parse_as_yaml(&input, &dsl, &mut writer)?.is_some() {
+            return Ok(());
+        }
+
+        // Try CSV document parsing with headers
+        if try_parse_as_csv(&input, &dsl, &mut writer)?.is_some() {
             return Ok(());
         }
 
@@ -444,73 +450,19 @@ fn print_usage_examples() {
     println!();
 }
 
-fn is_likely_toml(input: &str) -> bool {
-    let lines: Vec<&str> = input.lines().take(10).collect(); // Check first 10 lines
-
-    for line in &lines {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-
-        // Look for key = value pattern typical of TOML
-        if trimmed.contains(" = ") && !trimmed.starts_with('"') {
-            return true;
-        }
-
-        // Look for TOML section headers
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            return true;
-        }
-    }
-
-    false
-}
-
-/// Check if content looks like YAML format
-fn is_likely_yaml(input: &str) -> bool {
-    let lines: Vec<&str> = input.lines().take(10).collect(); // Check first 10 lines
-
-    // YAML document start indicator
-    if input.trim_start().starts_with("---") {
-        return true;
-    }
-
-    let mut has_yaml_structure = false;
-
-    for line in &lines {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-
-        // Look for YAML key: value pattern (with colon and space)
-        if trimmed.contains(": ") && !trimmed.starts_with('"') {
-            has_yaml_structure = true;
-        }
-
-        // Look for YAML list items
-        if trimmed.starts_with("- ") {
-            has_yaml_structure = true;
-        }
-
-        // Look for indented structure (common in YAML)
-        if line.starts_with("  ") && (line.contains(": ") || line.trim().starts_with("- ")) {
-            return true; // Strong indicator of YAML structure
-        }
-    }
-
-    has_yaml_structure
-}
-
 /// Try to parse input as TOML and process it
 fn try_parse_as_toml(
     input: &str,
     dsl: &ParsedDSL,
     writer: &mut std::io::StdoutLock,
 ) -> Result<Option<()>, Box<dyn std::error::Error>> {
-    // Only try TOML parsing if the input actually looks like TOML
-    if !is_likely_toml(input) {
+    // Use format detector to check if input looks like TOML
+    let detected_formats = FormatDetector::detect(input);
+    let is_toml = detected_formats
+        .iter()
+        .any(|(format, confidence)| format == &DetectedFormat::Toml && *confidence > 0.5);
+
+    if !is_toml {
         return Ok(None);
     }
 
@@ -529,8 +481,13 @@ fn try_parse_as_yaml(
     dsl: &ParsedDSL,
     writer: &mut std::io::StdoutLock,
 ) -> Result<Option<()>, Box<dyn std::error::Error>> {
-    // Only try YAML parsing if the input actually looks like YAML
-    if !is_likely_yaml(input) {
+    // Use format detector to check if input looks like YAML
+    let detected_formats = FormatDetector::detect(input);
+    let is_yaml = detected_formats
+        .iter()
+        .any(|(format, confidence)| format == &DetectedFormat::Yaml && *confidence > 0.5);
+
+    if !is_yaml {
         return Ok(None);
     }
 
@@ -541,6 +498,84 @@ fn try_parse_as_yaml(
     } else {
         Ok(None)
     }
+}
+
+/// Try to parse input as CSV and process it
+fn try_parse_as_csv(
+    input: &str,
+    dsl: &ParsedDSL,
+    writer: &mut std::io::StdoutLock,
+) -> Result<Option<()>, Box<dyn std::error::Error>> {
+    use serde_json::{Map, Value};
+
+    // Use format detector to check if input looks like CSV
+    let detected_formats = FormatDetector::detect(input);
+    let is_csv = detected_formats
+        .iter()
+        .any(|(format, confidence)| format == &DetectedFormat::Csv && *confidence > 0.5);
+
+    if !is_csv {
+        return Ok(None);
+    }
+
+    // Try to parse as CSV with headers
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(input.as_bytes());
+
+    let headers = match rdr.headers() {
+        Ok(headers) => headers.clone(),
+        Err(_) => return Ok(None),
+    };
+
+    let mut records = Vec::new();
+
+    for result in rdr.records() {
+        let record = match result {
+            Ok(record) => record,
+            Err(_) => continue,
+        };
+
+        let mut obj = Map::new();
+
+        // Add original line
+        obj.insert("$0".to_string(), Value::String(input.trim().to_string()));
+
+        // Add fields by header name
+        for (i, field) in record.iter().enumerate() {
+            if let Some(header_name) = headers.get(i) {
+                obj.insert(header_name.to_string(), Value::String(field.to_string()));
+            }
+            // Also add indexed fields for backward compatibility
+            obj.insert(format!("field_{i}"), Value::String(field.to_string()));
+        }
+
+        // Add array representation
+        let values: Vec<Value> = record
+            .iter()
+            .map(|field| Value::String(field.to_string()))
+            .collect();
+        obj.insert("_array".to_string(), Value::Array(values));
+
+        records.push(Value::Object(obj));
+    }
+
+    if records.is_empty() {
+        return Ok(None);
+    }
+
+    // Process each record
+    for record in &records {
+        if let Some(ref field_selector) = dsl.field_selector {
+            if let Some(extracted) = field_selector.extract_field(record) {
+                writeln!(writer, "{extracted}")?;
+            }
+        } else {
+            process_single_value(record, dsl, writer)?;
+        }
+    }
+
+    Ok(Some(()))
 }
 
 /// Process a structured value (JSON object/array, converted TOML/YAML)

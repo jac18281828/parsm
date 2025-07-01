@@ -495,12 +495,16 @@ use std::io::{BufRead, Write};
 
 pub mod dsl;
 pub mod filter;
+pub mod format_detector;
 pub mod operators;
 pub mod parse;
+pub mod parser_registry;
 
 pub use dsl::{parse_command, ParsedDSL};
 pub use filter::{FieldPath, FilterEngine, FilterExpr, Template};
+pub use format_detector::{DetectedFormat, FormatDetector};
 pub use parse::{ParsedLine, StreamingParser};
+pub use parser_registry::{DocumentParser, ParserRegistry};
 
 /// Process a stream of input data with optional DSL filter and template
 pub fn process_stream<R: BufRead, W: Write>(
