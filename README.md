@@ -42,13 +42,13 @@ echo '{"user": {"email": "alice@example.com"}}' | parsm 'user.email'
 echo '{"name": "Alice", "age": 30}' | parsm 'age > 25'
 
 # Filter and format output
-echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years old}'
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 [${name} is ${age} years old]'
 
 # Simple template output
 echo '{"name": "Alice", "age": 30}' | parsm '$name'
 
 # Parse and understand text
-echo "a dog is an excellent companion" | parsm 'word_1 == "dog" {The cat would not say $word_4}'I
+echo "a dog is an excellent companion" | parsm 'word_1 == "dog" [The cat would not say $word_4]'
 ```
 
 ## Supported Input Formats
@@ -184,19 +184,24 @@ parsm '"field with spaces"'    # Spaces in field names
 Templates format output with field values using explicit variable syntax:
 
 ```bash
-{${name} is ${age} years old}    # Variables with ${...}
+[${name} is ${age} years old]    # Variables with ${...} in brackets
 $name                            # Simple variable shorthand
-{Hello ${name}!}                 # Mixed template with literals
-{${0}}                          # Original input (requires braces)
-{User: ${user.name}}            # Nested fields in templates
+[Hello ${name}!]                 # Mixed template with literals
+[${0}]                          # Original input (requires brackets/braces)
+[User: ${user.name}]            # Nested fields in templates
 ```
 
+**Note**: Braced templates `{${name}}` are also supported as an alternative syntax.
+
 ### Literal Text (Static Output)
-Braces without variables produce literal text:
+Brackets or braces without variables produce literal text:
 
 ```bash
+[name]                   # Outputs literal text "name"
 {name}                   # Outputs literal text "name"
+[Hello world]            # Outputs literal text "Hello world"
 {Hello world}            # Outputs literal text "Hello world"
+[Price: $100]            # Outputs literal text with dollar sign
 {Price: $100}            # Outputs literal text with dollar sign
 ```
 
@@ -222,13 +227,16 @@ echo '{"user": {"email": "alice@example.com"}}' | parsm 'user.email'
 # Output: "alice@example.com"
 
 # Template with variables (dynamic output)
-echo '{"name": "Alice", "age": 30}' | parsm '{${name} is ${age} years old}'
+echo '{"name": "Alice", "age": 30}' | parsm '[${name} is ${age} years old]'
 # Output: Alice is 30 years old
 
 echo '{"name": "Alice", "age": 30}' | parsm '$name'
 # Output: Alice
 
 # Literal templates (static output)
+echo '{"name": "Alice", "age": 30}' | parsm '[name]'
+# Output: name
+
 echo '{"name": "Alice", "age": 30}' | parsm '{name}'
 # Output: name
 
@@ -237,20 +245,20 @@ echo '{"name": "Alice", "age": 30}' | parsm 'age > 25'
 # Output: {"name": "Alice", "age": 30}
 
 # Combined filtering and templating
-echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years old}'
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 [${name} is ${age} years old]'
 # Output: Alice is 30 years old
 
-# Original input variable  
-echo '{"name": "Alice"}' | parsm '{Original: ${0} → Name: ${name}}'
+# Original input variable
+echo '{"name": "Alice"}' | parsm '[Original: ${0} → Name: ${name}]'
 # Output: Original: {"name": "Alice"} → Name: Alice
 
 # CSV positional fields
-echo 'Alice,30,Engineer' | parsm '{Employee: ${1}, Age: ${2}, Role: ${3}}'
+echo 'Alice,30,Engineer' | parsm '[Employee: ${1}, Age: ${2}, Role: ${3}]'
 # Output: Employee: Alice, Age: 30, Role: Engineer
 
 # Nested JSON fields
 echo '{"user": {"name": "Alice", "email": "alice@example.com"}}' | \
-  parsm '{User: ${user.name}, Email: ${user.email}}'
+  parsm '[User: ${user.name}, Email: ${user.email}]'
 # Output: User: Alice, Email: alice@example.com
 ```
 
@@ -344,11 +352,11 @@ echo '{"user": {"email": "alice@example.com"}}' | parsm 'user.email'
 echo '{"name": "Alice", "age": 30}' | parsm 'age > 25'
 
 # Filter and format
-echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years old}'
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 [${name} is ${age} years old]'
 
 # Complex nested data
 echo '{"user": {"name": "Alice", "profile": {"verified": true}}}' | \
-  parsm 'user.profile.verified == true {Verified user: ${user.name}}'
+  parsm 'user.profile.verified == true [Verified user: ${user.name}]'
 
 # Array processing
 echo '{"users": [{"name": "Alice"}, {"name": "Bob"}]}' | parsm 'users.0.name'
@@ -361,13 +369,13 @@ echo '{"users": [{"name": "Alice"}, {"name": "Bob"}]}' | parsm 'users'
 
 ```bash
 # Filter CSV data
-echo 'Alice,30,Engineer' | parsm 'field_1 > "25"' '{${1} works as ${3}}'
+echo 'Alice,30,Engineer' | parsm 'field_1 > "25" [${1} works as ${3}]'
 
 # Multiple conditions
-users.csv | parsm 'field_1 > "25" && field_2 == "Engineer"' '{${1} (${2} years old)}'
+users.csv | parsm 'field_1 > "25" && field_2 == "Engineer" [${1} (${2} years old)]'
 
 # Include original data
-echo 'Alice,30,Engineer' | parsm '{${0} → Name: ${1}, Age: ${2}}'
+echo 'Alice,30,Engineer' | parsm '[${0} → Name: ${1}, Age: ${2}]'
 ```
 
 ### Log Processing
@@ -375,13 +383,13 @@ echo 'Alice,30,Engineer' | parsm '{${0} → Name: ${1}, Age: ${2}}'
 ```bash
 # Filter error logs
 echo 'level=error msg="DB connection failed" service=api' | \
-  parsm 'level == "error"' '{[${level}] ${msg}}'
+  parsm 'level == "error" [[${level}] ${msg}]'
 
 # Complex log filtering
-logs.txt | parsm 'level == "error" && service == "payment"' '{${timestamp}: ${msg}}'
+logs.txt | parsm 'level == "error" && service == "payment" [${timestamp}: ${msg}]'
 
 # Performance monitoring
-app.log | parsm 'duration > 1000' '{Slow request: ${path} took ${duration}ms}'
+app.log | parsm 'duration > 1000 [Slow request: ${path} took ${duration}ms]'
 ```
 
 ### YAML/TOML Processing
@@ -393,10 +401,10 @@ cat Cargo.toml | parsm 'package.version'                 # Get version
 cat Cargo.toml | parsm '"dependencies.serde_json"'       # Get dependency version
 
 # Filter configuration
-config.yaml | parsm 'database.enabled == true' '{DB: ${database.host}:${database.port}}'
+config.yaml | parsm 'database.enabled == true [DB: ${database.host}:${database.port}]'
 
 # Convert format with nested access
-echo 'name: Alice\nconfig: {debug: true}' | parsm '{${name}: debug=${config.debug}}'
+echo 'name: Alice\nconfig: {debug: true}' | parsm '[${name}: debug=${config.debug}]'
 
 # Extract configuration sections
 config.toml | parsm '"server"'                           # Get entire server section
@@ -412,14 +420,14 @@ cat Cargo.toml | parsm 'package.keywords'                # Keywords array
 
 ```bash
 # Process log files
-tail -f app.log | parsm 'level == "error"' '{${date}: ${msg}}'
+tail -f app.log | parsm 'level == "error" [${date}: ${msg}]'
 
-# Filter and transform data
-cat users.csv | parsm 'field_1 > "21"' '{{"name": "${1}", "age": ${2}}}'
+# Filter and transform data (alternative braced syntax also supported)
+cat users.csv | parsm 'field_1 > "21" [{"name": "${1}", "age": ${2}}]'
 
 # Real-time monitoring
 docker stats --format "table {{.Name}},{{.CPUPerc}}" | \
-  parsm 'field_1 ~ "%"' '{Container ${1} using ${2} CPU}'
+  parsm 'field_1 ~ "%" [Container ${1} using ${2} CPU]'
 ```
 
 ## Advanced Features
@@ -481,13 +489,13 @@ cat data.json | parsm 'age > 25'
 cat data.csv | parsm '$name'
 
 # Template only (complex formatting)
-cat data.csv | parsm '{${1}: ${2}}'
+cat data.csv | parsm '[${1}: ${2}]'
 
 # Filter and template
-cat data.log | parsm 'level == "error" {[${timestamp}] ${msg}}'
+cat data.log | parsm 'level == "error" [[${timestamp}] ${msg}]'
 
 # Literal text output
-cat data.json | parsm '{User Profile}'
+cat data.json | parsm '[User Profile]'
 ```
 
 ## Comparison with Other Tools

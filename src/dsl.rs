@@ -274,6 +274,7 @@ impl DSLParser {
 
         match inner.as_rule() {
             Rule::braced_template => Self::parse_braced_template(inner),
+            Rule::bracketed_template => Self::parse_bracketed_template(inner),
             Rule::simple_variable => {
                 // $name -> single field template
                 let field_path = Self::parse_field_path_from_simple_var(inner);
@@ -287,6 +288,23 @@ impl DSLParser {
     }
 
     fn parse_braced_template(pair: Pair<Rule>) -> Result<Template, Box<pest::error::Error<Rule>>> {
+        let template_content = pair.into_inner().next().unwrap();
+
+        match template_content.as_rule() {
+            Rule::template_content_atomic => {
+                // For atomic content, manually parse the content string
+                Self::parse_template_content_manually(template_content.as_str())
+            }
+            _ => {
+                // Fallback - just treat as atomic content
+                Self::parse_template_content_manually(template_content.as_str())
+            }
+        }
+    }
+
+    fn parse_bracketed_template(
+        pair: Pair<Rule>,
+    ) -> Result<Template, Box<pest::error::Error<Rule>>> {
         let template_content = pair.into_inner().next().unwrap();
 
         match template_content.as_rule() {
@@ -1715,5 +1733,55 @@ mod tests {
         if let Some(field_selector) = result.field_selector {
             assert_eq!(field_selector.parts, vec!["users", "0", "name"]);
         }
+    }
+
+    /// Test bracketed template syntax.
+    #[test]
+    fn test_bracketed_template_syntax() {
+        // Test simple bracketed template
+        let result = parse_command("[${name}]").unwrap();
+        assert!(result.template.is_some());
+        assert!(result.filter.is_none());
+        assert!(result.field_selector.is_none());
+
+        let template = result.template.unwrap();
+        assert_eq!(template.items.len(), 1);
+        match &template.items[0] {
+            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
+            _ => panic!("Expected field"),
+        }
+
+        // Test mixed bracketed template
+        let result = parse_command("[Name: ${name}, Age: ${age}]").unwrap();
+        assert!(result.template.is_some());
+
+        let template = result.template.unwrap();
+        assert_eq!(template.items.len(), 4);
+
+        match &template.items[0] {
+            TemplateItem::Literal(text) => assert_eq!(text, "Name: "),
+            _ => panic!("Expected literal"),
+        }
+
+        match &template.items[1] {
+            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
+            _ => panic!("Expected field"),
+        }
+
+        match &template.items[2] {
+            TemplateItem::Literal(text) => assert_eq!(text, ", Age: "),
+            _ => panic!("Expected literal"),
+        }
+
+        match &template.items[3] {
+            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["age"]),
+            _ => panic!("Expected field"),
+        }
+
+        // Test combined filter with bracketed template
+        let result = parse_command("age > 25 [${name} is ${age} years old]").unwrap();
+        assert!(result.filter.is_some());
+        assert!(result.template.is_some());
+        assert!(result.field_selector.is_none());
     }
 }

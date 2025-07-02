@@ -37,19 +37,19 @@ path = "src/bin/parsm.rs"
 # echo '{"name": "Alice", "age": 30}' | parsm 'name == "Alice"'
 # 
 # // Filter and template (combined syntax)
-# echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 {${name} is ${age} years old}'
+# echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 [${name} is ${age} years old]'
 # 
 # // Filter and template (separate arguments)
-# echo '{"name": "Alice", "age": 30}' | parsm 'age > 25' '${name} is ${age} years old'
+# echo '{"name": "Alice", "age": 30}' | parsm 'age > 25' '[${name} is ${age} years old]'
 # 
 # // Field selection
 # echo '{"name": "Alice", "age": 30}' | parsm 'name'
 # 
 # // Filter CSV (auto-converts to indexed fields)
-# echo 'Alice,30,Engineer' | parsm 'field_1 > "25" {${field_0}: ${field_2}}'
+# echo 'Alice,30,Engineer' | parsm 'field_1 > "25" [${field_0}: ${field_2}]'
 # 
 # // Filter logfmt
-# echo 'level=error msg="timeout" service=api' | parsm 'level == "error" {[${level}] ${msg}}'
+# echo 'level=error msg="timeout" service=api' | parsm 'level == "error" [${level} ${msg}]'
 # 
 # // Simple template variables
 # echo '{"name": "Alice", "age": 30}' | parsm '$name is $age years old'

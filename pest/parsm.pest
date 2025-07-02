@@ -73,32 +73,29 @@ null = { "null" }
 // Unquoted value for operators like contains, startswith, etc.
 unquoted_value = { (ASCII_ALPHANUMERIC | "_")+ }
 
-// RELAXED TEMPLATES - Much more permissive
 template_expr = {
-    braced_template |           // {name}, {Hello $name}, {$name}, ${name}
-    interpolated_text |         // Hello $name, $name is $age  
-    simple_variable             // $name, $user.email (must come last to avoid conflicts)
+    braced_template |
+    bracketed_template |
+    interpolated_text |
+    simple_variable
 }
 
-// Braced template with support for bare fields - preserves whitespace  
 braced_template = { "{" ~ template_content_atomic ~ "}" }
+
+bracketed_template = { "[" ~ template_content_atomic ~ "]" }
 template_content_atomic = @{ template_content_chars* }
 template_content_chars = _{ 
-    ("${" ~ var_content ~ "}") |        // ${name} variable
-    ("$" ~ simple_var_name) |           // $name variable  
-    (!("}") ~ ANY)                      // any other character except closing brace
+    ("${" ~ var_content ~ "}") |
+    ("$" ~ simple_var_name) |
+    (!("}" | "]") ~ ANY)
 }
 
-// Simple variable syntax: $name (but not ${name} - that's a braced template)
 simple_variable = { "$" ~ simple_var_name }
 
-// Interpolated text with variables: "Hello $name"
 interpolated_text = { (literal_text ~ template_variable)+ ~ literal_text? | literal_text ~ (template_variable ~ literal_text?)+ }
 
-// Template variables: ${name} or $name (for interpolation)
 template_variable = { "${" ~ var_content ~ "}" | "$" ~ simple_var_name }
 var_content = { (ASCII_ALPHANUMERIC | "_" | ".")+ }
 simple_var_name = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | ".")* }
 
-// Template text that's not a variable - must preserve spaces
-literal_text = { (!("$" | "{" | "}") ~ ANY)+ }
+literal_text = { (!("$" | "{" | "}" | "[" | "]") ~ ANY)+ }
