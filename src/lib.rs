@@ -493,6 +493,7 @@
 use std::error::Error;
 use std::io::{BufRead, Write};
 
+pub mod csv_parser;
 pub mod dsl;
 pub mod filter;
 pub mod format_detector;

@@ -1,9 +1,9 @@
 use clap::{Arg, Command};
-use std::io::{self, Write};
+use std::io;
 
 use parsm::{
-    parse_command, parse_separate_expressions, process_stream, DetectedFormat, FilterEngine,
-    FormatDetector, ParsedDSL, ParsedLine,
+    csv_parser, parse_command, parse_separate_expressions, process_stream, DetectedFormat,
+    FilterEngine, FormatDetector, ParsedDSL, ParsedLine,
 };
 
 /// Main entry point for the parsm command-line tool.
@@ -212,7 +212,7 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
                     }
                 }
                 DetectedFormat::Csv => {
-                    if parse_csv_document(&input, &dsl, &mut writer)? {
+                    if csv_parser::parse_csv_document(&input, &dsl, &mut writer)? {
                         return Ok(());
                     }
                 }
@@ -478,71 +478,6 @@ fn print_usage_examples() {
     println!("  $name, ${{user.email}}        # Named fields ($simple or ${{complex}})");
     println!("  $100                        # Literal dollar amounts (invalid variable names)");
     println!();
-}
-
-/// Parse CSV document and process it
-/// Returns true if parsing was successful, false otherwise
-fn parse_csv_document(
-    input: &str,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    use serde_json::{Map, Value};
-
-    // First try parsing without headers to capture all rows as data
-    let mut rdr_no_headers = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(input.as_bytes());
-
-    let mut records = Vec::new();
-    let lines: Vec<&str> = input.lines().collect();
-
-    for (line_idx, result) in rdr_no_headers.records().enumerate() {
-        let record = match result {
-            Ok(record) => record,
-            Err(_) => continue,
-        };
-
-        let mut obj = Map::new();
-
-        // Add original line (use the specific line, not the entire input)
-        if let Some(original_line) = lines.get(line_idx) {
-            obj.insert("$0".to_string(), Value::String(original_line.to_string()));
-        } else {
-            obj.insert("$0".to_string(), Value::String(input.trim().to_string()));
-        }
-
-        // Add indexed fields (field_0, field_1, etc.)
-        for (i, field) in record.iter().enumerate() {
-            obj.insert(format!("field_{i}"), Value::String(field.to_string()));
-        }
-
-        // Add array representation
-        let values: Vec<Value> = record
-            .iter()
-            .map(|field| Value::String(field.to_string()))
-            .collect();
-        obj.insert("_array".to_string(), Value::Array(values));
-
-        records.push(Value::Object(obj));
-    }
-
-    if records.is_empty() {
-        return Ok(false);
-    }
-
-    // Process each record
-    for record in &records {
-        if let Some(ref field_selector) = dsl.field_selector {
-            if let Some(extracted) = field_selector.extract_field(record) {
-                writeln!(writer, "{extracted}")?;
-            }
-        } else {
-            process_single_value(record, dsl, writer)?;
-        }
-    }
-
-    Ok(true)
 }
 
 /// Process a structured value (JSON object/array, converted TOML/YAML)

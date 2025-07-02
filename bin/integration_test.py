@@ -153,6 +153,22 @@ def create_test_cases() -> dict:
                 "Handle empty CSV field"),
         TestCase("csv_multiline", "Alice,30\nBob,25", ["field_0"], 
                 "Multi-line CSV processing"),
+        
+        # Header detection and named field access tests
+        TestCase("csv_header_field_select", "name,age,occupation\nTom,45,engineer\nAlice,30,doctor", ["name"], 
+                "CSV field selection by header name"),
+        TestCase("csv_header_detection", "name,age,occupation\nTom,45,engineer\nAlice,30,doctor", ["age"], 
+                "CSV header detection and skipping"),
+        TestCase("csv_no_header_detection", "Tom,45,engineer\nAlice,30,doctor", ["field_0"], 
+                "CSV without headers - no skipping"),
+        TestCase("csv_template_headers", "name,age,occupation\nTom,45,engineer\nAlice,30,doctor", ["$name is $age years old"], 
+                "CSV template with header names"),
+        TestCase("csv_filter_headers", "name,age,occupation\nTom,45,engineer\nAlice,30,doctor\nBob,35,engineer", 
+                ["occupation == \"engineer\" {$name}"], 
+                "CSV filter with header-based field access"),
+        TestCase("csv_mixed_header_patterns", "user_id,firstName,Last_Name,emailAddress\n1,John,Doe,john@example.com\n2,Jane,Smith,jane@example.com", 
+                ["firstname"], 
+                "CSV with mixed header patterns"),
     ]
     
     # YAML Tests
