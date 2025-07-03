@@ -1,40 +1,44 @@
-// parsm.pest - Complete grammar for the filtering DSL
+// Pest grammar for parsm DSL parsing
 
-WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+// Remove silent whitespace - let spaces pass through
+WS = _{ " " | "\t" | "\n" | "\r" }
 
-// Main program entry point - updated to support new expression types
 program = { SOI ~ expression? ~ EOI }
 
-// Main expression types
 expression = {
-    combined_expr |     // filter + template: "age > 25 {name}"
-    filter_expr |       // filters: "age > 25", "name == 'Alice'" (try filters before field selectors)
-    template_expr |     // templates: "{name}", "$name", "Hello $name"  
-    field_selector      // field selectors: "name", "user.email" (simple field access only, last resort)
+    combined_expr |
+    template_expr |
+    filter_expr |
+    field_selector
 }
 
-// Combined filter and template expression
-combined_expr = { filter_expr ~ template_expr }
+combined_expr = { filter_expr ~ WS* ~ template_expr }
 
-// Field selector for simple field extraction (unquoted identifier or quoted string)
-field_selector = { quoted_field | field_access }
+field_selector = { quoted_field | bare_field }
 quoted_field = { string_literal }
+bare_field = { field_path }
 
-// Filter expressions with explicit whitespace handling
-filter_expr = { condition }
+filter_expr = { boolean_expr }
 
-condition = { or_expr }
-or_expr = { and_expr ~ (WHITESPACE* ~ or_op ~ WHITESPACE* ~ and_expr)* }
-and_expr = { comparison ~ (WHITESPACE* ~ and_op ~ WHITESPACE* ~ comparison)* }
-
-comparison = {
-    field_access ~ comparison_op ~ value |
-    "(" ~ condition ~ ")" |
-    not_op ~ comparison |
-    not_op ~ field_access
+boolean_expr = { or_expr }
+or_expr = { and_expr ~ (WS* ~ or_op ~ WS* ~ and_expr)* }
+and_expr = { not_expr ~ (WS* ~ and_op ~ WS* ~ not_expr)* }
+not_expr = { 
+    not_op ~ WS* ~ not_expr | 
+    comparison_expr 
 }
 
-// Operators
+comparison_expr = {
+    "(" ~ WS* ~ boolean_expr ~ WS* ~ ")" |
+    in_expr |
+    field_truthy |
+    field_path ~ WS* ~ comparison_op ~ WS* ~ value
+}
+
+field_truthy = { field_path ~ "?" }
+
+
+
 or_op = { "||" }
 and_op = { "&&" }
 not_op = { "!" }
@@ -43,59 +47,105 @@ comparison_op = {
     "~" | "^=" | "$=" | "*="
 }
 
-// Field access (supports nested fields like user.name and array indices like items.0)
-field_access = { field_component ~ ("." ~ field_component)* }
 field_path = { field_component ~ ("." ~ field_component)* }
 field_component = { identifier | numeric_identifier }
-identifier = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
-numeric_identifier = { ASCII_DIGIT+ }
+identifier = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_")* }
+numeric_identifier = @{ ASCII_DIGIT+ }
 
-// Values
 value = {
     string_literal |
+    regex_literal |
     number |
     boolean |
     null |
-    unquoted_value
+    field_path
 }
 
-string_literal = { "\"" ~ string_inner ~ "\"" | "'" ~ string_inner_single ~ "'" }
-string_inner = { (!("\"") ~ ANY)* }
-string_inner_single = { (!("'") ~ ANY)* }
 
-number = { "-"? ~ (float | integer) }
-float = { integer ~ "." ~ ASCII_DIGIT+ }
-integer = { ASCII_DIGIT+ }
+regex_literal = { "/" ~ regex_content ~ "/" ~ regex_flags? }
+regex_content = @{ (!"/" ~ ANY)* }
+regex_flags = @{ ("i" | "m" | "s" | "x")+ }
+
+in_expr = { field_path ~ WS* ~ "in" ~ WS* ~ array_literal }
+array_literal = { "[" ~ WS* ~ (value ~ (WS* ~ "," ~ WS* ~ value)*)? ~ WS* ~ "]" }
+
+string_literal = { "\"" ~ string_content ~ "\"" | "'" ~ string_content_single ~ "'" }
+string_content = @{ (!("\"") ~ ANY)* }
+string_content_single = @{ (!("'") ~ ANY)* }
+
+number = @{ "-"? ~ (float | integer) }
+float = @{ integer ~ "." ~ ASCII_DIGIT+ }
+integer = @{ ASCII_DIGIT+ }
 
 boolean = { "true" | "false" }
 null = { "null" }
 
-// Unquoted value for operators like contains, startswith, etc.
-unquoted_value = { (ASCII_ALPHANUMERIC | "_")+ }
-
 template_expr = {
     braced_template |
     bracketed_template |
+    template_conditional |
     interpolated_text |
     simple_variable
 }
 
-braced_template = { "{" ~ template_content_atomic ~ "}" }
+braced_template = { "{" ~ braced_template_content ~ "}" }
+bracketed_template = { "[" ~ bracketed_template_content ~ "]" }
 
-bracketed_template = { "[" ~ template_content_atomic ~ "]" }
-template_content_atomic = @{ template_content_chars* }
-template_content_chars = _{ 
-    ("${" ~ var_content ~ "}") |
-    ("$" ~ simple_var_name) |
-    (!("}" | "]") ~ ANY)
+braced_template_content = { braced_template_item* }
+braced_template_item = {
+    template_variable |
+    braced_template_literal
 }
 
-simple_variable = { "$" ~ simple_var_name }
+bracketed_template_content = { bracketed_template_item* }
+bracketed_template_item = {
+    template_variable |
+    bracketed_template_literal
+}
 
-interpolated_text = { (literal_text ~ template_variable)+ ~ literal_text? | literal_text ~ (template_variable ~ literal_text?)+ }
+braced_template_literal = @{ 
+    (!(template_variable | "}") ~ ANY)+
+}
 
-template_variable = { "${" ~ var_content ~ "}" | "$" ~ simple_var_name }
-var_content = { (ASCII_ALPHANUMERIC | "_" | ".")+ }
-simple_var_name = { (ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" | ".")* }
+bracketed_template_literal = @{ 
+    (!(template_variable | "]") ~ ANY)+
+}
 
-literal_text = { (!("$" | "{" | "}" | "[" | "]") ~ ANY)+ }
+interpolated_text = { 
+    (interpolated_literal ~ template_variable ~ interpolated_item*) |
+    (template_variable ~ interpolated_item+)
+}
+
+interpolated_item = {
+    template_variable |
+    interpolated_literal
+}
+
+interpolated_literal = @{ 
+    (!("$" | "{" | "}") ~ ANY)+
+}
+
+template_content = { template_item* }
+template_item = {
+    template_variable |
+    template_literal
+}
+template_literal = @{ (!(template_variable | "}" | "]") ~ ANY)+ }
+
+template_conditional = { 
+    "${" ~ field_path ~ "?" ~ template_content ~ ":" ~ template_content ~ "}" 
+}
+
+template_variable = { 
+    braced_variable |
+    plain_variable
+}
+
+braced_variable = { "${" ~ field_path ~ "}" }
+plain_variable = { "$" ~ field_path }
+
+simple_variable = @{ "$" ~ non_numeric_field_path }
+
+// Non-numeric field path - like field_path but excludes pure numeric identifiers
+non_numeric_field_path = { non_numeric_component ~ ("." ~ field_component)* }
+non_numeric_component = { identifier } // Only alphabetic identifiers, no numeric_identifier

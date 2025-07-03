@@ -398,7 +398,7 @@
 //!
 //! // Complex negation
 //! let dsl = parse_command(r#"!(status == "disabled" || role == "guest")"#)?;
-//! assert!(dsl.filter.is_some());
+//! assert!(dsl.filter is_some());
 //!
 //! // String operations with boolean logic
 //! let dsl = parse_command(r#"email ~ "@company.com" && name ^= "A""#)?;
@@ -420,10 +420,10 @@
 //!
 //! // Text word access patterns
 //! let dsl = parse_command("word_0 == \"Alice\"")?;
-//! assert!(dsl.filter.is_some());
+//! assert!(dsl.filter is_some());
 //!
 //! let dsl = parse_command("word_1 > \"25\"")?;
-//! assert!(dsl.filter.is_some());
+//! assert!(dsl.filter is_some());
 //!
 //! // Verify different formats can be parsed
 //! let mut parser = StreamingParser::new();

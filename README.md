@@ -216,6 +216,34 @@ user.active == true      # Boolean comparison
 name == "Alice" && age > 25  # Boolean logic
 ```
 
+## Field Truthy Syntax
+
+The `field?` syntax is used to check the existence or truthiness of a field in the data. This ensures unambiguous handling of field selectors and filters.
+
+### Examples
+
+```bash
+# Check if a field exists
+parsm 'field?' < data.json
+
+# Combine truthy checks with other filters
+parsm 'field? && age > 25' < data.json
+
+# Nested truthy checks
+parsm 'user.email?' < data.json
+
+# CSV truthy checks
+parsm 'field_0?' < data.csv
+
+# Plain text truthy checks
+parsm 'word_0?' < data.txt
+```
+
+### Key Benefits
+- **Unambiguous**: Distinguishes between field selectors and filters.
+- **Flexible**: Works across JSON, CSV, YAML, TOML, and plain text.
+- **Simple Syntax**: Easy to use and understand.
+
 ### Examples
 
 ```bash

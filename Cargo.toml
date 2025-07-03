@@ -20,6 +20,8 @@ serde_yaml = "0.9.33"
 pest = "2.8.1"
 pest_derive = "2.8.1"
 clap = "4.5.40"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dev-dependencies]
 tempfile = "3.0"

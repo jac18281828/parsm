@@ -111,7 +111,7 @@ fn test_csv_template_with_headers() {
     write!(file, "{input}").expect("write temp file");
 
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
-        .arg("$name is $age years old")
+        .arg("[$name is $age years old]")
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");

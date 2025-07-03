@@ -383,9 +383,9 @@ fn test_json_boolean_logic() {
         ("active == true && premium == true", true),
         ("active == true && verified == true", false),
         ("active == true || verified == true", true),
-        ("!verified && premium", true),
-        ("!(active && verified)", true),
-        ("(age > 20) && (active || verified)", true),
+        ("!verified? && premium?", true),
+        ("!(active? && verified?)", true),
+        ("(age > 20) && (active? || verified?)", true),
     ];
 
     for (filter, should_match) in test_cases {

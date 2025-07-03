@@ -11,6 +11,15 @@ pub enum FilterExpr {
         value: FilterValue,
     },
     FieldTruthy(FieldPath),
+    Regex {
+        field: FieldPath,
+        pattern: String,
+        flags: Option<String>,
+    },
+    In {
+        field: FieldPath,
+        values: Vec<FilterValue>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,6 +120,11 @@ pub struct Template {
 pub enum TemplateItem {
     Field(FieldPath),
     Literal(String),
+    Conditional {
+        field: FieldPath,
+        true_template: Template,
+        false_template: Template,
+    },
 }
 
 impl Template {
@@ -126,6 +140,19 @@ impl Template {
                 }
                 TemplateItem::Literal(text) => {
                     result.push_str(text);
+                }
+                TemplateItem::Conditional {
+                    field,
+                    true_template,
+                    false_template,
+                } => {
+                    let is_truthy = FilterEngine::evaluate_field_truthiness(field, data);
+                    let template_to_use = if is_truthy {
+                        true_template
+                    } else {
+                        false_template
+                    };
+                    result.push_str(&template_to_use.render(data));
                 }
             }
         }
@@ -161,10 +188,16 @@ impl FilterEngine {
                 Self::evaluate_comparison(field, op, value, data)
             }
             FilterExpr::FieldTruthy(field) => Self::evaluate_field_truthiness(field, data),
+            FilterExpr::Regex {
+                field,
+                pattern,
+                flags,
+            } => Self::evaluate_regex(field, pattern, flags.as_deref(), data),
+            FilterExpr::In { field, values } => Self::evaluate_in(field, values, data),
         }
     }
 
-    fn evaluate_field_truthiness(field: &FieldPath, data: &Value) -> bool {
+    pub fn evaluate_field_truthiness(field: &FieldPath, data: &Value) -> bool {
         match field.get_value(data) {
             Some(value) => match value {
                 Value::Null => false,
@@ -190,8 +223,14 @@ impl FilterEngine {
         };
 
         match op {
-            ComparisonOp::Equal => Self::values_equal(data_value, filter_value),
-            ComparisonOp::NotEqual => !Self::values_equal(data_value, filter_value),
+            ComparisonOp::Equal => {
+                let data_filter_value = FilterValue::from_json(data_value);
+                Self::values_equal(&data_filter_value, filter_value)
+            }
+            ComparisonOp::NotEqual => {
+                let data_filter_value = FilterValue::from_json(data_value);
+                !Self::values_equal(&data_filter_value, filter_value)
+            }
             ComparisonOp::LessThan => Self::compare_numbers(data_value, filter_value, |a, b| a < b),
             ComparisonOp::LessThanOrEqual => {
                 Self::compare_numbers(data_value, filter_value, |a, b| a <= b)
@@ -209,14 +248,46 @@ impl FilterEngine {
         }
     }
 
-    fn values_equal(data_value: &Value, filter_value: &FilterValue) -> bool {
-        match (data_value, filter_value) {
-            (Value::String(a), FilterValue::String(b)) => a == b,
-            (Value::Number(a), FilterValue::Number(b)) => {
-                (a.as_f64().unwrap_or(0.0) - b).abs() < f64::EPSILON
+    fn evaluate_regex(field: &FieldPath, pattern: &str, flags: Option<&str>, data: &Value) -> bool {
+        let data_value = match field.get_value(data) {
+            Some(v) => v,
+            None => return false,
+        };
+
+        let text = match data_value {
+            Value::String(s) => s,
+            _ => return false,
+        };
+
+        // Simple regex implementation for now - could be enhanced with actual regex crate
+        if let Some(_flags) = flags {
+            // For now, just do case-insensitive matching if 'i' flag is present
+            if flags.unwrap_or("").contains('i') {
+                return text.to_lowercase().contains(&pattern.to_lowercase());
             }
-            (Value::Bool(a), FilterValue::Boolean(b)) => a == b,
-            (Value::Null, FilterValue::Null) => true,
+        }
+
+        text.contains(pattern)
+    }
+
+    fn evaluate_in(field: &FieldPath, values: &[FilterValue], data: &Value) -> bool {
+        let data_value = match field.get_value(data) {
+            Some(v) => v,
+            None => return false,
+        };
+
+        let field_value = FilterValue::from_json(data_value);
+
+        // Check if the field value matches any of the values in the array
+        values.iter().any(|v| Self::values_equal(&field_value, v))
+    }
+
+    fn values_equal(a: &FilterValue, b: &FilterValue) -> bool {
+        match (a, b) {
+            (FilterValue::String(a), FilterValue::String(b)) => a == b,
+            (FilterValue::Number(a), FilterValue::Number(b)) => (a - b).abs() < f64::EPSILON,
+            (FilterValue::Boolean(a), FilterValue::Boolean(b)) => a == b,
+            (FilterValue::Null, FilterValue::Null) => true,
             _ => false,
         }
     }
@@ -264,9 +335,23 @@ impl FilterEngine {
         }
     }
 
+    // The ~ operator is used for regex matching, a regex is expected on
+    // the right-hand side, but for simplicity we will use substring matching
     fn regex_matches(data_value: &Value, filter_value: &FilterValue) -> bool {
         match (data_value, filter_value) {
             (Value::String(data), FilterValue::String(pattern)) => data.contains(pattern),
+            (data_value, FilterValue::String(pattern)) => {
+                let data_str = match data_value {
+                    Value::Number(n) => n.to_string(),
+                    Value::Bool(b) => b.to_string(),
+                    Value::Null => "null".to_string(),
+                    Value::Array(_) | Value::Object(_) => {
+                        serde_json::to_string(data_value).unwrap_or_default()
+                    }
+                    Value::String(s) => s.clone(), // already handled above, but for completeness
+                };
+                data_str.contains(pattern)
+            }
             _ => false,
         }
     }

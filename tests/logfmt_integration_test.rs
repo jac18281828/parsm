@@ -185,7 +185,7 @@ timestamp=1701417661 level=error msg="Database error" endpoint="/orders" respons
 
     // Test template with mixed value types
     let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
-        .arg("{[${level}] ${endpoint} - ${response_time}ms (success: ${success})}")
+        .arg("[[${level}] ${endpoint} - ${response_time}ms (success: ${success})]")
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");
