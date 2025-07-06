@@ -6,20 +6,24 @@ on:
     branches: [main]
 jobs:
   python-integration-test:
+    name: Python Integration Tests
     runs-on: ubuntu-latest
+    needs: rust-checks
+    strategy:
+      matrix:
+        python-version: ['3.12']
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Set up Python 3.11
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python-version }}
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           override: true
-          components: rustfmt, clippy
       - name: Cache Rust dependencies
         uses: actions/cache@v3
         with:
@@ -36,21 +40,75 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-3.11-${{ hashFiles('**/requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-3.11-
+            ${{ runner.os }}-pip-${{ matrix.python-version }}-
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r bin/requirements.txt
-      - name: Build Rust project
+      - name: Build Rust project (release mode for integration tests)
         run: cargo build --release
       - name: Run Python integration tests
         run: |
           cd ${{ github.workspace }}
           python bin/integration_test.py
-      - name: Run Python microbenchmark (optional)
+        env:
+          RUST_LOG: error
+      - name: Upload test artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: integration-test-logs-python-${{ matrix.python-version }}
+          path: |
+            target/debug/
+            target/release/
+          retention-days: 7
+  benchmark:
+    name: Performance Benchmarks
+    runs-on: ubuntu-latest
+    needs: rust-checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Cache dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r bin/requirements.txt
+      - name: Build project (release mode)
+        run: cargo build --release
+      - name: Run microbenchmarks
         run: |
           cd ${{ github.workspace }}
-          python bin/microbenchmark.py || echo "Microbenchmark completed with warnings"
+          python bin/microbenchmark.py
         continue-on-error: true
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: |
+            *.benchmark.json
+            *.benchmark.txt
+          retention-days: 30

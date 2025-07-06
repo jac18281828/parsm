@@ -2,8 +2,6 @@ use clap::{Arg, Command};
 use std::io;
 use tracing::debug;
 
-#[allow(unused_imports)]
-use parsm::filter::TemplateItem;
 use parsm::{
     csv_parser, parse_command, parse_separate_expressions, process_stream, DetectedFormat,
     FilterEngine, FormatDetector, ParsedDSL, ParsedLine,
@@ -617,6 +615,7 @@ fn process_single_value(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::Write;
 
+    // Apply filter if present
     let passes_filter = if let Some(ref filter) = dsl.filter {
         FilterEngine::evaluate(filter, value)
     } else {
@@ -624,11 +623,13 @@ fn process_single_value(
     };
 
     if passes_filter {
+        // Handle field selection first (takes precedence)
         if let Some(ref field_selector) = dsl.field_selector {
             if let Some(extracted) = field_selector.extract_field(value) {
                 writeln!(writer, "{extracted}")?;
             }
         } else {
+            // Handle template or default output
             let output = if let Some(ref template) = dsl.template {
                 template.render(value)
             } else {
@@ -643,7 +644,10 @@ fn process_single_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use serde_json::json;
+
+    use parsm::filter::TemplateItem;
 
     /// Test JSON filtering with equality comparison.
     #[test]
@@ -817,8 +821,8 @@ mod tests {
 
     /// Test interpolated template syntax
     #[test]
-    fn debug_interpolated_template() {
-        let dsl = parse_command(r#"Hello $name, you are $age years old"#).unwrap();
+    fn test_interpolated_template() {
+        let dsl = parse_command(r#"[Hello ${name}, you are ${age} years old]"#).unwrap();
 
         if let Some(ref template) = dsl.template {
             println!("Interpolated template items: {:?}", template.items);

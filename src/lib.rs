@@ -523,7 +523,6 @@ pub mod csv_parser;
 pub mod dsl;
 pub mod filter;
 pub mod format_detector;
-pub mod operators;
 pub mod parse;
 pub mod parser_registry;
 

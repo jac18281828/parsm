@@ -57,6 +57,11 @@ pub const OPERATORS: &[OperatorDef] = &[
         op: ComparisonOp::Contains,
         needs_spaces: false,
     },
+    OperatorDef {
+        symbol: "~=",
+        op: ComparisonOp::Matches,
+        needs_spaces: false,
+    },
     // Single-character operators
     OperatorDef {
         symbol: "<",
@@ -67,11 +72,6 @@ pub const OPERATORS: &[OperatorDef] = &[
         symbol: ">",
         op: ComparisonOp::GreaterThan,
         needs_spaces: true,
-    },
-    OperatorDef {
-        symbol: "~",
-        op: ComparisonOp::Matches,
-        needs_spaces: false,
     },
 ];
 
@@ -133,19 +133,19 @@ pub fn contains_filter_operators(input: &str) -> bool {
     false
 }
 
-/// Get all operator symbols for use in grammar generation or documentation.
-pub fn get_all_operator_symbols() -> Vec<&'static str> {
-    OPERATORS.iter().map(|op| op.symbol).collect()
-}
-
-/// Get all logical operator symbols.
-pub fn get_all_logical_symbols() -> Vec<&'static str> {
-    LOGICAL_OPERATORS.to_vec()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Get all operator symbols for use in grammar generation or documentation.
+    fn get_all_operator_symbols() -> Vec<&'static str> {
+        OPERATORS.iter().map(|op| op.symbol).collect()
+    }
+
+    /// Get all logical operator symbols.
+    fn get_all_logical_symbols() -> Vec<&'static str> {
+        LOGICAL_OPERATORS.to_vec()
+    }
 
     #[test]
     fn test_parse_comparison_op() {
@@ -159,7 +159,7 @@ mod tests {
         assert_eq!(parse_comparison_op("*="), ComparisonOp::Contains);
         assert_eq!(parse_comparison_op("^="), ComparisonOp::StartsWith);
         assert_eq!(parse_comparison_op("$="), ComparisonOp::EndsWith);
-        assert_eq!(parse_comparison_op("~"), ComparisonOp::Matches);
+        assert_eq!(parse_comparison_op("~="), ComparisonOp::Matches);
 
         // Test fallback
         assert_eq!(parse_comparison_op("unknown"), ComparisonOp::Equal);
@@ -175,7 +175,7 @@ mod tests {
         assert!(contains_filter_operators("name *= something"));
         assert!(contains_filter_operators("name ^= prefix"));
         assert!(contains_filter_operators("path $= .txt"));
-        assert!(contains_filter_operators("text ~ pattern"));
+        assert!(contains_filter_operators("text ~= pattern"));
 
         // Logical operators
         assert!(contains_filter_operators("active && enabled"));

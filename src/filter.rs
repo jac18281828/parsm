@@ -17,10 +17,6 @@ pub enum FilterExpr {
         pattern: String,
         flags: Option<String>,
     },
-    In {
-        field: FieldPath,
-        values: Vec<FilterValue>,
-    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -199,7 +195,6 @@ impl FilterEngine {
                 pattern,
                 flags,
             } => Self::evaluate_regex(field, pattern, flags.as_deref(), data),
-            FilterExpr::In { field, values } => Self::evaluate_in(field, values, data),
         }
     }
 
@@ -281,18 +276,6 @@ impl FilterEngine {
         }
 
         text.contains(pattern)
-    }
-
-    fn evaluate_in(field: &FieldPath, values: &[FilterValue], data: &Value) -> bool {
-        let data_value = match field.get_value(data) {
-            Some(v) => v,
-            None => return false,
-        };
-
-        let field_value = FilterValue::from_json(data_value);
-
-        // Check if the field value matches any of the values in the array
-        values.iter().any(|v| Self::values_equal(&field_value, v))
     }
 
     fn values_equal(a: &FilterValue, b: &FilterValue) -> bool {

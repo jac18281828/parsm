@@ -30,7 +30,6 @@ not_expr = {
 
 comparison_expr = {
     "(" ~ WS* ~ boolean_expr ~ WS* ~ ")" |
-    in_expr |
     field_truthy |
     field_path ~ WS* ~ comparison_op ~ WS* ~ value
 }
@@ -44,7 +43,7 @@ and_op = { "&&" }
 not_op = { "!" }
 comparison_op = { 
     "==" | "!=" | "<=" | ">=" | "<" | ">" | 
-    "~" | "^=" | "$=" | "*="
+    "~=" | "^=" | "$=" | "*="
 }
 
 field_path = { field_component ~ ("." ~ field_component)* }
@@ -66,9 +65,6 @@ regex_literal = { "/" ~ regex_content ~ "/" ~ regex_flags? }
 regex_content = @{ (!"/" ~ ANY)* }
 regex_flags = @{ ("i" | "m" | "s" | "x")+ }
 
-in_expr = { field_path ~ WS* ~ "in" ~ WS* ~ array_literal }
-array_literal = { "[" ~ WS* ~ (value ~ (WS* ~ "," ~ WS* ~ value)*)? ~ WS* ~ "]" }
-
 string_literal = { "\"" ~ string_content ~ "\"" | "'" ~ string_content_single ~ "'" }
 string_content = @{ (!("\"") ~ ANY)* }
 string_content_single = @{ (!("'") ~ ANY)* }
@@ -84,23 +80,36 @@ template_expr = {
     braced_template |
     bracketed_template |
     template_conditional |
-    interpolated_text |
     simple_variable
 }
 
 braced_template = { "{" ~ braced_template_content ~ "}" }
 bracketed_template = { "[" ~ bracketed_template_content ~ "]" }
 
-braced_template_content = { braced_template_item* }
+braced_template_content = { 
+    interpolated_content |
+    braced_template_item* 
+}
+
 braced_template_item = {
     template_variable |
     braced_template_literal
 }
 
-bracketed_template_content = { bracketed_template_item* }
+bracketed_template_content = { 
+    interpolated_content |
+    bracketed_template_item* 
+}
+
 bracketed_template_item = {
     template_variable |
     bracketed_template_literal
+}
+
+// Interpolated content can exist within braces or brackets
+interpolated_content = { 
+    (interpolated_literal ~ template_variable ~ interpolated_item*) |
+    (template_variable ~ interpolated_item+)
 }
 
 braced_template_literal = @{ 
@@ -118,11 +127,15 @@ interpolated_text = {
 
 interpolated_item = {
     template_variable |
-    interpolated_literal
+    safe_interpolated_literal
+}
+
+safe_interpolated_literal = @{ 
+    (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "]" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
 }
 
 interpolated_literal = @{ 
-    (!("$" | "{" | "}") ~ ANY)+
+    (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "]" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
 }
 
 template_content = { template_item* }
