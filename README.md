@@ -138,7 +138,8 @@ Options:
       --logfmt    Force logfmt format detection
       --text      Force plain text format detection
   -h, --help      Print help
-  -V, --version   Print version```
+  -V, --version   Print version
+```
 
 ## Force Format Parsing
 
