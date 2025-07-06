@@ -174,8 +174,10 @@ impl FormatDetector {
             }
         }
 
-        // Must have commas and consistent field counts across lines
-        has_commas && field_counts.len() > 1 && field_counts.windows(2).all(|w| w[0] == w[1])
+        // Must have commas and either single line with commas or consistent field counts across multiple lines
+        has_commas
+            && (field_counts.len() == 1
+                || (field_counts.len() > 1 && field_counts.windows(2).all(|w| w[0] == w[1])))
     }
 
     /// Check if content looks like logfmt format

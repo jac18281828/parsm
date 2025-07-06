@@ -1,6 +1,13 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+/// Helper function to create a Command with proper environment setup
+fn parsm_command() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
+    cmd.env("RUST_LOG", "parsm=error");
+    cmd
+}
+
 /// Test basic TOML field selection
 #[test]
 fn test_toml_basic_field_selection() {
@@ -8,7 +15,7 @@ fn test_toml_basic_field_selection() {
 age = 30
 active = true"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#""name""#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -49,7 +56,7 @@ fn test_toml_field_types() {
     ];
 
     for (input, field, expected) in test_cases {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        let mut child = parsm_command()
             .arg(field)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -92,7 +99,7 @@ port = 5432
 host = "0.0.0.0"
 port = 8080"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#""database""#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -132,7 +139,7 @@ fn test_toml_nested_keys() {
 database.port = 5432
 server.host = "0.0.0.0""#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#""database.host""#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -168,7 +175,7 @@ fn test_toml_nonexistent_field() {
     let input = r#"name = "Alice"
 age = 30"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#""nonexistent""#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -204,7 +211,7 @@ fn test_toml_arrays() {
     let input = r#"fruits = ["apple", "banana", "cherry"]
 numbers = [1, 2, 3]"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#""fruits""#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -245,7 +252,7 @@ fn test_toml_braced_field_syntax() {
     let input = r#"name = "Bob"
 version = "1.0.0""#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#"{User: ${name} v${version}}"#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -282,7 +289,7 @@ fn test_toml_template_replacement() {
 env = "production"
 debug = false"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#"{App ${app} running in ${env} mode (debug: ${debug})}"#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -321,7 +328,7 @@ fn test_toml_original_input_template() {
     let input = r#"key = "value1"
 other = "value2""#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#"{Original: ${0} | Key: ${key}}"#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -369,7 +376,7 @@ fn test_toml_string_operations() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        let mut child = parsm_command()
             .arg(filter)
             .arg(r#"{String ops test}"#)
             .stdin(Stdio::piped())
@@ -427,7 +434,7 @@ fn test_toml_numeric_comparisons() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        let mut child = parsm_command()
             .arg(filter)
             .arg(r#"{Numeric test}"#)
             .stdin(Stdio::piped())
@@ -482,7 +489,7 @@ fn test_toml_boolean_logic() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        let mut child = parsm_command()
             .arg(filter)
             .arg(r#"{Boolean test passed}"#)
             .stdin(Stdio::piped())
@@ -542,7 +549,7 @@ score = 85.5"#;
     ];
 
     for (filter, should_match) in test_cases {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        let mut child = parsm_command()
             .arg(filter)
             .arg(r#"{Complex filter result}"#)
             .stdin(Stdio::piped())
@@ -604,7 +611,7 @@ fn test_toml_malformed_input() {
     ];
 
     for input in malformed_inputs {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        let mut child = parsm_command()
             .arg(r#""name""#)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -647,7 +654,7 @@ fn test_toml_inline_tables() {
     let input = r#"server = { host = "localhost", port = 8080 }
 client = { timeout = 30 }"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#""server""#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -693,7 +700,7 @@ items = ["first", "second"]
 connection_timeout = 5000
 retry_count = 3"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#"{Title: ${title}, Count: ${count}, Enabled: ${enabled}}"#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -730,7 +737,7 @@ fn test_toml_empty_and_whitespace() {
 name = "   spaced   "
 zero = 0"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg(r#"{Empty: '${empty_string}', Name: '${name}', Zero: ${zero}}"#)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

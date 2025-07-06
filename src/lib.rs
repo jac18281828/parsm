@@ -52,10 +52,16 @@
 //! - **Mixed templates**: `{Hello ${name}!}` (mix literals and variables)
 //! - **Interpolated text**: `Hello $name` (variables in plain text)
 //! - **Literal templates**: `{name}` (literal text, not field substitution)
-//! - **Indexed fields**: `{${1}, ${2}, ${3}}` (1-based, requires braces for numbers)
+//! - **Indexed fields**: `{${1}, ${2}, ${3}}` (1-based positional access, requires braces)
 //! - **Original input**: `{${0}}` (entire original input, requires braces)
 //! - **Nested fields**: `{${user.email}}` or `$user.email`
 //! - **Literal dollars**: `{Price: $12.50}` (literal $ when not followed by valid variable name)
+//!
+//! **Variable Mapping Rules:**
+//! - `${0}` always refers to the original input text
+//! - `${1}`, `${2}`, etc. refer to positional fields (1st, 2nd, etc.)
+//! - `$0`, `$1`, `$20` are treated as literal text unless in `${n}` form
+//! - Consistent across all data formats (CSV, JSON, text, logfmt, YAML, TOML)
 //!
 //! ## Field Selection
 //!
@@ -215,13 +221,25 @@
 //!     assert_eq!(output, "name");
 //! }
 //!
-//! // Original input variable
+//! // Original input variable (${0} always refers to entire input)
 //! let dsl = parse_command(r#"{Original: ${0} → Name: ${name}}"#)?;
 //! assert!(dsl.template.is_some());
+//! if let Some(template) = &dsl.template {
+//!     // Example showing ${0} referring to original input
+//!     let data = json!({"$0": "Alice,30,Engineer", "name": "Alice"});
+//!     let output = template.render(&data);
+//!     assert_eq!(output, "Original: Alice,30,Engineer → Name: Alice");
+//! }
 //!
-//! // CSV positional fields
+//! // CSV positional fields (1-based indexing)
 //! let dsl = parse_command(r#"{Employee: ${1}, Age: ${2}, Role: ${3}}"#)?;
 //! assert!(dsl.template.is_some());
+//! if let Some(template) = &dsl.template {
+//!     // Example showing how CSV fields map to 1-based indices
+//!     let data = json!({"1": "Alice", "2": "30", "3": "Engineer"});
+//!     let output = template.render(&data);
+//!     assert_eq!(output, "Employee: Alice, Age: 30, Role: Engineer");
+//! }
 //!
 //! // Nested JSON fields
 //! let dsl = parse_command(r#"{User: ${user.name}, Email: ${user.email}}"#)?;
@@ -398,7 +416,7 @@
 //!
 //! // Complex negation
 //! let dsl = parse_command(r#"!(status == "disabled" || role == "guest")"#)?;
-//! assert!(dsl.filter is_some());
+//! assert!(dsl.filter.is_some());
 //!
 //! // String operations with boolean logic
 //! let dsl = parse_command(r#"email ~ "@company.com" && name ^= "A""#)?;
@@ -411,19 +429,27 @@
 //! ```rust
 //! use parsm::{parse_command, StreamingParser};
 //!
-//! // CSV field access patterns
+//! // CSV field access patterns (legacy field names still supported)
 //! let dsl = parse_command("field_0 == \"Alice\"")?;
 //! assert!(dsl.filter.is_some());
 //!
 //! let dsl = parse_command("field_1 > \"25\"")?;
 //! assert!(dsl.filter.is_some());
 //!
-//! // Text word access patterns
+//! // New 1-based positional access for CSV
+//! let dsl = parse_command(r#"{${1}} {${2}} {${3}}"#)?;
+//! assert!(dsl.template.is_some());
+//!
+//! // Text word access patterns (legacy names still supported)
 //! let dsl = parse_command("word_0 == \"Alice\"")?;
-//! assert!(dsl.filter is_some());
+//! assert!(dsl.filter.is_some());
 //!
 //! let dsl = parse_command("word_1 > \"25\"")?;
-//! assert!(dsl.filter is_some());
+//! assert!(dsl.filter.is_some());
+//!
+//! // New 1-based positional access for text
+//! let dsl = parse_command(r#"{First: ${1}, Second: ${2}}"#)?;
+//! assert!(dsl.template.is_some());
 //!
 //! // Verify different formats can be parsed
 //! let mut parser = StreamingParser::new();

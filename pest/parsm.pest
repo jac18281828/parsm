@@ -142,7 +142,7 @@ template_variable = {
 }
 
 braced_variable = { "${" ~ field_path ~ "}" }
-plain_variable = { "$" ~ field_path }
+plain_variable = { "$" ~ non_numeric_field_path }
 
 simple_variable = @{ "$" ~ non_numeric_field_path }
 

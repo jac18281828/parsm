@@ -3,6 +3,13 @@ use std::io::Write;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
+/// Helper function to create a Command with proper environment setup
+fn parsm_command() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
+    cmd.env("RUST_LOG", "parsm=error");
+    cmd
+}
+
 #[test]
 fn test_csv_field_selection_by_header() {
     // Test field selection by header name on CSV with headers
@@ -11,7 +18,7 @@ fn test_csv_field_selection_by_header() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("name")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -34,7 +41,7 @@ fn test_csv_field_selection_by_index() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_0")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -57,7 +64,7 @@ fn test_csv_header_detection() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("name")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -81,7 +88,7 @@ fn test_csv_no_header_detection() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_0")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -110,7 +117,7 @@ fn test_csv_template_with_headers() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("[$name is $age years old]")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -132,7 +139,7 @@ fn test_csv_filter_with_headers() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("occupation == \"engineer\" {$name}")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -155,7 +162,7 @@ fn test_csv_multiple_field_selection() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_2") // Select third field (occupation)
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -176,8 +183,8 @@ fn test_csv_numeric_filtering() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
-        .arg("field_1 > \"27\"") // Filter by age > 27
+    let output = parsm_command()
+        .arg("field_1 > 27") // Filter by age > 27
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");
@@ -200,7 +207,7 @@ fn test_csv_string_filtering() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_2 == \"Engineer\"") // Filter by occupation
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -224,8 +231,8 @@ fn test_csv_template_replacement_indexed() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
-        .arg("field_1 > \"20\" {Name: $field_0, Age: $field_1, Job: $field_2}")
+    let output = parsm_command()
+        .arg("field_1 > 20 {Name: $field_0, Age: $field_1, Job: $field_2}")
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");
@@ -245,8 +252,8 @@ fn test_csv_original_input_template() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
-        .arg("field_1 > \"25\" {Person: ${field_0} | Original: ${0}}")
+    let output = parsm_command()
+        .arg("field_1 > 25 {Person: ${field_0} | Original: ${0}}")
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");
@@ -265,8 +272,8 @@ fn test_csv_complex_boolean_logic() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
-        .arg("field_1 > \"25\" && field_3 == \"true\" {Found: $field_0 ($field_2)}")
+    let output = parsm_command()
+        .arg("field_1 > 25 && field_3? {Found: $field_0 ($field_2)}")
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");
@@ -289,7 +296,7 @@ fn test_csv_nonexistent_field() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_5") // Field that doesn't exist
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -310,7 +317,7 @@ fn test_csv_quoted_fields() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_1") // Select age field
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -325,12 +332,12 @@ fn test_csv_quoted_fields() {
 #[test]
 fn test_csv_empty_fields() {
     // Test CSV with empty fields
-    let input = "Alice,,Engineer\n,25,Designer\nCharlie,35,";
+    let input = "Alice,,Engineer\n,25,Designer\nCharlie,35,\n";
 
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_0") // Select first field
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -350,19 +357,19 @@ fn test_csv_empty_fields() {
 fn test_csv_numeric_comparisons() {
     // Test various numeric comparisons
     let test_cases = vec![
-        ("Alice,30,5000", "field_1 > \"25\"", true),
-        ("Bob,22,3000", "field_1 < \"25\"", true),
-        ("Charlie,30,5000", "field_2 >= \"5000\"", true),
-        ("Dana,28,4500", "field_2 <= \"4000\"", false),
-        ("Eve,35,6000", "field_1 == \"35\"", true),
-        ("Frank,25,3500", "field_1 != \"30\"", true),
+        ("Alice,30,5000", "field_1 > 25", true),
+        ("Bob,22,3000", "field_1 < 25", true),
+        ("Charlie,30,5000", "field_2 >= 5000", true),
+        ("Dana,28,4500", "field_2 <= 4000", false),
+        ("Eve,35,6000", "field_1 == 35", true),
+        ("Frank,25,3500", "field_1 != 30", true),
     ];
 
     for (input, filter, should_match) in test_cases {
         let mut file = NamedTempFile::new().expect("create temp file");
         write!(file, "{input}").expect("write temp file");
 
-        let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        let output = parsm_command()
             .arg(format!("{filter} {{Match: $field_0}}"))
             .stdin(File::open(file.path()).unwrap())
             .output()
@@ -394,7 +401,7 @@ fn test_csv_different_row_lengths() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_1") // Select second field (age)
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -418,7 +425,7 @@ fn test_csv_single_column() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_0") // Select only field
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -443,7 +450,7 @@ Bob,25,Designer"#;
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("field_0 == \"Bob\"")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -464,8 +471,8 @@ fn test_csv_braced_field_syntax() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
-        .arg("field_1 > \"25\" {Name: ${field_0}, Age: ${field_1}, Job: ${field_2}}")
+    let output = parsm_command()
+        .arg("field_1 > 25 {Name: ${field_0}, Age: ${field_1}, Job: ${field_2}}")
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");
@@ -484,7 +491,7 @@ fn test_csv_headers_all_data_rows() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("name") // Select by header name
         .stdin(File::open(file.path()).unwrap())
         .output()

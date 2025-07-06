@@ -597,7 +597,7 @@ mod tests {
         } else {
             panic!("Expected template");
         }
-        
+
         // For combined filter + template expressions, we would need a more complex setup
         // but that's not needed for this simple rendering test
     }

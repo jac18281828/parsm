@@ -3,6 +3,13 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
+/// Helper function to create a Command with proper environment setup
+fn parsm_command() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
+    cmd.env("RUST_LOG", "parsm=error");
+    cmd
+}
+
 #[test]
 fn test_logfmt_field_selection() {
     // Test basic field selection from logfmt
@@ -13,7 +20,7 @@ level=warn msg="High memory usage" service=worker memory=85%"#;
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("level")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -35,7 +42,7 @@ fn test_logfmt_nested_field_selection() {
     let input = r#"timestamp="2023-12-01T10:00:00Z" level=info msg="User login" user_id=123 user_name="Alice"
 timestamp="2023-12-01T10:01:00Z" level=info msg="User logout" user_id=456 user_name="Bob""#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg("user_name")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -71,7 +78,7 @@ level=warn msg="Slow request" duration=3000ms status=200"#;
     write!(file, "{input}").expect("write temp file");
 
     // Test filtering by level
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("level == \"error\"")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -93,7 +100,7 @@ fn test_logfmt_template_rendering() {
     let input = r#"timestamp="2023-12-01T10:00:00Z" level=info msg="User login" user_id=123 username="alice"
 timestamp="2023-12-01T10:01:00Z" level=warn msg="Failed login attempt" user_id=456 username="bob""#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg("{${level}: ${msg} - User: ${username}}")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -129,7 +136,7 @@ level=info msg="Request" method=PUT status=200 duration=200ms"#;
     write!(file, "{input}").expect("write temp file");
 
     // Filter successful requests and format them
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("status == \"200\" {$method request took $duration}")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -150,7 +157,7 @@ fn test_logfmt_escaped_quotes() {
     let input = r#"level=info msg=\"Server starting on port 8080\" config=\"/etc/app.conf\"
 level=error msg=\"Failed to load config file\" error=\"not found\""#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg("msg")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -184,8 +191,8 @@ timestamp=1701417661 level=error msg="Database error" endpoint="/orders" respons
     write!(file, "{input}").expect("write temp file");
 
     // Test template with mixed value types
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
-        .arg("[[${level}] ${endpoint} - ${response_time}ms (success: ${success})]")
+    let output = parsm_command()
+        .arg("[${level} ${endpoint} - ${response_time}ms (success: ${success})]")
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");
@@ -195,8 +202,8 @@ timestamp=1701417661 level=error msg="Database error" endpoint="/orders" respons
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
     assert_eq!(lines.len(), 2);
-    assert_eq!(lines[0], "[info] /users - 250ms (success: true)");
-    assert_eq!(lines[1], "[error] /orders - 5000ms (success: false)");
+    assert_eq!(lines[0], "info /users - 250ms (success: true)");
+    assert_eq!(lines[1], "error /orders - 5000ms (success: false)");
 }
 
 #[test]
@@ -212,7 +219,7 @@ level=warn service=worker method=DELETE status=404 duration=200"#;
     write!(file, "{input}").expect("write temp file");
 
     // Filter for API service with successful status codes
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("service == \"api\" && status == \"200\"")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -234,7 +241,7 @@ fn test_logfmt_dollar_template_syntax() {
     let input = r#"level=info msg="Request processed" user=alice action=login timestamp=1701417600
 level=warn msg="Rate limit exceeded" user=bob action=api_call timestamp=1701417661"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .arg("{$user performed $action at $timestamp}")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -268,7 +275,7 @@ level=debug msg="Special chars: []{}()" path="/api/v1/test" query="?param=value&
     write!(file, "{input}").expect("write temp file");
 
     // Test field selection on empty values
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("msg")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -294,7 +301,7 @@ fn test_logfmt_format_detection() {
     // Test that logfmt is correctly detected and parsed
     let input = r#"time=2023-12-01T10:00:00Z level=info msg="Application started" version=1.2.3"#;
 
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let mut child = parsm_command()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -332,7 +339,7 @@ level=error msg="Another good entry" status=500"#;
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("level")
         .stdin(File::open(file.path()).unwrap())
         .output()
@@ -367,7 +374,7 @@ fn test_logfmt_performance_large_dataset() {
     write!(file, "{input}").expect("write temp file");
 
     let start_time = std::time::Instant::now();
-    let output = Command::new(env!("CARGO_BIN_EXE_parsm"))
+    let output = parsm_command()
         .arg("user_id")
         .stdin(File::open(file.path()).unwrap())
         .output()

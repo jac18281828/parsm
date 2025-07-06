@@ -1,4 +1,5 @@
 use serde_json::Value;
+use tracing::{debug, trace};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum FilterExpr {
@@ -129,13 +130,18 @@ pub enum TemplateItem {
 
 impl Template {
     pub fn render(&self, data: &Value) -> String {
+        debug!("Template::render called with data: {:?}", data);
         let mut result = String::new();
 
         for item in &self.items {
             match item {
                 TemplateItem::Field(field) => {
+                    trace!("Template field: {:?}", field);
                     if let Some(value) = field.get_value(data) {
+                        debug!("Field value found: {:?}", value);
                         result.push_str(&format_value(value));
+                    } else {
+                        debug!("Field value not found for: {:?}", field);
                     }
                 }
                 TemplateItem::Literal(text) => {
@@ -202,7 +208,14 @@ impl FilterEngine {
             Some(value) => match value {
                 Value::Null => false,
                 Value::Bool(b) => *b,
-                Value::String(s) => !s.is_empty(),
+                Value::String(s) => {
+                    // Handle string representations of boolean values
+                    match s.to_lowercase().as_str() {
+                        "false" | "f" | "0" | "no" | "off" => false,
+                        "true" | "t" | "1" | "yes" | "on" => true,
+                        _ => !s.is_empty(), // Non-empty non-boolean strings are truthy
+                    }
+                }
                 Value::Number(n) => n.as_f64().unwrap_or(0.0) != 0.0,
                 Value::Array(arr) => !arr.is_empty(),
                 Value::Object(obj) => !obj.is_empty(),
@@ -288,6 +301,21 @@ impl FilterEngine {
             (FilterValue::Number(a), FilterValue::Number(b)) => (a - b).abs() < f64::EPSILON,
             (FilterValue::Boolean(a), FilterValue::Boolean(b)) => a == b,
             (FilterValue::Null, FilterValue::Null) => true,
+            // Handle cross-type comparisons: string vs number
+            (FilterValue::String(s), FilterValue::Number(n)) => {
+                if let Ok(parsed) = s.parse::<f64>() {
+                    (parsed - n).abs() < f64::EPSILON
+                } else {
+                    false
+                }
+            }
+            (FilterValue::Number(n), FilterValue::String(s)) => {
+                if let Ok(parsed) = s.parse::<f64>() {
+                    (n - parsed).abs() < f64::EPSILON
+                } else {
+                    false
+                }
+            }
             _ => false,
         }
     }
