@@ -32,7 +32,7 @@ name = "parsm"
 path = "src/bin/parsm.rs"
 
 
-# Example usage in your lib.rs or main.rs:
+# Example usage in your lib.rs 
 # 
 # Basic usage:
 # ```
@@ -55,16 +55,22 @@ path = "src/bin/parsm.rs"
 # echo 'level=error msg="timeout" service=api' | parsm 'level == "error" [${level} ${msg}]'
 # 
 # // Simple template variables
-# echo '{"name": "Alice", "age": 30}' | parsm '$name is $age years old'
+# echo '{"name": "Alice", "age": 30}' | parsm '[$name is $age years old]'
+# 
+# // String operations
+# echo '{"name": "Alice"}' | parsm 'name *= "lic"'    // contains
+# echo '{"name": "Alice"}' | parsm 'name ^= "Al"'     // starts with  
+# echo '{"name": "Alice"}' | parsm 'name $= "ice"'    // ends with
+# echo '{"name": "Alice"}' | parsm 'name ~= "A.*e"'   // regex match
 # 
 # // Complex filters
-# parsm 'name == "Alice" && age > 25 {${name}: active}'
+# parsm 'name == "Alice" && age > 25 [${name}: active]'
 # ```
 #
 # Advanced features:
 # - Auto-detects JSON, CSV, YAML, TOML, logfmt, and plain text
 # - Supports nested field access (user.email)
-# - Rich comparison operators (==, !=, <, >, contains, startswith, etc.)
+# - Rich comparison operators (==, !=, <, >, *=, ^=, $=, ~=)
 # - Boolean logic (&&, ||, !) with explicit comparisons
 # - Template-based output formatting with ${variable} syntax
 # - Streaming processing for large datasets
