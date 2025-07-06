@@ -312,6 +312,7 @@ dependencies = [
  "csv",
  "pest",
  "pest_derive",
+ "regex",
  "serde",
  "serde_json",
  "serde_yaml",

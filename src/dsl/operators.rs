@@ -59,7 +59,7 @@ pub const OPERATORS: &[OperatorDef] = &[
     },
     OperatorDef {
         symbol: "~=",
-        op: ComparisonOp::Matches,
+        op: ComparisonOp::Regex,
         needs_spaces: false,
     },
     // Single-character operators
@@ -159,7 +159,6 @@ mod tests {
         assert_eq!(parse_comparison_op("*="), ComparisonOp::Contains);
         assert_eq!(parse_comparison_op("^="), ComparisonOp::StartsWith);
         assert_eq!(parse_comparison_op("$="), ComparisonOp::EndsWith);
-        assert_eq!(parse_comparison_op("~="), ComparisonOp::Matches);
 
         // Test fallback
         assert_eq!(parse_comparison_op("unknown"), ComparisonOp::Equal);
@@ -175,7 +174,6 @@ mod tests {
         assert!(contains_filter_operators("name *= something"));
         assert!(contains_filter_operators("name ^= prefix"));
         assert!(contains_filter_operators("path $= .txt"));
-        assert!(contains_filter_operators("text ~= pattern"));
 
         // Logical operators
         assert!(contains_filter_operators("active && enabled"));

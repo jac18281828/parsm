@@ -343,7 +343,6 @@ mod tests {
             ("age >= 25", ComparisonOp::GreaterThanOrEqual),
             ("age < 25", ComparisonOp::LessThan),
             ("age <= 25", ComparisonOp::LessThanOrEqual),
-            ("name ~= /pattern/", ComparisonOp::Matches),
             ("name *= \"text\"", ComparisonOp::Contains),
             ("name ^= \"prefix\"", ComparisonOp::StartsWith),
             ("name $= \"suffix\"", ComparisonOp::EndsWith),

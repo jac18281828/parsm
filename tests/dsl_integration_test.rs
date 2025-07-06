@@ -739,21 +739,253 @@ fn test_regex_matching() {
 
             if let Some(FilterExpr::Comparison { field, op, value }) = parsed.filter {
                 assert_eq!(field.parts, vec!["name"]);
-                assert_eq!(op, ComparisonOp::Matches);
-                // Value should contain the regex pattern
-                match value {
-                    FilterValue::String(pattern) => {
-                        assert!(pattern.contains("^[A-Z]"), "Should contain regex pattern");
-                    }
-                    _ => panic!("Regex value should be string"),
+                assert!(
+                    matches!(op, ComparisonOp::Regex),
+                    "Should be regex operator"
+                );
+                if let FilterValue::String(pattern) = value {
+                    assert!(pattern.contains("^[A-Z]"), "Should contain regex pattern");
+                } else {
+                    panic!("Expected string value for regex pattern");
                 }
             } else {
-                panic!("Expected comparison with regex");
+                panic!("Expected comparison expression with regex operator");
             }
         }
         Err(e) => {
             println!("Note: Regex parsing may not be fully implemented: {e}");
             // This test documents the expected behavior even if not fully implemented
         }
+    }
+}
+
+/// Test all comparison operators in DSL
+#[test]
+fn test_all_comparison_operators() {
+    // Test equality operator (==)
+    let result = parse_command(r#"name == "Alice""#).unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["name"]);
+        assert_eq!(op, ComparisonOp::Equal);
+        assert_eq!(value, FilterValue::String("Alice".to_string()));
+    } else {
+        panic!("Expected equality comparison");
+    }
+
+    // Test not equal operator (!=)
+    let result = parse_command(r#"name != "Bob""#).unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["name"]);
+        assert_eq!(op, ComparisonOp::NotEqual);
+        assert_eq!(value, FilterValue::String("Bob".to_string()));
+    } else {
+        panic!("Expected not equal comparison");
+    }
+
+    // Test less than operator (<)
+    let result = parse_command("age < 30").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["age"]);
+        assert_eq!(op, ComparisonOp::LessThan);
+        assert_eq!(value, FilterValue::Number(30.0));
+    } else {
+        panic!("Expected less than comparison");
+    }
+
+    // Test less than or equal operator (<=)
+    let result = parse_command("age <= 30").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["age"]);
+        assert_eq!(op, ComparisonOp::LessThanOrEqual);
+        assert_eq!(value, FilterValue::Number(30.0));
+    } else {
+        panic!("Expected less than or equal comparison");
+    }
+
+    // Test greater than operator (>)
+    let result = parse_command("age > 25").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["age"]);
+        assert_eq!(op, ComparisonOp::GreaterThan);
+        assert_eq!(value, FilterValue::Number(25.0));
+    } else {
+        panic!("Expected greater than comparison");
+    }
+
+    // Test greater than or equal operator (>=)
+    let result = parse_command("age >= 25").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["age"]);
+        assert_eq!(op, ComparisonOp::GreaterThanOrEqual);
+        assert_eq!(value, FilterValue::Number(25.0));
+    } else {
+        panic!("Expected greater than or equal comparison");
+    }
+
+    // Test contains operator (*=)
+    let result = parse_command(r#"name *= "lic""#).unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["name"]);
+        assert_eq!(op, ComparisonOp::Contains);
+        assert_eq!(value, FilterValue::String("lic".to_string()));
+    } else {
+        panic!("Expected contains comparison");
+    }
+
+    // Test starts with operator (^=)
+    let result = parse_command(r#"name ^= "Al""#).unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["name"]);
+        assert_eq!(op, ComparisonOp::StartsWith);
+        assert_eq!(value, FilterValue::String("Al".to_string()));
+    } else {
+        panic!("Expected starts with comparison");
+    }
+
+    // Test ends with operator ($=)
+    let result = parse_command(r#"name $= "ice""#).unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["name"]);
+        assert_eq!(op, ComparisonOp::EndsWith);
+        assert_eq!(value, FilterValue::String("ice".to_string()));
+    } else {
+        panic!("Expected ends with comparison");
+    }
+
+    // Test regex operator (~=)
+    let result = parse_command(r#"email ~= "@.*\.com$""#).unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["email"]);
+        assert_eq!(op, ComparisonOp::Regex);
+        assert_eq!(value, FilterValue::String("@.*\\.com$".to_string()));
+    } else {
+        panic!("Expected regex comparison");
+    }
+}
+
+/// Test operator parsing with different value types
+#[test]
+fn test_operators_with_different_value_types() {
+    // String values
+    let result = parse_command(r#"name == "Alice""#).unwrap();
+    assert!(result.filter.is_some());
+
+    // Numeric values
+    let result = parse_command("age >= 18").unwrap();
+    assert!(result.filter.is_some());
+
+    // Boolean values
+    let result = parse_command("active == true").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["active"]);
+        assert_eq!(op, ComparisonOp::Equal);
+        assert_eq!(value, FilterValue::Boolean(true));
+    } else {
+        panic!("Expected boolean comparison");
+    }
+
+    let result = parse_command("active != false").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["active"]);
+        assert_eq!(op, ComparisonOp::NotEqual);
+        assert_eq!(value, FilterValue::Boolean(false));
+    } else {
+        panic!("Expected boolean not equal comparison");
+    }
+
+    // Decimal numbers
+    let result = parse_command("score <= 98.5").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
+        assert_eq!(field.parts, vec!["score"]);
+        assert_eq!(op, ComparisonOp::LessThanOrEqual);
+        assert_eq!(value, FilterValue::Number(98.5));
+    } else {
+        panic!("Expected decimal number comparison");
+    }
+}
+
+/// Test operator precedence and spacing
+#[test]
+fn test_operator_precedence_and_spacing() {
+    // Test that multi-character operators are parsed correctly even without spaces
+    let result = parse_command("age>=25").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison {
+        field: _,
+        op,
+        value: _,
+    }) = result.filter
+    {
+        assert_eq!(op, ComparisonOp::GreaterThanOrEqual);
+    } else {
+        panic!("Expected >= operator parsing without spaces");
+    }
+
+    // Test that <= is parsed correctly
+    let result = parse_command("age<=30").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison {
+        field: _,
+        op,
+        value: _,
+    }) = result.filter
+    {
+        assert_eq!(op, ComparisonOp::LessThanOrEqual);
+    } else {
+        panic!("Expected <= operator parsing without spaces");
+    }
+
+    // Test that != is parsed correctly
+    let result = parse_command(r#"name!="Bob""#).unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison {
+        field: _,
+        op,
+        value: _,
+    }) = result.filter
+    {
+        assert_eq!(op, ComparisonOp::NotEqual);
+    } else {
+        panic!("Expected != operator parsing without spaces");
+    }
+
+    // Test single character operators with spaces (required for disambiguation)
+    let result = parse_command("age < 30").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison {
+        field: _,
+        op,
+        value: _,
+    }) = result.filter
+    {
+        assert_eq!(op, ComparisonOp::LessThan);
+    } else {
+        panic!("Expected < operator with spaces");
+    }
+
+    let result = parse_command("age > 25").unwrap();
+    assert!(result.filter.is_some());
+    if let Some(FilterExpr::Comparison {
+        field: _,
+        op,
+        value: _,
+    }) = result.filter
+    {
+        assert_eq!(op, ComparisonOp::GreaterThan);
+    } else {
+        panic!("Expected > operator with spaces");
     }
 }
