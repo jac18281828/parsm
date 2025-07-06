@@ -14,6 +14,44 @@ pub enum DetectedFormat {
     PlainText,
 }
 
+impl DetectedFormat {
+    /// Check if this detected format is compatible with a forced format
+    ///
+    /// This allows forced formats to include related variants and processing modes.
+    /// For example, --json should allow both Json and JsonArray detection,
+    /// --yaml should work with both document and line-by-line YAML, etc.
+    pub fn is_compatible_with(&self, forced: &DetectedFormat) -> bool {
+        match (self, forced) {
+            // JSON family - Json and JsonArray are interchangeable with --json
+            (DetectedFormat::Json, DetectedFormat::Json) => true,
+            (DetectedFormat::JsonArray, DetectedFormat::Json) => true,
+            (DetectedFormat::Json, DetectedFormat::JsonArray) => true,
+            (DetectedFormat::JsonArray, DetectedFormat::JsonArray) => true,
+
+            // YAML family - can be processed as documents or line-by-line
+            (DetectedFormat::Yaml, DetectedFormat::Yaml) => true,
+
+            // TOML family - can be processed as documents or line-by-line
+            (DetectedFormat::Toml, DetectedFormat::Toml) => true,
+
+            // CSV family - can be processed as complete documents or streaming
+            (DetectedFormat::Csv, DetectedFormat::Csv) => true,
+
+            // Logfmt - typically line-by-line but can be document-level
+            (DetectedFormat::Logfmt, DetectedFormat::Logfmt) => true,
+
+            // PlainText - always compatible with itself
+            (DetectedFormat::PlainText, DetectedFormat::PlainText) => true,
+
+            // Cross-format compatibility could be added here in the future
+            // For example, if we wanted --structured to match JSON, YAML, TOML
+
+            // Everything else is incompatible
+            _ => false,
+        }
+    }
+}
+
 pub struct FormatDetector;
 
 impl FormatDetector {

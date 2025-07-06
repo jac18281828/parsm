@@ -518,16 +518,16 @@ fn test_csv_headers_all_data_rows() {
 #[test]
 fn test_csv_forced_format() {
     let test_cases = vec![
-        // Space-separated data that might be detected as text, but force CSV parsing
-        ("Alice 30 Engineer", r#""field_0""#, "Alice 30 Engineer"),
-        ("Alice 30 Engineer", r#""1""#, "Alice 30 Engineer"), // Single field when parsed as CSV
-        // Tab-separated data forced as CSV
+        // Comma-separated data that might be detected as other formats, but force CSV parsing
         (
             "name,age,occupation\nAlice,30,Engineer",
             r#""name""#,
             "Alice",
         ),
         ("name,age,occupation\nAlice,30,Engineer", r#""age""#, "30"),
+        ("Alice,30,Engineer", r#""field_0""#, "Alice"),
+        ("Alice,30,Engineer", r#""field_1""#, "30"),
+        ("Alice,30,Engineer", r#""field_2""#, "Engineer"),
         // Comma-separated with quotes, ensure it's parsed as CSV
         ("\"Smith, John\",30,Engineer", r#""field_0""#, "Smith, John"),
         ("\"Smith, John\",30,Engineer", r#""field_1""#, "30"),

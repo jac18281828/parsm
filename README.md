@@ -91,7 +91,7 @@ Alice 30 Engineer
 Bob 25 Designer
 ```
 
-### CLI Flags to force format handling
+### CLI Flags to force urge format handling to use a particular parser
 --json - Force JSON format parsing
 --yaml - Force YAML format parsing
 --csv - Force CSV format parsing

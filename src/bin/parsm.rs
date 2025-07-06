@@ -207,8 +207,11 @@ fn process_stream_with_filter(
 
         // Use format detector to determine the most likely format
         let detected_formats = if let Some(forced) = forced_format {
-            // If format is forced, use it with high confidence
-            vec![(forced, 1.0)]
+            // Use detection but filter to only formats compatible with the forced one
+            FormatDetector::detect(&input)
+                .into_iter()
+                .filter(|(format, _)| format.is_compatible_with(&forced))
+                .collect()
         } else {
             FormatDetector::detect(&input)
         };
