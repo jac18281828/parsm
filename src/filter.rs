@@ -79,7 +79,7 @@ pub enum ComparisonOp {
     Contains,
     StartsWith,
     EndsWith,
-    Regex, // For ~= regex matching
+    Regex,
 }
 
 #[derive(Debug, Clone, PartialEq)]

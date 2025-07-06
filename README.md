@@ -12,6 +12,14 @@ By default, parsm outputs the original input when a filter matches. For custom o
 
 ## Installation
 
+### From crates.io
+
+```bash
+cargo install parsm
+```
+
+### From source
+
 ```bash
 cargo install --path .
 ```
@@ -72,9 +80,9 @@ echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 [${name} is ${age}]'
 ### Filters
 
 - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
-- String ops: `~` (contains), `^=` (starts with), `$=` (ends with)
+- String ops: `*=` (contains), `^=` (starts with), `$=` (ends with), `~=` (regex match)
 - Boolean logic: `&&`, `||`, `!`
-- Existence check: `field?`
+- **Truthy** check: `field?`
 
 Examples:
 

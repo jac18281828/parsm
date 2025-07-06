@@ -36,8 +36,6 @@ comparison_expr = {
 
 field_truthy = { field_path ~ "?" }
 
-
-
 or_op = { "||" }
 and_op = { "&&" }
 not_op = { "!" }
