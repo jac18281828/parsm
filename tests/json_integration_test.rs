@@ -558,7 +558,7 @@ fn test_json_null_handling() {
     assert!(stdout.contains("Found null description for Test"));
 }
 
-/// Test JSON forced format parsing with --json flag
+/// Test JSON forced format detection with --json flag
 #[test]
 fn test_json_forced_format() {
     let test_cases = vec![

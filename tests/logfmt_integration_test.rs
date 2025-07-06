@@ -392,7 +392,7 @@ fn test_logfmt_performance_large_dataset() {
     );
 }
 
-/// Test logfmt forced format parsing with --logfmt flag
+/// Test logfmt forced format detection with --logfmt flag
 #[test]
 fn test_logfmt_forced_format() {
     let test_cases = vec![

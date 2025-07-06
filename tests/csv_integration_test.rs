@@ -514,7 +514,7 @@ fn test_csv_headers_all_data_rows() {
     assert_eq!(line_count, 3); // Only data rows, not header
 }
 
-/// Test CSV forced format parsing with --csv flag
+/// Test CSV forced format detection with --csv flag
 #[test]
 fn test_csv_forced_format() {
     let test_cases = vec![

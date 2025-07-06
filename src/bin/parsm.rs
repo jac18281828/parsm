@@ -49,37 +49,37 @@ fn main() {
         .arg(
             Arg::new("format-json")
                 .long("json")
-                .help("Force JSON format parsing")
+                .help("Force JSON format detection")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("format-yaml")
                 .long("yaml")
-                .help("Force YAML format parsing")
+                .help("Force YAML format detection")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("format-csv")
                 .long("csv")
-                .help("Force CSV format parsing")
+                .help("Force CSV format detection")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("format-toml")
                 .long("toml")
-                .help("Force TOML format parsing")
+                .help("Force TOML format detection")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("format-logfmt")
                 .long("logfmt")
-                .help("Force logfmt format parsing")
+                .help("Force logfmt format detection")
                 .action(clap::ArgAction::SetTrue),
         )
         .arg(
             Arg::new("format-text")
                 .long("text")
-                .help("Force plain text format parsing")
+                .help("Force plain text format detection")
                 .action(clap::ArgAction::SetTrue),
         )
         .get_matches();
@@ -556,7 +556,7 @@ fn print_usage_examples() {
     println!("  # Just convert formats (no filter):");
     println!("  echo 'name: Alice' | parsm  # YAML to JSON");
     println!();
-    println!("  # Force specific format parsing:");
+    println!("  # Force specific format detection:");
     println!(r#"  echo 'Alice,30' | parsm --csv '[${{field_0}} is ${{field_1}}]'"#);
     println!(r#"  echo 'level=error msg=timeout' | parsm --logfmt 'level == "error"'"#);
     println!("  echo 'name: Alice' | parsm --yaml 'name'");
@@ -587,12 +587,12 @@ fn print_usage_examples() {
     println!("  $100                        # Literal dollar amounts (invalid variable names)");
     println!();
     println!("FORMAT FLAGS:");
-    println!("  --json                      # Force JSON format parsing");
-    println!("  --yaml                      # Force YAML format parsing");
-    println!("  --csv                       # Force CSV format parsing");
-    println!("  --toml                      # Force TOML format parsing");
-    println!("  --logfmt                    # Force logfmt format parsing");
-    println!("  --text                      # Force plain text format parsing");
+    println!("  --json                      # Force JSON format detection");
+    println!("  --yaml                      # Force YAML format detection");
+    println!("  --csv                       # Force CSV format detection");
+    println!("  --toml                      # Force TOML format detection");
+    println!("  --logfmt                    # Force logfmt format detection");
+    println!("  --text                      # Force plain text format detection");
     println!();
 }
 

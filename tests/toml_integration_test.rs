@@ -767,7 +767,7 @@ zero = 0"#;
     assert_eq!(lines[0], "Empty: '', Name: '   spaced   ', Zero: 0");
 }
 
-/// Test TOML forced format parsing with --toml flag
+/// Test TOML forced format detection with --toml flag
 #[test]
 fn test_toml_forced_format() {
     let test_cases = vec![

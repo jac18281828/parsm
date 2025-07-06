@@ -64,17 +64,6 @@ echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 [${name} is ${age}]'
 - Logfmt
 - Plain Text
 
-## Force Format Parsing
-
-| Flag     | Format   |
-|----------|----------|
-| `--json` | JSON     |
-| `--yaml` | YAML     |
-| `--csv`  | CSV      |
-| `--toml` | TOML     |
-| `--logfmt` | logfmt |
-| `--text` | Plain Text |
-
 ## Syntax Reference
 
 ### Filters
@@ -131,16 +120,37 @@ echo 'Alice,30,Engineer' | parsm 'field_1 > "25" [${1} (${2})]'
 echo 'level=error msg="DB error"' | parsm 'level == "error" [${msg}]'
 ```
 
-## CLI Usage
+## CLI
 
 ```bash
 parsm [OPTIONS] [FILTER] [TEMPLATE]
 
+Arguments:
+  [FILTER]    Filter expression (optional)
+  [TEMPLATE]  Template expression for output formatting (optional)
+
 Options:
-  --examples     Show usage examples
-  -h, --help     Show help
-  -V, --version  Show version
-```
+      --examples  Show usage examples
+      --json      Force JSON format detection
+      --yaml      Force YAML format detection
+      --csv       Force CSV format detection
+      --toml      Force TOML format detection
+      --logfmt    Force logfmt format detection
+      --text      Force plain text format detection
+  -h, --help      Print help
+  -V, --version   Print version```
+
+## Force Format Parsing
+
+| Flag     | Format   |
+|----------|----------|
+| `--json` | JSON     |
+| `--yaml` | YAML     |
+| `--csv`  | CSV      |
+| `--toml` | TOML     |
+| `--logfmt` | logfmt |
+| `--text` | Plain Text |
+
 
 ## Comparison with Other Tools
 

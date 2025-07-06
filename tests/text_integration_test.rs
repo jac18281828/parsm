@@ -478,7 +478,7 @@ fn test_text_mixed_content() {
     assert_eq!(lines[2], "Status=OK -> Count=42");
 }
 
-/// Test text forced format parsing with --text flag
+/// Test text forced format detection with --text flag
 #[test]
 fn test_text_forced_format() {
     let test_cases = vec![
