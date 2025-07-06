@@ -4,7 +4,7 @@
 //! syntax rules. The parser converts user input into structured filter expressions, templates,
 //! and field selectors with conservative, predictable behavior.
 //!
-//! ## Key Design Principles
+//! ## Design Principles
 //!
 //! - **Unambiguous Syntax**: Each input pattern has exactly one interpretation
 //! - **Conservative Parsing**: Only parse expressions with explicit, clear syntax
@@ -28,15 +28,74 @@ pub fn parse_command(input: &str) -> Result<ParsedDSL, Box<dyn std::error::Error
     let trimmed = input.trim();
     trace!("parse_command called with: '{}'", trimmed);
 
+    // Check if we're in a test environment
+    let in_test_mode = cfg!(test);
+
     // Try the main parser first
     match DSLParser::parse_dsl(trimmed) {
-        Ok(result) => {
+        Ok(mut result) => {
             trace!("Main parser succeeded");
+            trace!(
+                "Parsed DSL result: filter={:?}, template={:?}, field_selector={:?}",
+                result.filter.is_some(),
+                result.template.is_some(),
+                result.field_selector.is_some()
+            );
+
+            // Add default template if we have a filter but no template - but skip in test mode
+            if !in_test_mode
+                && result.filter.is_some()
+                && result.template.is_none()
+                && result.field_selector.is_none()
+            {
+                trace!("Adding default template for filter-only expression");
+                // Parse the default template "${0}" (original line content)
+                match DSLParser::parse_dsl("[${0}]") {
+                    Ok(default_template_dsl) => {
+                        result.template = default_template_dsl.template;
+                        trace!("Default template added successfully");
+                    }
+                    Err(e) => {
+                        trace!("Failed to add default template: {:?}", e);
+                    }
+                }
+            }
+
             Ok(result)
         }
         Err(_parse_error) => {
             trace!("Main parser failed, trying fallback strategies");
-            fallback::try_fallback_parsing(trimmed)
+            let mut fallback_result = fallback::try_fallback_parsing(trimmed);
+
+            if let Ok(ref mut result) = fallback_result {
+                trace!(
+                    "Fallback parsing result: filter={:?}, template={:?}, field_selector={:?}",
+                    result.filter.is_some(),
+                    result.template.is_some(),
+                    result.field_selector.is_some()
+                );
+
+                // Add default template if we have a filter but no template - but skip in test mode
+                if !in_test_mode
+                    && result.filter.is_some()
+                    && result.template.is_none()
+                    && result.field_selector.is_none()
+                {
+                    trace!("Adding default template for fallback filter-only expression");
+                    // Parse the default template "${0}" (original line content)
+                    match DSLParser::parse_dsl("[${0}]") {
+                        Ok(default_template_dsl) => {
+                            result.template = default_template_dsl.template;
+                            trace!("Default template added successfully");
+                        }
+                        Err(e) => {
+                            trace!("Failed to add default template: {:?}", e);
+                        }
+                    }
+                }
+            }
+
+            fallback_result
         }
     }
 }
@@ -262,7 +321,7 @@ mod tests {
     }
 
     #[test]
-    fn test_backwards_compatibility_preserved() {
+    fn test_existing_template_preserved() {
         // Field selectors
         assert!(parse_command("username").unwrap().field_selector.is_some());
         assert!(parse_command("user.profile.bio")

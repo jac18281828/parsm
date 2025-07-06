@@ -14,10 +14,11 @@ use parsm::{
 /// to transform and extract data.
 fn main() {
     // Initialize tracing subscriber
+    let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "parsm=warn".to_string());
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("parsm=warn".parse().unwrap()),
+                .add_directive(rust_log.parse().unwrap()),
         )
         .init();
 
@@ -193,6 +194,9 @@ fn process_stream_with_filter(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use parsm::StreamingParser;
     use std::io::{BufRead, Read, Write};
+    debug!("process_stream_with_filter called with DSL: filter={:?}, template={:?}, field_selector={:?}, forced_format={:?}",
+        dsl.filter.is_some(), dsl.template.is_some(), dsl.field_selector.is_some(), forced_format);
+
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut writer = stdout.lock();
@@ -240,7 +244,11 @@ fn process_stream_with_filter(
                                         serde_json::Value::String(input.trim().to_string()),
                                     );
                                 }
-                                process_single_value(&value_with_original, &dsl, &mut writer)?;
+                                parsm::process_single_value(
+                                    &value_with_original,
+                                    &dsl,
+                                    &mut writer,
+                                )?;
                                 return Ok(());
                             }
                         }
@@ -267,7 +275,11 @@ fn process_stream_with_filter(
                                         serde_json::Value::String(input.trim().to_string()),
                                     );
                                 }
-                                process_single_value(&item_with_original, &dsl, &mut writer)?;
+                                parsm::process_single_value(
+                                    &item_with_original,
+                                    &dsl,
+                                    &mut writer,
+                                )?;
                             }
                             return Ok(());
                         }
@@ -356,7 +368,7 @@ fn process_stream_with_filter(
                 match parser.parse_line(line) {
                     Ok(parsed_line) => {
                         let json_value = convert_parsed_line_to_json(parsed_line, line)?;
-                        process_single_value(&json_value, &dsl, &mut writer)?;
+                        parsm::process_single_value(&json_value, &dsl, &mut writer)?;
                     }
                     Err(e) => {
                         if line_count == 1 {
@@ -387,6 +399,7 @@ fn process_stream_with_filter(
                 Ok(parsed_line) => {
                     let json_value = convert_parsed_line_to_json(parsed_line, &line)?;
 
+                    // Use the shared implementation for consistent behavior
                     let passes_filter = if let Some(ref filter) = dsl.filter {
                         FilterEngine::evaluate(filter, &json_value)
                     } else {
@@ -394,12 +407,8 @@ fn process_stream_with_filter(
                     };
 
                     if passes_filter {
-                        let output = if let Some(ref template) = dsl.template {
-                            template.render(&json_value)
-                        } else {
-                            serde_json::to_string(&json_value)?
-                        };
-                        writeln!(writer, "{output}")?;
+                        // Use the shared implementation from the library
+                        parsm::process_single_value(&json_value, &dsl, &mut writer)?;
                     }
                 }
                 Err(e) => {
@@ -588,7 +597,7 @@ fn process_structured_value(
                     );
                 }
 
-                process_single_value(&item_with_original, dsl, writer)?;
+                parsm::process_single_value(&item_with_original, dsl, writer)?;
             }
         }
         _ => {
@@ -601,41 +610,7 @@ fn process_structured_value(
                 );
             }
 
-            process_single_value(&value_with_original, dsl, writer)?;
-        }
-    }
-    Ok(())
-}
-
-/// Process a single value with filter and template/field selector
-fn process_single_value(
-    value: &serde_json::Value,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use std::io::Write;
-
-    // Apply filter if present
-    let passes_filter = if let Some(ref filter) = dsl.filter {
-        FilterEngine::evaluate(filter, value)
-    } else {
-        true
-    };
-
-    if passes_filter {
-        // Handle field selection first (takes precedence)
-        if let Some(ref field_selector) = dsl.field_selector {
-            if let Some(extracted) = field_selector.extract_field(value) {
-                writeln!(writer, "{extracted}")?;
-            }
-        } else {
-            // Handle template or default output
-            let output = if let Some(ref template) = dsl.template {
-                template.render(value)
-            } else {
-                serde_json::to_string(value)?
-            };
-            writeln!(writer, "{output}")?;
+            parsm::process_single_value(&value_with_original, dsl, writer)?;
         }
     }
     Ok(())
@@ -647,7 +622,7 @@ mod tests {
 
     use serde_json::json;
 
-    use parsm::filter::TemplateItem;
+    use parsm::{filter::TemplateItem, FilterEngine};
 
     /// Test JSON filtering with equality comparison.
     #[test]

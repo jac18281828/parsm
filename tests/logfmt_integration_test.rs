@@ -89,9 +89,9 @@ level=warn msg="Slow request" duration=3000ms status=200"#;
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
     assert_eq!(lines.len(), 1);
-    assert!(lines[0].contains("\"level\":\"error\""));
-    assert!(lines[0].contains("\"msg\":\"Request failed\""));
-    assert!(lines[0].contains("\"status\":\"500\""));
+    assert!(lines[0].contains("level=error"));
+    assert!(lines[0].contains("msg=\"Request failed\""));
+    assert!(lines[0].contains("status=500"));
 }
 
 #[test]
@@ -230,9 +230,9 @@ level=warn service=worker method=DELETE status=404 duration=200"#;
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
     assert_eq!(lines.len(), 1);
-    assert!(lines[0].contains("\"method\":\"GET\""));
-    assert!(lines[0].contains("\"status\":\"200\""));
-    assert!(lines[0].contains("\"duration\":\"100\""));
+    assert!(lines[0].contains("method=GET"));
+    assert!(lines[0].contains("status=200"));
+    assert!(lines[0].contains("duration=100"));
 }
 
 #[test]
@@ -321,12 +321,8 @@ fn test_logfmt_format_detection() {
 
     assert_eq!(lines.len(), 1);
 
-    // Verify it's parsed as JSON (logfmt gets converted to JSON)
-    let parsed: serde_json::Value = serde_json::from_str(lines[0]).expect("parse JSON");
-    assert_eq!(parsed["time"], "2023-12-01T10:00:00Z");
-    assert_eq!(parsed["level"], "info");
-    assert_eq!(parsed["msg"], "Application started");
-    assert_eq!(parsed["version"], "1.2.3");
+    // Now we expect the original input as output instead of JSON
+    assert_eq!(lines[0], input.trim());
 }
 
 #[test]

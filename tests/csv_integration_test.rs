@@ -620,3 +620,202 @@ fn test_csv_forced_format_filtering() {
         }
     }
 }
+
+/// Test multiline CSV output with consistent handling
+#[test]
+fn test_csv_multiline_output() {
+    // Test with a multiline CSV file that has headers
+    let input = "name,age,occupation\nAlice,30,Engineer\nBob,25,Designer\nCharlie,35,Manager";
+
+    let mut file = NamedTempFile::new().expect("create temp file");
+    write!(file, "{input}").expect("write temp file");
+
+    // Test default output (should preserve original lines)
+    let output = parsm_command()
+        .stdin(File::open(file.path()).unwrap())
+        .output()
+        .expect("run parsm");
+
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Default output should be the original lines
+    let lines: Vec<&str> = stdout.trim().split('\n').collect();
+    assert_eq!(lines.len(), 4); // Header + 3 data rows
+    assert_eq!(lines[0], "name,age,occupation");
+    assert_eq!(lines[1], "Alice,30,Engineer");
+    assert_eq!(lines[2], "Bob,25,Designer");
+    assert_eq!(lines[3], "Charlie,35,Manager");
+
+    // Test filtering functionality on multiline CSV
+    let filter_output = parsm_command()
+        .arg("age > 27") // Filter rows where age > 27
+        .stdin(File::open(file.path()).unwrap())
+        .output()
+        .expect("run parsm");
+
+    assert!(
+        filter_output.status.success(),
+        "parsm filter failed: {filter_output:?}"
+    );
+    let filter_stdout = String::from_utf8_lossy(&filter_output.stdout);
+
+    // Should only contain rows with age > 27 (Alice and Charlie)
+    assert!(filter_stdout.contains("Alice,30,Engineer"));
+    assert!(filter_stdout.contains("Charlie,35,Manager"));
+    assert!(!filter_stdout.contains("Bob,25,Designer"));
+
+    // Test header-based filtering with --csv flag
+    // Note: Currently, with --csv flag, we need to use field_N syntax instead of header names
+    let header_filter_output = parsm_command()
+        .arg("--csv")
+        .arg("field_1 > 27") // Using field index instead of header name
+        .stdin(File::open(file.path()).unwrap())
+        .output()
+        .expect("run parsm");
+
+    assert!(
+        header_filter_output.status.success(),
+        "parsm header filter failed: {header_filter_output:?}"
+    );
+    let header_filter_stdout = String::from_utf8_lossy(&header_filter_output.stdout);
+
+    // Should only contain rows with age > 27 (Alice and Charlie)
+    assert!(header_filter_stdout.contains("Alice,30,Engineer"));
+    assert!(header_filter_stdout.contains("Charlie,35,Manager"));
+    assert!(!header_filter_stdout.contains("Bob,25,Designer"));
+}
+
+/// Test multiline CSV output with consistent handling
+#[test]
+fn test_csv_multiline_output_field() {
+    // Test with a multiline CSV file that has headers
+    let input = "name,age,occupation\nAlice,30,Engineer\nBob,25,Designer\nCharlie,35,Manager";
+
+    let mut file = NamedTempFile::new().expect("create temp file");
+    write!(file, "{input}").expect("write temp file");
+
+    // Test default output (should preserve original lines)
+    let output = parsm_command()
+        .stdin(File::open(file.path()).unwrap())
+        .output()
+        .expect("run parsm");
+
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Default output should be the original lines
+    let lines: Vec<&str> = stdout.trim().split('\n').collect();
+    assert_eq!(lines.len(), 4); // Header + 3 data rows
+    assert_eq!(lines[0], "name,age,occupation");
+    assert_eq!(lines[1], "Alice,30,Engineer");
+    assert_eq!(lines[2], "Bob,25,Designer");
+    assert_eq!(lines[3], "Charlie,35,Manager");
+
+    // Test filtering functionality on multiline CSV
+    let filter_output = parsm_command()
+        .arg("field_1 > 27") // Filter rows where age > 27
+        .stdin(File::open(file.path()).unwrap())
+        .output()
+        .expect("run parsm");
+
+    assert!(
+        filter_output.status.success(),
+        "parsm filter failed: {filter_output:?}"
+    );
+    let filter_stdout = String::from_utf8_lossy(&filter_output.stdout);
+
+    // Should only contain rows with age > 27 (Alice and Charlie)
+    assert!(filter_stdout.contains("Alice,30,Engineer"));
+    assert!(filter_stdout.contains("Charlie,35,Manager"));
+    assert!(!filter_stdout.contains("Bob,25,Designer"));
+
+    // Test header-based filtering with --csv flag
+    // Note: Currently, with --csv flag, we need to use field_N syntax instead of header names
+    let header_filter_output = parsm_command()
+        .arg("--csv")
+        .arg("field_1 > 27") // Using field index instead of header name
+        .stdin(File::open(file.path()).unwrap())
+        .output()
+        .expect("run parsm");
+
+    assert!(
+        header_filter_output.status.success(),
+        "parsm header filter failed: {header_filter_output:?}"
+    );
+    let header_filter_stdout = String::from_utf8_lossy(&header_filter_output.stdout);
+
+    // Should only contain rows with age > 27 (Alice and Charlie)
+    assert!(header_filter_stdout.contains("Alice,30,Engineer"));
+    assert!(header_filter_stdout.contains("Charlie,35,Manager"));
+    assert!(!header_filter_stdout.contains("Bob,25,Designer"));
+}
+
+/// Regression test for multiline CSV output functionality
+///
+/// This test verifies that the multiline CSV output functionality works correctly,
+/// focusing on the default behavior of outputting the original input and ensuring
+/// that filtering works properly.
+#[test]
+fn test_csv_output_regression() {
+    // Create a simple CSV file without complex quoting
+    let input = "name,age,active\nAlice,30,true\nBob,25,false\nCharlie,35,true";
+
+    let mut file = NamedTempFile::new().expect("create temp file");
+    write!(file, "{input}").expect("write temp file");
+
+    // Test default output (should preserve original input)
+    let output = parsm_command()
+        .arg("--csv")
+        .stdin(File::open(file.path()).unwrap())
+        .output()
+        .expect("run parsm");
+
+    assert!(
+        output.status.success(),
+        "parsm default output failed: {output:?}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Default output should match original input
+    assert_eq!(stdout.trim(), input);
+
+    // Test filtering by field index
+    let filter_output = parsm_command()
+        .arg("--csv")
+        .arg("field_2 == \"true\"")
+        .stdin(File::open(file.path()).unwrap())
+        .output()
+        .expect("run parsm");
+
+    assert!(
+        filter_output.status.success(),
+        "parsm filter failed: {filter_output:?}"
+    );
+    let filter_stdout = String::from_utf8_lossy(&filter_output.stdout);
+
+    // Should only include rows with active=true
+    assert!(filter_stdout.contains("Alice,30,true"));
+    assert!(filter_stdout.contains("Charlie,35,true"));
+    assert!(!filter_stdout.contains("Bob,25,false"));
+
+    // Test field selection
+    let field_output = parsm_command()
+        .arg("--csv")
+        .arg("field_0")
+        .stdin(File::open(file.path()).unwrap())
+        .output()
+        .expect("run parsm");
+
+    assert!(
+        field_output.status.success(),
+        "parsm field selection failed: {field_output:?}"
+    );
+    let field_stdout = String::from_utf8_lossy(&field_output.stdout);
+
+    // Should extract just the names
+    assert_eq!(
+        field_stdout.trim().lines().collect::<Vec<&str>>().join(","),
+        "Alice,Bob,Charlie"
+    );
+}

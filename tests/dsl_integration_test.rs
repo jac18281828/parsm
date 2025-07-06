@@ -510,9 +510,10 @@ fn test_comprehensive_disambiguation() {
                 assert!(result.is_ok(), "Filter '{input}' should parse");
                 let parsed = result.unwrap();
                 assert!(parsed.filter.is_some(), "Input '{input}' should be filter");
+                // Templates are now added by default for filters
                 assert!(
-                    parsed.template.is_none(),
-                    "Input '{input}' should not be template"
+                    parsed.template.is_some(),
+                    "Input '{input}' should have a template (default templates are now added to filters)"
                 );
                 assert!(
                     parsed.field_selector.is_none(),
@@ -555,7 +556,7 @@ fn test_filter_expressions() {
     // Simple comparison
     let result = parse_command(r#"name == "Alice""#).unwrap();
     assert!(result.filter.is_some());
-    assert!(result.template.is_none());
+    assert!(result.template.is_some());
     assert!(result.field_selector.is_none());
 
     if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
@@ -569,7 +570,7 @@ fn test_filter_expressions() {
     // Numeric comparison
     let result = parse_command("age > 25").unwrap();
     assert!(result.filter.is_some());
-    assert!(result.template.is_none());
+    assert!(result.template.is_some());
     assert!(result.field_selector.is_none());
 }
 

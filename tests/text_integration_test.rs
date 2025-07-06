@@ -144,10 +144,8 @@ fn test_text_filter_operations() {
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
     assert_eq!(lines.len(), 2);
-    assert!(lines[0].contains("\"word_0\":\"error\""));
-    assert!(lines[0].contains("\"word_1\":\"connection\""));
-    assert!(lines[1].contains("\"word_0\":\"error\""));
-    assert!(lines[1].contains("\"word_1\":\"database\""));
+    assert!(lines[0].contains("error connection failed"));
+    assert!(lines[1].contains("error database timeout"));
 }
 
 #[test]
@@ -199,28 +197,8 @@ fn test_text_format_detection() {
 
     assert_eq!(lines.len(), 1);
 
-    // Verify it's parsed as JSON object with _array field (text gets converted to JSON object)
-    let parsed: serde_json::Value = serde_json::from_str(lines[0]).expect("parse JSON");
-
-    // Text format creates a JSON object with word_N fields and an _array field
-    let array = parsed
-        .get("_array")
-        .expect("should have _array field")
-        .as_array()
-        .expect("_array should be an array");
-
-    assert_eq!(array.len(), 7);
-    assert_eq!(array[0], "this");
-    assert_eq!(array[1], "is");
-    assert_eq!(array[6], "formatting");
-
-    // Also verify the word_N fields exist
-    assert_eq!(parsed.get("word_0").expect("should have word_0"), "this");
-    assert_eq!(parsed.get("word_1").expect("should have word_1"), "is");
-    assert_eq!(
-        parsed.get("word_6").expect("should have word_6"),
-        "formatting"
-    );
+    // Now we expect the original input as output instead of JSON
+    assert_eq!(lines[0], input.trim());
 }
 
 #[test]
@@ -382,10 +360,8 @@ fn test_text_complex_filtering() {
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
     assert_eq!(lines.len(), 2);
-    assert!(lines[0].contains("\"word_0\":\"error\""));
-    assert!(lines[0].contains("\"word_1\":\"network\""));
-    assert!(lines[1].contains("\"word_0\":\"error\""));
-    assert!(lines[1].contains("\"word_1\":\"disk\""));
+    assert!(lines[0].contains("error network timeout critical"));
+    assert!(lines[1].contains("error disk full critical"));
 }
 
 #[test]
@@ -468,10 +444,8 @@ fn test_text_string_operations() {
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
 
     assert_eq!(lines.len(), 2);
-    assert!(lines[0].contains("\"word_0\":\"user\""));
-    assert!(lines[0].contains("\"word_1\":\"alice\""));
-    assert!(lines[1].contains("\"word_0\":\"admin\""));
-    assert!(lines[1].contains("\"word_1\":\"alice\""));
+    assert!(lines[0].contains("user alice logged in"));
+    assert!(lines[1].contains("admin alice system check"));
 }
 
 #[test]

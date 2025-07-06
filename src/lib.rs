@@ -475,7 +475,7 @@
 //! - **Field selectors**: Bare field names with no operators (`name`, `user.email`)
 //! - **Filter expressions**: Explicit comparisons (`age > 25`, `name == "Alice"`)
 //! - **Truthy checks**: Field names with `?` suffix (`active?`, `user.verified?`)
-//! - **Templates**: Expressions starting with `$` or wrapped in `{}`
+//! - **Templates**: Expressions starting with `$` or wrapped in `[]`
 //!
 //! To avoid ambiguity:
 //!
@@ -533,9 +533,9 @@ pub fn process_stream<R: BufRead, W: Write>(
         }
 
         match parser.parse_line(&line) {
-            Ok(parsed_line) => {
-                let json_value = convert_to_json(parsed_line, &line)?;
-                writeln!(writer, "{}", serde_json::to_string(&json_value)?)?;
+            Ok(_parsed_line) => {
+                // Default to returning the original input directly rather than the augmented JSON
+                writeln!(writer, "{line}")?;
             }
             Err(e) => {
                 if line_count == 1 {
@@ -550,6 +550,65 @@ pub fn process_stream<R: BufRead, W: Write>(
     Ok(())
 }
 
+/// Process a single value with filter and template/field selector
+/// This is a utility function used by both the main binary and CSV parser to ensure consistent behavior
+pub fn process_single_value(
+    value: &serde_json::Value,
+    dsl: &ParsedDSL,
+    writer: &mut impl std::io::Write,
+) -> Result<(), Box<dyn std::error::Error>> {
+    tracing::debug!(
+        "process_single_value called with DSL: filter={:?}, template={:?}, field_selector={:?}",
+        dsl.filter.is_some(),
+        dsl.template.is_some(),
+        dsl.field_selector.is_some()
+    );
+
+    // Apply filter if present
+    let passes_filter = if let Some(ref filter) = dsl.filter {
+        let result = FilterEngine::evaluate(filter, value);
+        tracing::debug!("Filter evaluation result: {}", result);
+        result
+    } else {
+        true
+    };
+
+    if passes_filter {
+        // Handle field selection first (takes precedence)
+        if let Some(ref field_selector) = dsl.field_selector {
+            if let Some(extracted) = field_selector.extract_field(value) {
+                tracing::debug!("Field selection extracted: {}", extracted);
+                writeln!(writer, "{extracted}")?;
+            }
+        } else {
+            // Handle template or default output
+            let output = if let Some(ref template) = dsl.template {
+                tracing::debug!("Using template with {} items", template.items.len());
+                template.render(value)
+            } else {
+                tracing::debug!("No template specified, defaulting to ${{0}}");
+                // Default to returning ${0} (the original input)
+                if let Some(original) = value.get("$0") {
+                    if let Some(original_str) = original.as_str() {
+                        tracing::debug!("Using original input from $0 (string): {}", original_str);
+                        original_str.to_string()
+                    } else {
+                        tracing::debug!("Using original input from $0 (json): {}", original);
+                        serde_json::to_string(original)?
+                    }
+                } else {
+                    tracing::debug!("No $0 field found, using full value: {}", value);
+                    serde_json::to_string(value)?
+                }
+            };
+            tracing::debug!("Output: {}", output);
+            writeln!(writer, "{output}")?;
+        }
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
 fn convert_to_json(
     parsed_line: parse::ParsedLine,
     original_input: &str,

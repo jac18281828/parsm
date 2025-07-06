@@ -99,6 +99,10 @@ pub fn parse_csv_document(
 
                     // Support for template field access in different formats
                     // Plain field reference - $name
+                    // Add the direct field name for filtering access
+                    obj.insert(header_name.clone(), Value::String(field_value.clone()));
+
+                    // Plain field reference - $name
                     obj.insert(
                         format!("${header_name}"),
                         Value::String(field_value.clone()),
@@ -140,36 +144,11 @@ pub fn parse_csv_document(
                 writeln!(writer, "{extracted}")?;
             }
         } else {
-            process_single_value(record, dsl, writer)?;
+            crate::process_single_value(record, dsl, writer)?;
         }
     }
 
     Ok(true)
-}
-
-/// Process a single value with filter and template/field selector
-fn process_single_value(
-    value: &serde_json::Value,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use crate::FilterEngine;
-
-    let passes_filter = if let Some(ref filter) = dsl.filter {
-        FilterEngine::evaluate(filter, value)
-    } else {
-        true
-    };
-
-    if passes_filter {
-        let output = if let Some(ref template) = dsl.template {
-            template.render(value)
-        } else {
-            serde_json::to_string(value)?
-        };
-        writeln!(writer, "{output}")?;
-    }
-    Ok(())
 }
 
 /// Simple function to detect a header row in CSV data

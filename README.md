@@ -8,6 +8,8 @@ Parsm is the powerful command-line tool that understands structured text better 
 
 `parsm` automatically detects and parses multiple data formats (**JSON**, **CSV**, **YAML**, **TOML**, **logfmt**, and plain text) and provides powerful filtering and templating capabilities through an intuitive syntax.
 
+By default, parsm outputs the original input when a filter matches. For custom output formatting, use templates.
+
 ## Installation
 
 ```bash
@@ -162,3 +164,19 @@ See [LICENSE](LICENSE).
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md).
+
+## Examples
+
+```bash
+# Basic filtering - outputs original input when filter matches
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25'
+# Output: {"name": "Alice", "age": 30}
+
+# Filtering with custom template
+echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 [${name} is ${age}]'
+# Output: Alice is 30
+
+# Access original input in templates with ${0}
+echo '{"name": "Alice", "age": 30}' | parsm '[Original: ${0}, Name: ${name}]'
+# Output: Original: {"name": "Alice", "age": 30}, Name: Alice
+```
