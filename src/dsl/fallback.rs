@@ -100,7 +100,9 @@ fn try_simple_template_patterns(input: &str) -> Result<ParsedDSL, Box<dyn std::e
                 });
                 return Ok(result);
             } else if field_name.chars().all(|c| c.is_ascii_digit()) {
-                trace!("Dollar sign followed by digits only ($0, $1, $20, etc.), treating as numeric literal");
+                trace!(
+                    "Dollar sign followed by digits only ($0, $1, $20, etc.), treating as numeric literal"
+                );
                 result.template = Some(Template {
                     items: vec![TemplateItem::Literal(input.to_string())],
                 });
@@ -273,8 +275,7 @@ fn try_parse_and_expression(input: &str) -> Result<ParsedDSL, Box<dyn std::error
 
     trace!(
         "try_parse_and_expression: left='{}', right='{}'",
-        parts[0],
-        parts[1]
+        parts[0], parts[1]
     );
 
     // Try to parse each part as either a comparison or a truthy field
@@ -513,8 +514,7 @@ fn parse_field_name_for_truthy(name: &str) -> FieldPath {
     let base_name = name.strip_suffix('?').unwrap_or(name);
     trace!(
         "parse_field_name_for_truthy: '{}' -> base: '{}'",
-        name,
-        base_name
+        name, base_name
     );
     let parts: Vec<String> = base_name.split('.').map(|s| s.to_string()).collect();
     let field_path = FieldPath::new(parts);

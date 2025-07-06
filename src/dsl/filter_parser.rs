@@ -60,7 +60,7 @@ impl FilterParser {
                         message: "Expected expression in AND".to_string(),
                     },
                     span.start_pos(),
-                )))
+                )));
             }
         };
 
@@ -75,7 +75,7 @@ impl FilterParser {
                                 message: "Expected expression after AND".to_string(),
                             },
                             op_span.end_pos(),
-                        )))
+                        )));
                     }
                 };
                 left = FilterExpr::And(Box::new(left), Box::new(right));
@@ -130,7 +130,7 @@ impl FilterParser {
                         message: "Expected expression in comparison".to_string(),
                     },
                     span.start_pos(),
-                )))
+                )));
             }
         };
 

@@ -324,29 +324,37 @@ mod tests {
     fn test_existing_template_preserved() {
         // Field selectors
         assert!(parse_command("username").unwrap().field_selector.is_some());
-        assert!(parse_command("user.profile.bio")
-            .unwrap()
-            .field_selector
-            .is_some());
-        assert!(parse_command("\"field with spaces\"")
-            .unwrap()
-            .field_selector
-            .is_some());
+        assert!(
+            parse_command("user.profile.bio")
+                .unwrap()
+                .field_selector
+                .is_some()
+        );
+        assert!(
+            parse_command("\"field with spaces\"")
+                .unwrap()
+                .field_selector
+                .is_some()
+        );
 
         // Templates
         assert!(parse_command("$name").unwrap().template.is_some());
         assert!(parse_command("{${user.name}}").unwrap().template.is_some());
-        assert!(parse_command("[Hello ${name}!]")
-            .unwrap()
-            .template
-            .is_some());
+        assert!(
+            parse_command("[Hello ${name}!]")
+                .unwrap()
+                .template
+                .is_some()
+        );
 
         // Comparisons
         assert!(parse_command("age >= 21").unwrap().filter.is_some());
-        assert!(parse_command("status != \"deleted\"")
-            .unwrap()
-            .filter
-            .is_some());
+        assert!(
+            parse_command("status != \"deleted\"")
+                .unwrap()
+                .filter
+                .is_some()
+        );
         assert!(parse_command("score > 0.5").unwrap().filter.is_some());
 
         // Combined

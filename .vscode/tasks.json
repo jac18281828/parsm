@@ -5,7 +5,7 @@
         {
             "label": "Rust: Format",
             "type": "shell",
-            "command": "cargo fmt --all",
+            "command": "cargo fmt --all --check",
             "group": "build",
             "problemMatcher": []
         },

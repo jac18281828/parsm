@@ -1,7 +1,7 @@
 //! Main grammar parser using Pest
 
-use pest::iterators::Pair;
 use pest::Parser;
+use pest::iterators::Pair;
 use pest_derive::Parser;
 use tracing::trace;
 

@@ -238,7 +238,7 @@ numbers = [1, 2, 3]"#;
 
     // With document-level TOML parsing, we get the fruits array formatted as JSON
     assert!(lines.len() >= 4); // Pretty-printed array takes multiple lines
-                               // Check that we have the pretty-printed array
+    // Check that we have the pretty-printed array
     assert!(lines[0] == "[");
     assert!(lines[1].contains("apple"));
     assert!(lines[2].contains("banana"));
@@ -681,7 +681,7 @@ client = { timeout = 30 }"#;
 
     // With document-level TOML parsing, we get the server object formatted as pretty-printed JSON
     assert!(lines.len() >= 3); // Pretty-printed object takes multiple lines
-                               // First part should contain the server table as pretty-printed JSON
+    // First part should contain the server table as pretty-printed JSON
     assert!(lines[0] == "{");
     assert!(lines[1].contains("host") && lines[1].contains("localhost"));
     assert!(lines[2].contains("port") && lines[2].contains("8080"));

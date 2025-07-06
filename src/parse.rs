@@ -1081,10 +1081,12 @@ this,is,csv,but,should,fail
                 // Should gracefully handle malformed input
                 assert_eq!(value["level"], "error");
                 // The parser should treat the rest as the value since no closing \" was found
-                assert!(value["msg"]
-                    .as_str()
-                    .unwrap()
-                    .contains("unclosed quote service=api"));
+                assert!(
+                    value["msg"]
+                        .as_str()
+                        .unwrap()
+                        .contains("unclosed quote service=api")
+                );
             }
             _ => panic!("Expected logfmt parsing result"),
         }

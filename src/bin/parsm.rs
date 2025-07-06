@@ -3,8 +3,8 @@ use std::io;
 use tracing::debug;
 
 use parsm::{
-    csv_parser, parse_command, parse_separate_expressions, process_stream, DetectedFormat,
-    FilterEngine, FormatDetector, ParsedDSL, ParsedLine,
+    DetectedFormat, FilterEngine, FormatDetector, ParsedDSL, ParsedLine, csv_parser, parse_command,
+    parse_separate_expressions, process_stream,
 };
 
 /// Main entry point for the parsm command-line tool.
@@ -194,8 +194,13 @@ fn process_stream_with_filter(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use parsm::StreamingParser;
     use std::io::{BufRead, Read, Write};
-    debug!("process_stream_with_filter called with DSL: filter={:?}, template={:?}, field_selector={:?}, forced_format={:?}",
-        dsl.filter.is_some(), dsl.template.is_some(), dsl.field_selector.is_some(), forced_format);
+    debug!(
+        "process_stream_with_filter called with DSL: filter={:?}, template={:?}, field_selector={:?}, forced_format={:?}",
+        dsl.filter.is_some(),
+        dsl.template.is_some(),
+        dsl.field_selector.is_some(),
+        forced_format
+    );
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -622,7 +627,7 @@ mod tests {
 
     use serde_json::json;
 
-    use parsm::{filter::TemplateItem, FilterEngine};
+    use parsm::{FilterEngine, filter::TemplateItem};
 
     /// Test JSON filtering with equality comparison.
     #[test]

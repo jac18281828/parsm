@@ -35,8 +35,10 @@ mod ambiguous_regression_tests {
 
             match parse_command(expr) {
                 Ok(parsed) => {
-                    panic!("Expected rejection but got successful parse for '{expr}': filter={:?}, template={:?}, field_selector={:?}", 
-                           parsed.filter, parsed.template, parsed.field_selector);
+                    panic!(
+                        "Expected rejection but got successful parse for '{expr}': filter={:?}, template={:?}, field_selector={:?}",
+                        parsed.filter, parsed.template, parsed.field_selector
+                    );
                 }
                 Err(e) => {
                     println!("✓ Correctly rejected: {e}");

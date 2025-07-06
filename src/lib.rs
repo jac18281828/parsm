@@ -508,7 +508,7 @@ pub mod format_detector;
 pub mod parse;
 pub mod parser_registry;
 
-pub use dsl::{parse_command, parse_separate_expressions, ParsedDSL};
+pub use dsl::{ParsedDSL, parse_command, parse_separate_expressions};
 pub use filter::{
     ComparisonOp, FieldPath, FilterEngine, FilterExpr, FilterValue, Template, TemplateItem,
 };
