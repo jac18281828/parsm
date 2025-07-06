@@ -37,7 +37,7 @@ pub fn try_fallback_parsing(input: &str) -> Result<ParsedDSL, Box<dyn std::error
 
     // If all else fails, provide a helpful error
     Err(format!(
-        "Could not parse '{input}'. Try:\n  - Templates: [{{${{name}}}}], $name, or [Hello ${{name}}]\n  - Filters: name == \"value\" or age > 25\n  - Field selectors: name or \"field name\""
+        "Could not parse '{input}'. Try:\n  - Templates: [${{name}}], $name, or [Hello ${{name}}]\n  - Filters: name == \"value\" or age > 25\n  - Field selectors: name or \"field name\""
     ).into())
 }
 

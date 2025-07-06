@@ -520,44 +520,52 @@ fn print_usage_examples() {
     println!();
     println!("  # Filter and format output (combined):");
     println!(
-        r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25 {{${{name}} is ${{age}} years old}}'"#
+        r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25 [${{name}} is ${{age}} years old]'"#
     );
     println!();
     println!("  # Filter and format output (separate arguments):");
     println!(
-        r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25' '${{name}} is ${{age}} years old'"#
+        r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25' '[${{name}} is ${{age}} years old]'"#
     );
     println!();
     println!("  # Simple template variables:");
-    println!(r#"  echo '{{"name": "Alice", "age": 30}}' | parsm '$name is $age years old'"#);
+    println!(r#"  echo '{{"name": "Alice", "age": 30}}' | parsm '[$name is $age years old]'"#);
     println!();
     println!("  # Include original input with $0:");
-    println!(r#"  echo 'Alice,30' | parsm '${{0}} → ${{1}} is ${{2}}'"#);
+    println!(r#"  echo 'Alice,30' | parsm '[${{0}} → ${{field_0}} is ${{field_1}}]'"#);
     println!();
     println!("  # Filter CSV data (fields accessible as field_0, field_1, etc.):");
     println!(
-        r#"  echo 'Alice,30,Engineer' | parsm 'field_1 > "25" {{${{field_0}} - ${{field_2}}}}'"#
+        r#"  echo 'Alice,30,Engineer' | parsm 'field_1 > "25" [${{field_0}} - ${{field_2}}]'"#
     );
     println!();
     println!("  # Filter logfmt logs:");
     println!(
-        r#"  echo 'level=error msg="DB error" service=api' | parsm 'level == "error" {{[${{level}}] ${{msg}}}}'"#
+        r#"  echo 'level=error msg="DB error" service=api' | parsm 'level == "error" [[${{level}}] ${{msg}}]'"#
     );
     println!();
+    println!("  # String operations:");
+    println!(r#"  echo '{{"name": "Alice"}}' | parsm 'name *= "lic"'  # contains"#);
+    println!(r#"  echo '{{"name": "Alice"}}' | parsm 'name ^= "Al"'   # starts with"#);
+    println!(r#"  echo '{{"name": "Alice"}}' | parsm 'name $= "ice"'  # ends with"#);
+    println!(r#"  echo '{{"name": "Alice"}}' | parsm 'name ~= "A.*e"' # regex match"#);
+    println!();
     println!("  # Complex conditions:");
-    println!(r#"  parsm 'name == "Alice" && age > 25 {{${{name}}: active}}'"#);
+    println!(r#"  parsm 'name == "Alice" && age > 25 [${{name}}: active]'"#);
     println!();
     println!("  # Just convert formats (no filter):");
     println!("  echo 'name: Alice' | parsm  # YAML to JSON");
     println!();
     println!("  # Force specific format parsing:");
-    println!(r#"  echo 'Alice,30' | parsm --csv '${{1}} is ${{2}}'"#);
+    println!(r#"  echo 'Alice,30' | parsm --csv '[${{field_0}} is ${{field_1}}]'"#);
     println!(r#"  echo 'level=error msg=timeout' | parsm --logfmt 'level == "error"'"#);
     println!("  echo 'name: Alice' | parsm --yaml 'name'");
     println!();
     println!("OPERATORS:");
     println!("  ==, !=, <, <=, >, >=        # Comparison");
-    println!("  contains, startswith, endswith  # String operations");
+    println!(
+        "  *=, ^=, $=, ~=              # String operations (contains, starts with, ends with, regex)"
+    );
     println!("  &&, ||, !                   # Boolean logic");
     println!();
     println!("FIELD ACCESS:");
@@ -567,9 +575,14 @@ fn print_usage_examples() {
     println!("  field_0, field_1            # CSV columns");
     println!("  word_0, word_1              # Text words");
     println!();
+    println!("TEMPLATE FORMATS:");
+    println!("  [template content]          # Bracket format (preferred)");
+    println!("  {{template content}}          # Brace format (alternative)");
+    println!();
     println!("TEMPLATE VARIABLES:");
     println!("  ${{0}}                        # Entire original input");
-    println!("  ${{1}}, ${{2}}, ${{3}}              # Indexed fields (1-based, requires braces)");
+    println!("  ${{field_0}}, ${{field_1}}      # CSV columns (0-based)");
+    println!("  ${{word_0}}, ${{word_1}}        # Text words (0-based)");
     println!("  $name, ${{user.email}}        # Named fields ($simple or ${{complex}})");
     println!("  $100                        # Literal dollar amounts (invalid variable names)");
     println!();
