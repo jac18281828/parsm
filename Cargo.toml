@@ -1,6 +1,6 @@
 [package]
 name = "parsm"
-version = "0.8.2"
+version = "0.8.3"
 edition = "2024"
 authors = ["John Cairns <john@2ad.com>"]
 description = "Multi-format data processor that understands structured text better than sed or awk. Supports JSON, CSV, YAML, TOML, logfmt, and plain text with powerful filtering and templating."
