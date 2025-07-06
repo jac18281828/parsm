@@ -36,12 +36,15 @@
 //!
 //! - **Comparison**: `age > 25`, `name == "Alice"`
 //! - **String ops**: `email ~ "@company.com"`, `name ^= "A"`, `file $= ".log"`  
+//! - **Truthy checks**: `active?`, `user.verified?`, `!disabled?` (checks if fields have truthy values)
 //! - **Boolean logic**: `age > 25 && active == true`, `name == "Alice" || name == "Bob"`
 //! - **Nested fields**: `user.email == "alice@example.com"`
 //! - **Parentheses**: `(age > 25) && (status == "active")`
+//! - **Array membership**: `role in ["admin", "moderator"]`, `user.id in allowed_ids`
 //!
 //! **Note**: Bare field names like `name` are field selectors, not filters.
 //! Use explicit comparisons: `name == "Alice"` instead of just `name`.
+//! For boolean fields, use the truthy operator: `active?` instead of just `active`.
 //!
 //! ## Template Syntax
 //!
@@ -254,7 +257,7 @@
 //! use serde_json::json;
 //!
 //! // Basic filtering
-//! let dsl = parse_command("age > 25")?;
+//! let dsl = parse_command(r#"age > 25"#)?;
 //! assert!(dsl.filter.is_some());
 //! if let Some(filter) = &dsl.filter {
 //!     let data = json!({"name": "Alice", "age": 30});
@@ -268,6 +271,18 @@
 //!     let data = json!({"name": "Alice", "age": 30});
 //!     assert!(FilterEngine::evaluate(filter, &data));
 //! }
+//!
+//! // Truthy field checks (using ? operator)
+//! let dsl = parse_command("active?")?;
+//! assert!(dsl.filter.is_some());
+//! if let Some(filter) = &dsl.filter {
+//!     let data = json!({"name": "Alice", "active": true});
+//!     assert!(FilterEngine::evaluate(filter, &data));
+//! }
+//!
+//! // Truthy check with nested fields
+//! let dsl = parse_command("user.verified?")?;
+//! assert!(dsl.filter.is_some());
 //!
 //! // Boolean comparison
 //! let dsl = parse_command("user.active == true")?;
@@ -450,75 +465,42 @@
 //! // New 1-based positional access for text
 //! let dsl = parse_command(r#"{First: ${1}, Second: ${2}}"#)?;
 //! assert!(dsl.template.is_some());
-//!
-//! // Verify different formats can be parsed
-//! let mut parser = StreamingParser::new();
-//!
-//! // JSON
-//! let _json_result = parser.parse_line(r#"{"name": "Alice", "age": 30}"#)?;
-//!
-//! // Reset parser for different format
-//! let mut parser = StreamingParser::new();
-//! // CSV  
-//! let _csv_result = parser.parse_line("Alice,30,Engineer")?;
-//!
-//! // Reset parser for different format
-//! let mut parser = StreamingParser::new();
-//! // YAML
-//! let _yaml_result = parser.parse_line("name: Alice")?;
-//!
-//! // Reset parser for different format  
-//! let mut parser = StreamingParser::new();
-//! // TOML
-//! let _toml_result = parser.parse_line(r#"name = "Alice""#)?;
-//!
-//! // Reset parser for different format
-//! let mut parser = StreamingParser::new();
-//! // Logfmt
-//! let _logfmt_result = parser.parse_line("level=error msg=timeout")?;
-//!
-//! // Reset parser for different format
-//! let mut parser = StreamingParser::new();
-//! // Plain text
-//! let _text_result = parser.parse_line("Alice 30 Engineer")?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! ### Real-World Processing Examples
+//! ## Disambiguation Rules
+//!
+//! The parser follows specific rules to determine how expressions should be interpreted:
+//!
+//! - **Field selectors**: Bare field names with no operators (`name`, `user.email`)
+//! - **Filter expressions**: Explicit comparisons (`age > 25`, `name == "Alice"`)
+//! - **Truthy checks**: Field names with `?` suffix (`active?`, `user.verified?`)
+//! - **Templates**: Expressions starting with `$` or wrapped in `{}`
+//!
+//! To avoid ambiguity:
+//!
+//! - Always use `field?` syntax for truthy checks, not bare field names
+//! - Avoid bare field names in boolean expressions (`name && age` is invalid)
+//! - Don't mix filter expressions with field selectors
 //!
 //! ```rust
-//! use parsm::{parse_command, process_stream};
-//! use std::io::Cursor;
+//! use parsm::parse_command;
 //!
-//! // JSON processing with field extraction
-//! let input = r#"{"name": "Alice", "age": 30}"#;
-//! let mut output = Vec::new();
-//! process_stream(Cursor::new(input), &mut output)?;
-//! let result = String::from_utf8(output)?;
-//! // Should contain the original JSON data
-//! assert!(result.contains("Alice"));
+//! // These are unambiguous:
+//! let dsl1 = parse_command("active?")?; // Filter using truthy check
+//! let dsl2 = parse_command("name")?;    // Field selector
+//! let dsl3 = parse_command("name == \"Alice\" && age > 25")?; // Filter expression
 //!
-//! // CSV processing
-//! let input = "Alice,30,Engineer";
-//! let mut output = Vec::new();
-//! process_stream(Cursor::new(input), &mut output)?;
-//! let result = String::from_utf8(output)?;
-//! // Should contain converted JSON format
-//! assert!(result.contains("Alice"));
-//!
-//! // YAML processing
-//! let input = "name: Alice\nage: 30";
-//! let mut output = Vec::new();
-//! process_stream(Cursor::new(input), &mut output)?;
-//! let result = String::from_utf8(output)?;
-//! // Should contain converted JSON format
-//! assert!(result.contains("Alice"));
+//! // These would be ambiguous and will be rejected:
+//! // parse_command("active && name"); // Ambiguous - both could be field selectors or truthy checks
+//! // parse_command("name age");       // Ambiguous - missing operator or invalid syntax
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
 use std::error::Error;
 use std::io::{BufRead, Write};
 
+// Module declarations
 pub mod csv_parser;
 pub mod dsl;
 pub mod filter;
@@ -526,8 +508,10 @@ pub mod format_detector;
 pub mod parse;
 pub mod parser_registry;
 
-pub use dsl::{parse_command, ParsedDSL};
-pub use filter::{FieldPath, FilterEngine, FilterExpr, Template};
+pub use dsl::{parse_command, parse_separate_expressions, ParsedDSL};
+pub use filter::{
+    ComparisonOp, FieldPath, FilterEngine, FilterExpr, FilterValue, Template, TemplateItem,
+};
 pub use format_detector::{DetectedFormat, FormatDetector};
 pub use parse::{ParsedLine, StreamingParser};
 pub use parser_registry::{DocumentParser, ParserRegistry};
@@ -552,65 +536,6 @@ pub fn process_stream<R: BufRead, W: Write>(
             Ok(parsed_line) => {
                 let json_value = convert_to_json(parsed_line, &line)?;
                 writeln!(writer, "{}", serde_json::to_string(&json_value)?)?;
-            }
-            Err(e) => {
-                if line_count == 1 {
-                    return Err(Box::new(e));
-                } else {
-                    eprintln!("Warning: Failed to parse line {line_count}: {e}");
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Process a stream with a specific DSL command
-pub fn process_stream_with_dsl<R: BufRead, W: Write>(
-    reader: R,
-    writer: &mut W,
-    dsl: &ParsedDSL,
-) -> Result<(), Box<dyn Error>> {
-    let mut parser = StreamingParser::new();
-    let mut line_count = 0;
-
-    for line_result in reader.lines() {
-        line_count += 1;
-        let line = line_result?;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        match parser.parse_line(&line) {
-            Ok(parsed_line) => {
-                let json_value = convert_to_json(parsed_line, &line)?;
-
-                // Handle field selection
-                if let Some(ref field_selector) = dsl.field_selector {
-                    if let Some(field_value) = field_selector.extract_field(&json_value) {
-                        writeln!(writer, "{field_value}")?;
-                    }
-                    continue;
-                }
-
-                // Apply filter if present
-                let passes_filter = if let Some(ref filter) = dsl.filter {
-                    FilterEngine::evaluate(filter, &json_value)
-                } else {
-                    true
-                };
-
-                if passes_filter {
-                    let output = if let Some(ref template) = dsl.template {
-                        template.render(&json_value)
-                    } else {
-                        serde_json::to_string(&json_value)?
-                    };
-
-                    writeln!(writer, "{output}")?;
-                }
             }
             Err(e) => {
                 if line_count == 1 {
@@ -694,30 +619,6 @@ fn convert_to_json(
     }
 
     Ok(json_value)
-}
-
-/// Parse filter and template expressions separately (legacy compatibility function)
-pub fn parse_separate_expressions(
-    filter: Option<&str>,
-    template: Option<&str>,
-) -> Result<ParsedDSL, Box<dyn Error>> {
-    let mut dsl = ParsedDSL::new();
-
-    if let Some(filter_str) = filter {
-        if !filter_str.trim().is_empty() {
-            let filter_dsl = parse_command(filter_str)?;
-            dsl.filter = filter_dsl.filter;
-        }
-    }
-
-    if let Some(template_str) = template {
-        if !template_str.trim().is_empty() {
-            let template_dsl = parse_command(template_str)?;
-            dsl.template = template_dsl.template;
-        }
-    }
-
-    Ok(dsl)
 }
 
 #[cfg(test)]
@@ -815,6 +716,72 @@ mod integration_tests {
 
         let dsl = parse_command("$name")?;
         assert!(dsl.template.is_some());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_convert_to_json() -> Result<(), Box<dyn Error>> {
+        use serde_json::json;
+
+        // Test JSON conversion
+        let json_line = parse::ParsedLine::Json(json!({"name": "Alice", "age": 30}));
+        let original_json = r#"{"name": "Alice", "age": 30}"#;
+        let json_result = convert_to_json(json_line, original_json)?;
+        assert_eq!(json_result["name"], "Alice");
+        assert_eq!(json_result["age"], 30);
+        assert_eq!(json_result["$0"], original_json);
+
+        // Test CSV conversion
+        let mut csv_record = csv::StringRecord::new();
+        csv_record.push_field("Alice");
+        csv_record.push_field("30");
+        csv_record.push_field("Engineer");
+        let csv_line = parse::ParsedLine::Csv(csv_record);
+        let original_csv = "Alice,30,Engineer";
+        let csv_result = convert_to_json(csv_line, original_csv)?;
+        assert_eq!(csv_result["field_0"], "Alice");
+        assert_eq!(csv_result["field_1"], "30");
+        assert_eq!(csv_result["field_2"], "Engineer");
+        assert_eq!(csv_result["$0"], original_csv);
+        assert_eq!(csv_result["1"], "Alice"); // 1-based indexing for templates
+        assert_eq!(csv_result["2"], "30");
+        assert_eq!(csv_result["3"], "Engineer");
+
+        // Test YAML conversion
+        let yaml_data = serde_yaml::from_str::<serde_yaml::Value>("name: Alice\nage: 30").unwrap();
+        let yaml_line = parse::ParsedLine::Yaml(yaml_data);
+        let original_yaml = "name: Alice\nage: 30";
+        let yaml_result = convert_to_json(yaml_line, original_yaml)?;
+        assert_eq!(yaml_result["name"], "Alice");
+        assert_eq!(yaml_result["age"], 30);
+        assert_eq!(yaml_result["$0"], original_yaml);
+
+        // Test Text conversion
+        let text_line =
+            parse::ParsedLine::Text(vec!["Alice".into(), "30".into(), "Engineer".into()]);
+        let original_text = "Alice 30 Engineer";
+        let text_result = convert_to_json(text_line, original_text)?;
+        assert_eq!(text_result["word_0"], "Alice");
+        assert_eq!(text_result["word_1"], "30");
+        assert_eq!(text_result["word_2"], "Engineer");
+        assert_eq!(text_result["$0"], original_text);
+        assert_eq!(text_result["1"], "Alice"); // 1-based indexing for templates
+        assert_eq!(text_result["2"], "30");
+        assert_eq!(text_result["3"], "Engineer");
+
+        // Test Logfmt conversion
+        let mut logfmt_map = serde_json::Map::new();
+        logfmt_map.insert("level".into(), json!("error"));
+        logfmt_map.insert("msg".into(), json!("timeout"));
+        logfmt_map.insert("service".into(), json!("api"));
+        let logfmt_line = parse::ParsedLine::Logfmt(serde_json::Value::Object(logfmt_map));
+        let original_logfmt = "level=error msg=timeout service=api";
+        let logfmt_result = convert_to_json(logfmt_line, original_logfmt)?;
+        assert_eq!(logfmt_result["level"], "error");
+        assert_eq!(logfmt_result["msg"], "timeout");
+        assert_eq!(logfmt_result["service"], "api");
+        assert_eq!(logfmt_result["$0"], original_logfmt);
 
         Ok(())
     }

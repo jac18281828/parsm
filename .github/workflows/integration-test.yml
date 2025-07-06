@@ -48,6 +48,10 @@ jobs:
           pip install -r bin/requirements.txt
       - name: Build Rust project (release mode for integration tests)
         run: cargo build --release
+      - name: Run quick tests
+        run: |
+          cd ${{ github.workspace }}
+          bash bin/quick_test.sh
       - name: Run Python integration tests
         run: |
           cd ${{ github.workspace }}
@@ -97,6 +101,10 @@ jobs:
           pip install -r bin/requirements.txt
       - name: Build project (release mode)
         run: cargo build --release
+      - name: Run quick tests
+        run: |
+          cd ${{ github.workspace }}
+          bash bin/quick_test.sh
       - name: Run microbenchmarks
         run: |
           cd ${{ github.workspace }}

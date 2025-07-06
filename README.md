@@ -1,12 +1,12 @@
-# parsm - Parse ’Em - The Everything Parser
+# parsm - **Parse 'Em** - An 'everything' parser, Sedder, Awkker, Grokker, Grepper
 
-Parsm is a command-line utility designed to parse, filter, and format structured text efficiently—surpassing traditional tools like sed, awk, grep, and grok.
+Parsm is the powerful command-line tool that understands structured text better than `sed`, `awk`, `grep` or `grok`.
 
 <img src="eatcookie.jpg" alt="Eat more cookie!" width="25%">
 
 ## Overview
 
-`parsm` automatically detects and parses multiple data formats (JSON, CSV, YAML, TOML, logfmt, and plain text) and provides powerful filtering and templating capabilities through an intuitive syntax.
+`parsm` automatically detects and parses multiple data formats (**JSON**, **CSV**, **YAML**, **TOML**, **logfmt**, and plain text) and provides powerful filtering and templating capabilities through an intuitive syntax.
 
 ## Installation
 

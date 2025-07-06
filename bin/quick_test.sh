@@ -125,6 +125,62 @@ run_test "NESTED_FIELD" \
     'user.name' \
     "Nested field access"
 
+# Multiline format tests
+echo -e "${BLUE}=== Multiline Format Tests ===${NC}"
+
+run_test "MULTILINE_JSON" \
+    '{"id": 1, "name": "Alice"}\n{"id": 2, "name": "Bob"}\n{"id": 3, "name": "Charlie"}' \
+    'id > 1' \
+    "Multiline JSON filtering"
+
+run_test "MULTILINE_CSV" \
+    'name,age,role\nAlice,30,Engineer\nBob,25,Designer\nCharlie,40,Manager' \
+    'field_1 > 25' \
+    "Multiline CSV filtering"
+
+run_test "MULTILINE_YAML" \
+    '---\nname: Alice\nage: 30\n---\nname: Bob\nage: 25\n---\nname: Charlie\nage: 40' \
+    'age > 25' \
+    "Multiline YAML filtering"
+
+run_test "MULTILINE_TOML" \
+    '[user1]\nname = "Alice"\nage = 30\n\n[user2]\nname = "Bob"\nage = 25\n\n[user3]\nname = "Charlie"\nage = 40' \
+    'age > 25' \
+    "Multiline TOML filtering"
+
+# Truthy checks and boolean logic tests
+echo -e "${BLUE}=== Truthy Checks and Boolean Logic ===${NC}"
+
+run_test "TRUTHY_CHECK" \
+    '{"name": "Alice", "active": true}' \
+    'active?' \
+    "Simple truthy check"
+
+run_test "TRUTHY_NESTED_CHECK" \
+    '{"user": {"verified": true, "name": "Alice"}}' \
+    'user.verified?' \
+    "Nested truthy check"
+
+run_test "TRUTHY_WITH_AND" \
+    '{"name": "Alice", "active": true, "premium": true}' \
+    'active? && premium?' \
+    "Truthy checks with AND"
+
+run_test "TRUTHY_WITH_OR" \
+    '{"name": "Alice", "admin": false, "moderator": true}' \
+    'admin? || moderator?' \
+    "Truthy checks with OR"
+
+run_test "NEGATED_TRUTHY" \
+    '{"name": "Alice", "banned": false}' \
+    '!banned?' \
+    "Negated truthy check"
+
+run_test "COMPLEX_BOOLEAN" \
+    '{"name": "Alice", "age": 30, "verified": true, "role": "user"}' \
+    '(age > 25 && verified?) || role == "admin"' \
+    "Complex boolean logic"
+
 run_test "NO_ARGS_PASSTHROUGH" \
     '{"name": "Alice"}' \
     '' \

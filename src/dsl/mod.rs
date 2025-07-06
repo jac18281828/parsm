@@ -41,6 +41,34 @@ pub fn parse_command(input: &str) -> Result<ParsedDSL, Box<dyn std::error::Error
     }
 }
 
+/// Parse filter and template expressions separately
+///
+/// This is useful when filter and template are provided as separate arguments
+pub fn parse_separate_expressions(
+    filter: Option<&str>,
+    template: Option<&str>,
+) -> Result<ParsedDSL, Box<dyn std::error::Error>> {
+    let mut result = ParsedDSL::new();
+
+    // Parse filter if provided
+    if let Some(filter_str) = filter {
+        if !filter_str.trim().is_empty() {
+            let filter_dsl = parse_command(filter_str)?;
+            result.filter = filter_dsl.filter;
+        }
+    }
+
+    // Parse template if provided
+    if let Some(template_str) = template {
+        if !template_str.trim().is_empty() {
+            let template_dsl = parse_command(template_str)?;
+            result.template = template_dsl.template;
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
