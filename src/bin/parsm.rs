@@ -47,12 +47,65 @@ fn main() {
                 .help("Show usage examples")
                 .action(clap::ArgAction::SetTrue),
         )
+        .arg(
+            Arg::new("format-json")
+                .long("json")
+                .help("Force JSON format parsing")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("format-yaml")
+                .long("yaml")
+                .help("Force YAML format parsing")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("format-csv")
+                .long("csv")
+                .help("Force CSV format parsing")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("format-toml")
+                .long("toml")
+                .help("Force TOML format parsing")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("format-logfmt")
+                .long("logfmt")
+                .help("Force logfmt format parsing")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .arg(
+            Arg::new("format-text")
+                .long("text")
+                .help("Force plain text format parsing")
+                .action(clap::ArgAction::SetTrue),
+        )
         .get_matches();
 
     if matches.get_flag("help-examples") {
         print_usage_examples();
         return;
     }
+
+    // Determine forced format if any
+    let forced_format = if matches.get_flag("format-json") {
+        Some(DetectedFormat::Json)
+    } else if matches.get_flag("format-yaml") {
+        Some(DetectedFormat::Yaml)
+    } else if matches.get_flag("format-csv") {
+        Some(DetectedFormat::Csv)
+    } else if matches.get_flag("format-toml") {
+        Some(DetectedFormat::Toml)
+    } else if matches.get_flag("format-logfmt") {
+        Some(DetectedFormat::Logfmt)
+    } else if matches.get_flag("format-text") {
+        Some(DetectedFormat::PlainText)
+    } else {
+        None
+    };
 
     let filter_expr = matches.get_one::<String>("filter");
     let template_expr = matches.get_one::<String>("template");
@@ -66,7 +119,7 @@ fn main() {
                     std::process::exit(1);
                 }
             };
-            if let Err(e) = process_stream_with_filter(parsed_dsl) {
+            if let Err(e) = process_stream_with_filter(parsed_dsl, forced_format) {
                 eprintln!("Error processing stream: {e}");
                 std::process::exit(1);
             }
@@ -79,7 +132,7 @@ fn main() {
                     std::process::exit(1);
                 }
             };
-            if let Err(e) = process_stream_with_filter(parsed_dsl) {
+            if let Err(e) = process_stream_with_filter(parsed_dsl, forced_format) {
                 eprintln!("Error processing stream: {e}");
                 std::process::exit(1);
             }
@@ -92,7 +145,7 @@ fn main() {
                     std::process::exit(1);
                 }
             };
-            if let Err(e) = process_stream_with_filter(parsed_dsl) {
+            if let Err(e) = process_stream_with_filter(parsed_dsl, forced_format) {
                 eprintln!("Error processing stream: {e}");
                 std::process::exit(1);
             }
@@ -105,7 +158,7 @@ fn main() {
                     std::process::exit(1);
                 }
             };
-            if let Err(e) = process_stream_with_filter(parsed_dsl) {
+            if let Err(e) = process_stream_with_filter(parsed_dsl, forced_format) {
                 eprintln!("Error processing stream: {e}");
                 std::process::exit(1);
             }
@@ -131,11 +184,15 @@ fn main() {
 ///
 /// # Arguments
 /// * `dsl` - Parsed DSL containing optional filter, template, and field selector
+/// * `forced_format` - Optional format to force parsing with, bypassing format detection
 ///
 /// # Returns
 /// * `Ok(())` on successful processing
 /// * `Err(Box<dyn std::error::Error>)` on processing errors
-fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::Error>> {
+fn process_stream_with_filter(
+    dsl: ParsedDSL,
+    forced_format: Option<DetectedFormat>,
+) -> Result<(), Box<dyn std::error::Error>> {
     use parsm::StreamingParser;
     use std::io::{BufRead, Read, Write};
     let stdin = io::stdin();
@@ -149,7 +206,12 @@ fn process_stream_with_filter(dsl: ParsedDSL) -> Result<(), Box<dyn std::error::
         stdin.lock().read_to_string(&mut input)?;
 
         // Use format detector to determine the most likely format
-        let detected_formats = FormatDetector::detect(&input);
+        let detected_formats = if let Some(forced) = forced_format {
+            // If format is forced, use it with high confidence
+            vec![(forced, 1.0)]
+        } else {
+            FormatDetector::detect(&input)
+        };
 
         // Try parsing in order of confidence
         for (format, confidence) in detected_formats {
@@ -473,6 +535,11 @@ fn print_usage_examples() {
     println!("  # Just convert formats (no filter):");
     println!("  echo 'name: Alice' | parsm  # YAML to JSON");
     println!();
+    println!("  # Force specific format parsing:");
+    println!(r#"  echo 'Alice,30' | parsm --csv '${{1}} is ${{2}}'"#);
+    println!(r#"  echo 'level=error msg=timeout' | parsm --logfmt 'level == "error"'"#);
+    println!("  echo 'name: Alice' | parsm --yaml 'name'");
+    println!();
     println!("OPERATORS:");
     println!("  ==, !=, <, <=, >, >=        # Comparison");
     println!("  contains, startswith, endswith  # String operations");
@@ -490,6 +557,14 @@ fn print_usage_examples() {
     println!("  ${{1}}, ${{2}}, ${{3}}              # Indexed fields (1-based, requires braces)");
     println!("  $name, ${{user.email}}        # Named fields ($simple or ${{complex}})");
     println!("  $100                        # Literal dollar amounts (invalid variable names)");
+    println!();
+    println!("FORMAT FLAGS:");
+    println!("  --json                      # Force JSON format parsing");
+    println!("  --yaml                      # Force YAML format parsing");
+    println!("  --csv                       # Force CSV format parsing");
+    println!("  --toml                      # Force TOML format parsing");
+    println!("  --logfmt                    # Force logfmt format parsing");
+    println!("  --text                      # Force plain text format parsing");
     println!();
 }
 

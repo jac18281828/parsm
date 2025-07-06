@@ -557,3 +557,152 @@ fn test_json_null_handling() {
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(stdout.contains("Found null description for Test"));
 }
+
+/// Test JSON forced format parsing with --json flag
+#[test]
+fn test_json_forced_format() {
+    let test_cases = vec![
+        // Valid JSON that should parse correctly
+        (r#"{"name": "Alice", "age": 30}"#, r#""name""#, "Alice"),
+        (r#"{"name": "Alice", "age": 30}"#, r#""age""#, "30"),
+        // JSON with nested objects
+        (
+            r#"{"user": {"name": "Bob", "role": "admin"}}"#,
+            r#""user.name""#,
+            "Bob",
+        ),
+        (
+            r#"{"user": {"name": "Bob", "role": "admin"}}"#,
+            r#""user.role""#,
+            "admin",
+        ),
+        // JSON arrays
+        (
+            r#"{"items": ["apple", "banana", "cherry"]}"#,
+            r#""items.0""#,
+            "apple",
+        ),
+        (
+            r#"{"items": ["apple", "banana", "cherry"]}"#,
+            r#""items.2""#,
+            "cherry",
+        ),
+        // Test template with forced JSON
+        (
+            r#"{"name": "Alice", "age": 30}"#,
+            r#"{${name} is ${age} years old}"#,
+            "Alice is 30 years old",
+        ),
+        (
+            r#"{"price": 25.50, "currency": "USD"}"#,
+            r#"{Cost: $100 base + ${price} ${currency}}"#,
+            "Cost: $100 base + 25.5 USD",
+        ),
+    ];
+
+    for (input, expression, expected) in test_cases {
+        let mut child = parsm_command()
+            .arg("--json")
+            .arg(expression)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "JSON forced format failed for input '{}' with expression '{}': {:?}",
+            input,
+            expression,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+        assert_eq!(
+            result, expected,
+            "Failed for JSON forced input '{input}' with expression '{expression}'",
+        );
+    }
+}
+
+/// Test JSON forced format filtering with --json flag
+#[test]
+fn test_json_forced_format_filtering() {
+    let test_cases = vec![
+        (r#"{"name": "Alice", "age": 30}"#, "age > 25", true),
+        (r#"{"name": "Bob", "age": 20}"#, "age > 25", false),
+        (
+            r#"{"status": "active", "count": 100}"#,
+            r#"status == "active""#,
+            true,
+        ),
+        (
+            r#"{"status": "inactive", "count": 50}"#,
+            r#"status == "active""#,
+            false,
+        ),
+        (
+            r#"{"user": {"name": "Alice", "admin": true}}"#,
+            "user.admin == true",
+            true,
+        ),
+        (
+            r#"{"user": {"name": "Bob", "admin": false}}"#,
+            "user.admin == true",
+            false,
+        ),
+    ];
+
+    for (input, filter, should_match) in test_cases {
+        let mut child = parsm_command()
+            .arg("--json")
+            .arg(filter)
+            .arg(r#"{match}"#)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "JSON forced format filtering failed for input '{}' with filter '{}': {:?}",
+            input,
+            filter,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+
+        if should_match {
+            assert_eq!(
+                result, "match",
+                "Expected match for JSON forced filter '{filter}' with input '{input}'",
+            );
+        } else {
+            assert_eq!(
+                result, "",
+                "Expected empty output for JSON forced filter '{filter}' with input '{input}'",
+            );
+        }
+    }
+}

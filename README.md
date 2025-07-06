@@ -91,6 +91,14 @@ Alice 30 Engineer
 Bob 25 Designer
 ```
 
+### CLI Flags to force format handling
+--json - Force JSON format parsing
+--yaml - Force YAML format parsing
+--csv - Force CSV format parsing
+--toml - Force TOML format parsing
+--logfmt - Force logfmt format parsing
+--text - Force plain text format parsing
+
 ## Filter Syntax
 
 ### Comparison Operators

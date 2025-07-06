@@ -766,3 +766,152 @@ zero = 0"#;
     assert_eq!(lines.len(), 1);
     assert_eq!(lines[0], "Empty: '', Name: '   spaced   ', Zero: 0");
 }
+
+/// Test TOML forced format parsing with --toml flag
+#[test]
+fn test_toml_forced_format() {
+    let test_cases = vec![
+        // Basic TOML parsing
+        ("name = \"Alice\"\nage = 30", r#""name""#, "Alice"),
+        ("name = \"Alice\"\nage = 30", r#""age""#, "30"),
+        // TOML sections
+        (
+            "[user]\nname = \"Bob\"\nrole = \"admin\"",
+            r#""user.name""#,
+            "Bob",
+        ),
+        (
+            "[user]\nname = \"Bob\"\nrole = \"admin\"",
+            r#""user.role""#,
+            "admin",
+        ),
+        // TOML arrays
+        (
+            "items = [\"apple\", \"banana\", \"cherry\"]",
+            r#""items.0""#,
+            "apple",
+        ),
+        (
+            "items = [\"apple\", \"banana\", \"cherry\"]",
+            r#""items.2""#,
+            "cherry",
+        ),
+        // Test template with forced TOML
+        (
+            "name = \"Alice\"\nage = 30",
+            r#"{${name} is ${age} years old}"#,
+            "Alice is 30 years old",
+        ),
+        (
+            "[config]\nhost = \"localhost\"\nport = 8080",
+            r#"{Server: ${config.host}:${config.port}}"#,
+            "Server: localhost:8080",
+        ),
+    ];
+
+    for (input, expression, expected) in test_cases {
+        let mut child = parsm_command()
+            .arg("--toml")
+            .arg(expression)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "TOML forced format failed for input '{}' with expression '{}': {:?}",
+            input,
+            expression,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+        assert_eq!(
+            result, expected,
+            "Failed for TOML forced input '{input}' with expression '{expression}'",
+        );
+    }
+}
+
+/// Test TOML forced format filtering with --toml flag
+#[test]
+fn test_toml_forced_format_filtering() {
+    let test_cases = vec![
+        ("name = \"Alice\"\nage = 30", "age > 25", true),
+        ("name = \"Bob\"\nage = 20", "age > 25", false),
+        (
+            "status = \"active\"\ncount = 100",
+            r#"status == "active""#,
+            true,
+        ),
+        (
+            "status = \"inactive\"\ncount = 50",
+            r#"status == "active""#,
+            false,
+        ),
+        (
+            "[user]\nname = \"Alice\"\nadmin = true",
+            "user.admin == true",
+            true,
+        ),
+        (
+            "[user]\nname = \"Bob\"\nadmin = false",
+            "user.admin == true",
+            false,
+        ),
+    ];
+
+    for (input, filter, should_match) in test_cases {
+        let mut child = parsm_command()
+            .arg("--toml")
+            .arg(filter)
+            .arg(r#"{match}"#)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "TOML forced format filtering failed for input '{}' with filter '{}': {:?}",
+            input,
+            filter,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+
+        if should_match {
+            assert_eq!(
+                result, "match",
+                "Expected match for TOML forced filter '{filter}' with input '{input}'",
+            );
+        } else {
+            assert_eq!(
+                result, "",
+                "Expected empty output for TOML forced filter '{filter}' with input '{input}'",
+            );
+        }
+    }
+}

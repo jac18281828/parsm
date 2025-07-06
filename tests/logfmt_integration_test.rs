@@ -395,3 +395,154 @@ fn test_logfmt_performance_large_dataset() {
         "Processing took too long: {duration:?}"
     );
 }
+
+/// Test logfmt forced format parsing with --logfmt flag
+#[test]
+fn test_logfmt_forced_format() {
+    let test_cases = vec![
+        // Standard logfmt parsing
+        (
+            "level=error msg=\"DB error\" service=api",
+            r#""level""#,
+            "error",
+        ),
+        (
+            "level=error msg=\"DB error\" service=api",
+            r#""msg""#,
+            "DB error",
+        ),
+        (
+            "level=error msg=\"DB error\" service=api",
+            r#""service""#,
+            "api",
+        ),
+        // Logfmt with numeric values
+        (
+            "timestamp=1234567890 level=info count=42",
+            r#""timestamp""#,
+            "1234567890",
+        ),
+        (
+            "timestamp=1234567890 level=info count=42",
+            r#""count""#,
+            "42",
+        ),
+        // Test template with forced logfmt
+        (
+            "level=error msg=\"timeout\" service=api",
+            r#"{[${level}] ${msg} from ${service}}"#,
+            "[error] timeout from api",
+        ),
+        (
+            "user=alice action=login success=true",
+            r#"{User ${user} ${action}: ${success}}"#,
+            "User alice login: true",
+        ),
+    ];
+
+    for (input, expression, expected) in test_cases {
+        let mut child = parsm_command()
+            .arg("--logfmt")
+            .arg(expression)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "Logfmt forced format failed for input '{}' with expression '{}': {:?}",
+            input,
+            expression,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+        assert_eq!(
+            result, expected,
+            "Failed for logfmt forced input '{input}' with expression '{expression}'",
+        );
+    }
+}
+
+/// Test logfmt forced format filtering with --logfmt flag
+#[test]
+fn test_logfmt_forced_format_filtering() {
+    let test_cases = vec![
+        (
+            "level=error msg=\"DB error\" service=api",
+            r#"level == "error""#,
+            true,
+        ),
+        (
+            "level=info msg=\"startup\" service=api",
+            r#"level == "error""#,
+            false,
+        ),
+        (
+            "user=alice role=admin active=true",
+            r#"active == "true""#,
+            true,
+        ),
+        (
+            "user=bob role=user active=false",
+            r#"active == "true""#,
+            false,
+        ),
+        ("count=100 threshold=50", r#"count == "100""#, true),
+        ("count=25 threshold=50", r#"count == "100""#, false),
+    ];
+
+    for (input, filter, should_match) in test_cases {
+        let mut child = parsm_command()
+            .arg("--logfmt")
+            .arg(filter)
+            .arg(r#"{match}"#)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "Logfmt forced format filtering failed for input '{}' with filter '{}': {:?}",
+            input,
+            filter,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+
+        if should_match {
+            assert_eq!(
+                result, "match",
+                "Expected match for logfmt forced filter '{filter}' with input '{input}'",
+            );
+        } else {
+            assert_eq!(
+                result, "",
+                "Expected empty output for logfmt forced filter '{filter}' with input '{input}'",
+            );
+        }
+    }
+}

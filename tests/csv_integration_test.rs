@@ -513,3 +513,110 @@ fn test_csv_headers_all_data_rows() {
         .count();
     assert_eq!(line_count, 3); // Only data rows, not header
 }
+
+/// Test CSV forced format parsing with --csv flag
+#[test]
+fn test_csv_forced_format() {
+    let test_cases = vec![
+        // Space-separated data that might be detected as text, but force CSV parsing
+        ("Alice 30 Engineer", r#""field_0""#, "Alice 30 Engineer"),
+        ("Alice 30 Engineer", r#""1""#, "Alice 30 Engineer"), // Single field when parsed as CSV
+        // Tab-separated data forced as CSV
+        (
+            "name,age,occupation\nAlice,30,Engineer",
+            r#""name""#,
+            "Alice",
+        ),
+        ("name,age,occupation\nAlice,30,Engineer", r#""age""#, "30"),
+        // Comma-separated with quotes, ensure it's parsed as CSV
+        ("\"Smith, John\",30,Engineer", r#""field_0""#, "Smith, John"),
+        ("\"Smith, John\",30,Engineer", r#""field_1""#, "30"),
+        // Test template with forced CSV
+        (
+            "Alice,30,Engineer",
+            r#"{Name: ${1}, Age: ${2}}"#,
+            "Name: Alice, Age: 30",
+        ),
+        (
+            "Alice,30,Engineer",
+            r#"{${field_0} is ${field_1} years old}"#,
+            "Alice is 30 years old",
+        ),
+    ];
+
+    for (input, expression, expected) in test_cases {
+        let mut file = NamedTempFile::new().expect("create temp file");
+        write!(file, "{input}").expect("write temp file");
+
+        let output = parsm_command()
+            .arg("--csv")
+            .arg(expression)
+            .stdin(File::open(file.path()).unwrap())
+            .output()
+            .expect("run parsm");
+
+        assert!(
+            output.status.success(),
+            "CSV forced format failed for input '{}' with expression '{}': {:?}",
+            input,
+            expression,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+        assert_eq!(
+            result, expected,
+            "Failed for CSV forced input '{input}' with expression '{expression}'",
+        );
+    }
+}
+
+/// Test CSV forced format filtering with --csv flag
+#[test]
+fn test_csv_forced_format_filtering() {
+    let test_cases = vec![
+        ("Alice,30,Engineer", "field_1 > \"25\"", true),
+        ("Bob,20,Student", "field_1 > \"25\"", false),
+        ("Alice,30,Engineer", r#"field_0 == "Alice""#, true),
+        ("Bob,20,Student", r#"field_0 == "Alice""#, false),
+        ("Alice,30,Engineer", r#"field_2 *= "Eng""#, true),
+        ("Bob,20,Student", r#"field_2 *= "Eng""#, false),
+    ];
+
+    for (input, filter, should_match) in test_cases {
+        let mut file = NamedTempFile::new().expect("create temp file");
+        write!(file, "{input}").expect("write temp file");
+
+        let output = parsm_command()
+            .arg("--csv")
+            .arg(filter)
+            .arg(r#"{match}"#)
+            .stdin(File::open(file.path()).unwrap())
+            .output()
+            .expect("run parsm");
+
+        assert!(
+            output.status.success(),
+            "CSV forced format filtering failed for input '{}' with filter '{}': {:?}",
+            input,
+            filter,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+
+        if should_match {
+            assert_eq!(
+                result, "match",
+                "Expected match for CSV forced filter '{filter}' with input '{input}'",
+            );
+        } else {
+            assert_eq!(
+                result, "",
+                "Expected empty output for CSV forced filter '{filter}' with input '{input}'",
+            );
+        }
+    }
+}

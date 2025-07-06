@@ -687,3 +687,250 @@ fn test_yaml_empty_values() {
         assert_eq!(result, expected, "Failed for input: {input}",);
     }
 }
+
+/// Test YAML flow format with forced --yaml flag
+#[test]
+fn test_yaml_flow_format_forced() {
+    let test_cases = vec![
+        ("{name: Alice, age: 30}", r#""name""#, "Alice"),
+        ("{name: Alice, age: 30}", r#""age""#, "30"),
+        ("{user: {name: Bob, role: admin}}", r#""user.name""#, "Bob"),
+        (
+            "{user: {name: Bob, role: admin}}",
+            r#""user.role""#,
+            "admin",
+        ),
+        ("{price: 25.50, currency: USD}", r#""price""#, "25.5"),
+        ("{price: 25.50, currency: USD}", r#""currency""#, "USD"),
+        ("{items: [apple, banana, cherry]}", r#""items.0""#, "apple"),
+        ("{items: [apple, banana, cherry]}", r#""items.2""#, "cherry"),
+    ];
+
+    for (input, field_selector, expected) in test_cases {
+        let mut child = parsm_command()
+            .arg("--yaml")
+            .arg(field_selector)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "Command failed for input '{}' with selector '{}': {:?}",
+            input,
+            field_selector,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+        assert_eq!(
+            result, expected,
+            "Failed for YAML flow input '{input}' with selector '{field_selector}'",
+        );
+    }
+}
+
+/// Test YAML flow format templates with forced --yaml flag
+#[test]
+fn test_yaml_flow_format_templates_forced() {
+    let test_cases = vec![
+        (
+            "{name: Alice, age: 30}",
+            r#"{${name} is ${age} years old}"#,
+            "Alice is 30 years old",
+        ),
+        (
+            "{user: {name: Bob, role: admin}}",
+            r#"{User: ${user.name} (${user.role})}"#,
+            "User: Bob (admin)",
+        ),
+        (
+            "{price: 25.50, currency: USD}",
+            r#"{Cost: $100 base + ${price} ${currency}}"#,
+            "Cost: $100 base + 25.5 USD",
+        ),
+        (
+            "{items: [apple, banana, cherry]}",
+            r#"{First: ${items.0}, Last: ${items.2}}"#,
+            "First: apple, Last: cherry",
+        ),
+    ];
+
+    for (input, template, expected) in test_cases {
+        let mut child = parsm_command()
+            .arg("--yaml")
+            .arg(template)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "Command failed for input '{}' with template '{}': {:?}",
+            input,
+            template,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+        assert_eq!(
+            result, expected,
+            "Failed for YAML flow input '{input}' with template '{template}'",
+        );
+    }
+}
+
+/// Test YAML flow format filtering with forced --yaml flag
+#[test]
+fn test_yaml_flow_format_filtering_forced() {
+    let test_cases = vec![
+        ("{name: Alice, age: 30}", "age > 25", true),
+        ("{name: Bob, age: 20}", "age > 25", false),
+        (
+            "{status: active, count: 100}",
+            r#"status == "active""#,
+            true,
+        ),
+        (
+            "{status: inactive, count: 50}",
+            r#"status == "active""#,
+            false,
+        ),
+        (
+            "{user: {name: Alice, admin: true}}",
+            "user.admin == true",
+            true,
+        ),
+        (
+            "{user: {name: Bob, admin: false}}",
+            "user.admin == true",
+            false,
+        ),
+    ];
+
+    for (input, filter, should_match) in test_cases {
+        let mut child = parsm_command()
+            .arg("--yaml")
+            .arg(filter)
+            .arg(r#"{match}"#)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "Command failed for input '{}' with filter '{}': {:?}",
+            input,
+            filter,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+
+        if should_match {
+            assert_eq!(
+                result, "match",
+                "Expected match for YAML flow filter '{filter}' with input '{input}'",
+            );
+        } else {
+            assert_eq!(
+                result, "",
+                "Expected empty output for YAML flow filter '{filter}' with input '{input}'",
+            );
+        }
+    }
+}
+
+/// Test YAML flow format with complex nested structures using forced --yaml flag
+#[test]
+fn test_yaml_flow_format_complex_nested_forced() {
+    let test_cases = vec![
+        (
+            "{config: {db: {host: localhost, port: 5432}, app: {name: myapp}}}",
+            r#""config.db.host""#,
+            "localhost",
+        ),
+        (
+            "{config: {db: {host: localhost, port: 5432}, app: {name: myapp}}}",
+            r#""config.app.name""#,
+            "myapp",
+        ),
+        (
+            "{users: [{name: Alice, role: admin}, {name: Bob, role: user}]}",
+            r#""users.0.name""#,
+            "Alice",
+        ),
+        (
+            "{users: [{name: Alice, role: admin}, {name: Bob, role: user}]}",
+            r#""users.1.role""#,
+            "user",
+        ),
+    ];
+
+    for (input, field_selector, expected) in test_cases {
+        let mut child = parsm_command()
+            .arg("--yaml")
+            .arg(field_selector)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "Command failed for complex YAML flow input '{}' with selector '{}': {:?}",
+            input,
+            field_selector,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+        assert_eq!(
+            result, expected,
+            "Failed for complex YAML flow input '{input}' with selector '{field_selector}'",
+        );
+    }
+}

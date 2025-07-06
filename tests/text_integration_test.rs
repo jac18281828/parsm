@@ -503,3 +503,128 @@ fn test_text_mixed_content() {
     assert_eq!(lines[1], "Warning -> Memory");
     assert_eq!(lines[2], "Status=OK -> Count=42");
 }
+
+/// Test text forced format parsing with --text flag
+#[test]
+fn test_text_forced_format() {
+    let test_cases = vec![
+        // Space-separated text
+        ("Alice 30 Engineer", r#""word_0""#, "Alice"),
+        ("Alice 30 Engineer", r#""word_1""#, "30"),
+        ("Alice 30 Engineer", r#""word_2""#, "Engineer"),
+        // Text that might look like other formats but forced as text
+        ("hello world", r#""word_0""#, "hello"),
+        ("hello world", r#""word_1""#, "world"),
+        // Text with colons that might be mistaken for other formats
+        ("name: Alice age: 30", r#""word_0""#, "name:"),
+        ("name: Alice age: 30", r#""word_1""#, "Alice"),
+        ("name: Alice age: 30", r#""word_2""#, "age:"),
+        ("name: Alice age: 30", r#""word_3""#, "30"),
+        // Test template with forced text
+        (
+            "Alice 30 Engineer",
+            r#"{Name: ${word_0}, Age: ${word_1}}"#,
+            "Name: Alice, Age: 30",
+        ),
+        (
+            "Hello world test",
+            r#"{${word_0} ${word_2}!}"#,
+            "Hello test!",
+        ),
+        (
+            "name: Alice age: 30",
+            r#"{${word_1} is ${word_3} years old}"#,
+            "Alice is 30 years old",
+        ),
+    ];
+
+    for (input, expression, expected) in test_cases {
+        let mut child = parsm_command()
+            .arg("--text")
+            .arg(expression)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "Text forced format failed for input '{}' with expression '{}': {:?}",
+            input,
+            expression,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+        assert_eq!(
+            result, expected,
+            "Failed for text forced input '{input}' with expression '{expression}'",
+        );
+    }
+}
+
+/// Test text forced format filtering with --text flag
+#[test]
+fn test_text_forced_format_filtering() {
+    let test_cases = vec![
+        ("Alice 30 Engineer", r#"word_0 == "Alice""#, true),
+        ("Bob 25 Student", r#"word_0 == "Alice""#, false),
+        ("Alice 30 Engineer", r#"word_2 *= "Eng""#, true),
+        ("Bob 25 Student", r#"word_2 *= "Eng""#, false),
+        ("count 100 items", r#"word_1 == "100""#, true),
+        ("count 50 items", r#"word_1 == "100""#, false),
+    ];
+
+    for (input, filter, should_match) in test_cases {
+        let mut child = parsm_command()
+            .arg("--text")
+            .arg(filter)
+            .arg(r#"{match}"#)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("Failed to start parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+            stdin
+                .write_all(input.as_bytes())
+                .expect("Failed to write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("Failed to read stdout");
+        assert!(
+            output.status.success(),
+            "Text forced format filtering failed for input '{}' with filter '{}': {:?}",
+            input,
+            filter,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let result = stdout.trim();
+
+        if should_match {
+            assert_eq!(
+                result, "match",
+                "Expected match for text forced filter '{filter}' with input '{input}'",
+            );
+        } else {
+            assert_eq!(
+                result, "",
+                "Expected empty output for text forced filter '{filter}' with input '{input}'",
+            );
+        }
+    }
+}
