@@ -11,6 +11,10 @@ readme = "README.md"
 keywords = ["parser", "filter", "json", "yaml", "toml"]
 categories = ["command-line-utilities", "parsing", "text-processing"]
 
+[[bin]]
+name = "parsm" 
+path = "src/bin/parsm.rs"
+
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
@@ -26,10 +30,6 @@ regex = "1.10"
 
 [dev-dependencies]
 tempfile = "3.0"
-
-[[bin]]
-name = "parsm" 
-path = "src/bin/parsm.rs"
 
 
 # Example usage in your lib.rs 

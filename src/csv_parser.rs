@@ -142,10 +142,10 @@ fn detect_header_row(lines: &[&str]) -> bool {
 
         let sample_size = std::cmp::min(lines.len() - 1, 5);
         for line in lines.iter().take(sample_size + 1).skip(1) {
-            if let Some(data_record) = parse_csv_line(line) {
-                if data_record.iter().any(|field| is_data_like(field.trim())) {
-                    return true;
-                }
+            if let Some(data_record) = parse_csv_line(line)
+                && data_record.iter().any(|field| is_data_like(field.trim()))
+            {
+                return true;
             }
         }
 

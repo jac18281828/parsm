@@ -141,18 +141,6 @@ Options:
   -V, --version   Print version
 ```
 
-## Force Format Parsing
-
-| Flag     | Format   |
-|----------|----------|
-| `--json` | JSON     |
-| `--yaml` | YAML     |
-| `--csv`  | CSV      |
-| `--toml` | TOML     |
-| `--logfmt` | logfmt |
-| `--text` | Plain Text |
-
-
 ## Comparison with Other Tools
 
 | Feature          | parsm       | jq         | awk        | sed        |
@@ -175,6 +163,11 @@ Options:
 3. Write tests and code
 4. Run tests and lint checks
 5. Submit a pull request
+
+## Crates.io
+
+[crates.io](https://crates.io/crates/parsm)
+[docs.rs](https://docs.rs/parsm)
 
 ## License
 

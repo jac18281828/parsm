@@ -263,17 +263,17 @@ impl TemplateParser {
                     let mut var_name = String::new();
 
                     // First character must be a letter or underscore
-                    if let Some(&first_ch) = chars.peek() {
-                        if first_ch.is_alphabetic() || first_ch == '_' {
-                            var_name.push(chars.next().unwrap());
+                    if let Some(&first_ch) = chars.peek()
+                        && (first_ch.is_alphabetic() || first_ch == '_')
+                    {
+                        var_name.push(chars.next().unwrap());
 
-                            // Subsequent characters can be alphanumeric, underscore, or dots
-                            while let Some(&next_ch) = chars.peek() {
-                                if next_ch.is_alphanumeric() || next_ch == '_' || next_ch == '.' {
-                                    var_name.push(chars.next().unwrap());
-                                } else {
-                                    break;
-                                }
+                        // Subsequent characters can be alphanumeric, underscore, or dots
+                        while let Some(&next_ch) = chars.peek() {
+                            if next_ch.is_alphanumeric() || next_ch == '_' || next_ch == '.' {
+                                var_name.push(chars.next().unwrap());
+                            } else {
+                                break;
                             }
                         }
                     }
@@ -408,11 +408,11 @@ impl TemplateParser {
         trace!("parse_field_name called with: '{}'", field_name);
 
         // Handle numeric field references (1, 2, 3, etc. stay as "1", "2", "3")
-        if let Ok(index) = field_name.parse::<usize>() {
-            if index > 0 {
-                trace!("Numeric field {} stays as is", index);
-                return FieldPath::new(vec![field_name.to_string()]);
-            }
+        if let Ok(index) = field_name.parse::<usize>()
+            && index > 0
+        {
+            trace!("Numeric field {} stays as is", index);
+            return FieldPath::new(vec![field_name.to_string()]);
         }
 
         // Regular field name with dot notation

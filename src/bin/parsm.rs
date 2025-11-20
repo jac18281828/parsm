@@ -231,31 +231,26 @@ fn process_stream_with_filter(
 
             match format {
                 DetectedFormat::Json => {
-                    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&input) {
-                        if !matches!(json_value, serde_json::Value::Array(_)) {
-                            // Single JSON object
-                            if let Some(ref field_selector) = dsl.field_selector {
-                                if let Some(extracted) = field_selector.extract_field(&json_value) {
-                                    writeln!(writer, "{extracted}")?;
-                                }
-                                return Ok(());
-                            } else {
-                                // For templates, process the single value
-                                let mut value_with_original = json_value.clone();
-                                if let serde_json::Value::Object(ref mut obj) = value_with_original
-                                {
-                                    obj.insert(
-                                        "$0".to_string(),
-                                        serde_json::Value::String(input.trim().to_string()),
-                                    );
-                                }
-                                parsm::process_single_value(
-                                    &value_with_original,
-                                    &dsl,
-                                    &mut writer,
-                                )?;
-                                return Ok(());
+                    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&input)
+                        && !matches!(json_value, serde_json::Value::Array(_))
+                    {
+                        // Single JSON object
+                        if let Some(ref field_selector) = dsl.field_selector {
+                            if let Some(extracted) = field_selector.extract_field(&json_value) {
+                                writeln!(writer, "{extracted}")?;
                             }
+                            return Ok(());
+                        } else {
+                            // For templates, process the single value
+                            let mut value_with_original = json_value.clone();
+                            if let serde_json::Value::Object(ref mut obj) = value_with_original {
+                                obj.insert(
+                                    "$0".to_string(),
+                                    serde_json::Value::String(input.trim().to_string()),
+                                );
+                            }
+                            parsm::process_single_value(&value_with_original, &dsl, &mut writer)?;
+                            return Ok(());
                         }
                     }
                 }

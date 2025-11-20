@@ -1,9 +1,9 @@
-FROM jac18281828/rust:latest
+FROM ghcr.io/jac18281828/rust:latest
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN sudo apt-get update && \
     sudo apt-get install -y --no-install-recommends \
-    python3.11-venv \
+    python3-venv \
     && \
     sudo apt-get clean && \
     sudo rm -rf /var/lib/apt/lists/* /var/tmp/* /tmp/*

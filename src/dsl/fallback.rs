@@ -334,14 +334,14 @@ fn try_parse_single_boolean_term(term: &str) -> Result<FilterExpr, Box<dyn std::
             trimmed
         );
         // Try to parse as a filter expression
-        if let Ok(result) = DSLParser::parse_dsl(trimmed) {
-            if let Some(filter) = result.filter {
-                trace!(
-                    "try_parse_single_boolean_term: successfully parsed '{}' as filter",
-                    trimmed
-                );
-                return Ok(filter);
-            }
+        if let Ok(result) = DSLParser::parse_dsl(trimmed)
+            && let Some(filter) = result.filter
+        {
+            trace!(
+                "try_parse_single_boolean_term: successfully parsed '{}' as filter",
+                trimmed
+            );
+            return Ok(filter);
         }
         trace!(
             "try_parse_single_boolean_term: failed to parse '{}' as filter despite operators",
@@ -381,11 +381,11 @@ fn parse_field_name_simple(field_name: &str) -> FieldPath {
     }
 
     // Handle numeric field references (1, 2, 3, etc. stay as "1", "2", "3")
-    if let Ok(index) = field_name.parse::<usize>() {
-        if index > 0 {
-            trace!("Numeric field {} stays as is", index);
-            return FieldPath::new(vec![field_name.to_string()]);
-        }
+    if let Ok(index) = field_name.parse::<usize>()
+        && index > 0
+    {
+        trace!("Numeric field {} stays as is", index);
+        return FieldPath::new(vec![field_name.to_string()]);
     }
 
     let parts: Vec<String> = field_name

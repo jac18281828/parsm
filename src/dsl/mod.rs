@@ -110,19 +110,19 @@ pub fn parse_separate_expressions(
     let mut result = ParsedDSL::new();
 
     // Parse filter if provided
-    if let Some(filter_str) = filter {
-        if !filter_str.trim().is_empty() {
-            let filter_dsl = parse_command(filter_str)?;
-            result.filter = filter_dsl.filter;
-        }
+    if let Some(filter_str) = filter
+        && !filter_str.trim().is_empty()
+    {
+        let filter_dsl = parse_command(filter_str)?;
+        result.filter = filter_dsl.filter;
     }
 
     // Parse template if provided
-    if let Some(template_str) = template {
-        if !template_str.trim().is_empty() {
-            let template_dsl = parse_command(template_str)?;
-            result.template = template_dsl.template;
-        }
+    if let Some(template_str) = template
+        && !template_str.trim().is_empty()
+    {
+        let template_dsl = parse_command(template_str)?;
+        result.template = template_dsl.template;
     }
 
     Ok(result)

@@ -669,11 +669,11 @@ fn convert_to_json(
     };
 
     // Add indexed fields (1-based) for templates
-    if let Value::Object(ref mut obj) = json_value {
-        if let Some(Value::Array(ref arr)) = obj.get("_array").cloned() {
-            for (i, value) in arr.iter().enumerate() {
-                obj.insert((i + 1).to_string(), value.clone());
-            }
+    if let Value::Object(ref mut obj) = json_value
+        && let Some(Value::Array(ref arr)) = obj.get("_array").cloned()
+    {
+        for (i, value) in arr.iter().enumerate() {
+            obj.insert((i + 1).to_string(), value.clone());
         }
     }
 

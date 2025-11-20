@@ -410,23 +410,23 @@ fn test_parsing_edge_cases() {
                 match input {
                     "$1" | "$999" | "$00" | "$01" => {
                         assert!(result.template.is_some(), "{input} should be template");
-                        if let Some(template) = result.template {
-                            if !template.items.is_empty() {
-                                match &template.items[0] {
-                                    TemplateItem::Literal(text) => assert_eq!(text, input),
-                                    _ => panic!("{input} should be literal"),
-                                }
+                        if let Some(template) = result.template
+                            && !template.items.is_empty()
+                        {
+                            match &template.items[0] {
+                                TemplateItem::Literal(text) => assert_eq!(text, input),
+                                _ => panic!("{input} should be literal"),
                             }
                         }
                     }
                     "${1}" | "${999}" | "${00}" | "${01}" => {
                         assert!(result.template.is_some(), "{input} should be template");
-                        if let Some(template) = result.template {
-                            if !template.items.is_empty() {
-                                match &template.items[0] {
-                                    TemplateItem::Field(_) => {} // Expected
-                                    _ => panic!("{input} should be field substitution"),
-                                }
+                        if let Some(template) = result.template
+                            && !template.items.is_empty()
+                        {
+                            match &template.items[0] {
+                                TemplateItem::Field(_) => {} // Expected
+                                _ => panic!("{input} should be field substitution"),
                             }
                         }
                     }
