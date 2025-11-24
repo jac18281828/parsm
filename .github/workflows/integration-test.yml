@@ -60,7 +60,7 @@ jobs:
           RUST_LOG: error
       - name: Upload test artifacts (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: integration-test-logs-python-${{ matrix.python-version }}
           path: |
@@ -111,7 +111,7 @@ jobs:
           python bin/microbenchmark.py
         continue-on-error: true
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: benchmark-results
           path: |
