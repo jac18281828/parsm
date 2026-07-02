@@ -135,8 +135,7 @@ fn test_critical_parsing_distinctions() {
     let result = parse_command("${0}");
     match result {
         Ok(parsed) => {
-            if parsed.template.is_some() {
-                let template = parsed.template.unwrap();
+            if let Some(template) = parsed.template {
                 if template.items.len() == 1 {
                     match &template.items[0] {
                         TemplateItem::Field(field) => {
@@ -351,10 +350,8 @@ fn test_mixed_numeric_template_patterns() {
                     found_literal_with_dollar = true;
                 }
             }
-            TemplateItem::Field(field) => {
-                if field.parts == vec!["name"] {
-                    found_field = true;
-                }
+            TemplateItem::Field(field) if field.parts == vec!["name"] => {
+                found_field = true;
             }
             _ => {}
         }
@@ -664,10 +661,8 @@ fn test_bracketed_template_syntax() {
                     found_age_field = true;
                 }
             }
-            TemplateItem::Literal(text) => {
-                if text.contains("Name:") || text.contains("Age:") {
-                    found_literal_content = true;
-                }
+            TemplateItem::Literal(text) if (text.contains("Name:") || text.contains("Age:")) => {
+                found_literal_content = true;
             }
             _ => {}
         }

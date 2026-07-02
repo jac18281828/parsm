@@ -440,10 +440,8 @@ fn split_filter_template_manually(input: &str) -> Option<(&str, &str)> {
                     bracket_count += 1;
                 }
             }
-            ']' => {
-                if !in_quotes {
-                    bracket_count -= 1;
-                }
+            ']' if !in_quotes => {
+                bracket_count -= 1;
             }
             _ => {}
         }
