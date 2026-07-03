@@ -10,6 +10,12 @@ documentation = "https://docs.rs/parsm"
 readme = "README.md"
 keywords = ["parser", "filter", "json", "yaml", "toml"]
 categories = ["command-line-utilities", "parsing", "text-processing"]
+exclude = [
+    "assets/",
+    "/bin/",
+    ".devcontainer/",
+    ".vscode/",
+]
 
 [[bin]]
 name = "parsm" 

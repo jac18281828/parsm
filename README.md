@@ -66,6 +66,9 @@ echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 [${name} is ${age}]'
 
 ## Syntax Reference
 
+See [doc/syntaxfieldselector.md](doc/syntaxfieldselector.md) for the full
+field-selection design rationale and syntax walkthrough.
+
 ### Filters
 
 - Comparison: `==`, `!=`, `<`, `<=`, `>`, `>=`
