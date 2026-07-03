@@ -1,6 +1,6 @@
 use csv;
 use serde_json;
-use serde_yaml;
+use serde_yaml_ng;
 use std::io::{BufRead, Write};
 use toml;
 
@@ -151,7 +151,7 @@ pub enum ParsedLine {
     Json(serde_json::Value),
     Csv(csv::StringRecord),
     Toml(toml::Value),
-    Yaml(serde_yaml::Value),
+    Yaml(serde_yaml_ng::Value),
     Logfmt(serde_json::Value),
     Text(Vec<String>),
 }
@@ -215,7 +215,7 @@ pub fn process_stream<R: BufRead, W: Write>(
                         serde_json::to_value(val)?
                     }
                     ParsedLine::Yaml(val) => {
-                        // serde_yaml::Value can be directly converted to serde_json::Value
+                        // serde_yaml_ng::Value can be directly converted to serde_json::Value
                         serde_json::to_value(val)?
                     }
                     ParsedLine::Logfmt(val) => val,
@@ -260,8 +260,8 @@ fn parse_toml(line: &str) -> Option<toml::Value> {
     toml::from_str(line).ok()
 }
 
-fn parse_yaml(line: &str) -> Option<serde_yaml::Value> {
-    serde_yaml::from_str(line).ok()
+fn parse_yaml(line: &str) -> Option<serde_yaml_ng::Value> {
+    serde_yaml_ng::from_str(line).ok()
 }
 
 fn parse_logfmt(line: &str) -> Option<serde_json::Value> {

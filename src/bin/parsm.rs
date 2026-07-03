@@ -293,7 +293,8 @@ fn process_stream_with_filter(
                     }
                 }
                 DetectedFormat::Yaml => {
-                    if let Ok(yaml_value) = serde_yaml::from_str::<serde_yaml::Value>(&input) {
+                    if let Ok(yaml_value) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&input)
+                    {
                         let json_value = serde_json::to_value(yaml_value)?;
                         process_structured_value(json_value, &input, &dsl, &mut writer)?;
                         return Ok(());

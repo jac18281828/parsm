@@ -808,7 +808,8 @@ mod integration_tests {
         assert_eq!(csv_result["3"], "Engineer");
 
         // Test YAML conversion
-        let yaml_data = serde_yaml::from_str::<serde_yaml::Value>("name: Alice\nage: 30").unwrap();
+        let yaml_data =
+            serde_yaml_ng::from_str::<serde_yaml_ng::Value>("name: Alice\nage: 30").unwrap();
         let yaml_line = parse::ParsedLine::Yaml(yaml_data);
         let original_yaml = "name: Alice\nage: 30";
         let yaml_result = convert_to_json(yaml_line, original_yaml)?;

@@ -73,11 +73,11 @@ pub struct YamlParser;
 impl DocumentParser for YamlParser {
     fn can_parse(&self, input: &str) -> bool {
         FormatDetector::is_likely_yaml(input)
-            && serde_yaml::from_str::<serde_yaml::Value>(input).is_ok()
+            && serde_yaml_ng::from_str::<serde_yaml_ng::Value>(input).is_ok()
     }
 
     fn parse(&self, input: &str) -> Result<Value, Box<dyn Error>> {
-        let yaml_value = serde_yaml::from_str::<serde_yaml::Value>(input)?;
+        let yaml_value = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(input)?;
         Ok(serde_json::to_value(yaml_value)?)
     }
 
