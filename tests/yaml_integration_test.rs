@@ -934,3 +934,151 @@ fn test_yaml_flow_format_complex_nested_forced() {
         );
     }
 }
+
+/// Test YAML anchor + alias resolution (regression guard for the
+/// serde_yaml -> serde_yaml_ng migration: anchor/alias handling is a named
+/// risk area where YAML crate implementations can diverge).
+#[test]
+fn test_yaml_anchor_alias_resolution() {
+    let input = "base: &shared 42\nref: *shared";
+
+    let mut child = parsm_command()
+        .arg(r#""ref""#)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to start parsm");
+
+    {
+        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+        stdin
+            .write_all(input.as_bytes())
+            .expect("Failed to write to stdin");
+    }
+
+    let output = child.wait_with_output().expect("Failed to read stdout");
+    assert!(
+        output.status.success(),
+        "Command failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.trim(),
+        "42",
+        "YAML alias '*shared' should resolve to the anchored value"
+    );
+}
+
+/// Test that an explicit `!!str` tag forces string typing even when the
+/// scalar looks numeric (tag-handling regression guard).
+#[test]
+fn test_yaml_explicit_string_tag_preserves_leading_zero() {
+    let input = "code: !!str 0042";
+
+    let mut child = parsm_command()
+        .arg(r#""code""#)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to start parsm");
+
+    {
+        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+        stdin
+            .write_all(input.as_bytes())
+            .expect("Failed to write to stdin");
+    }
+
+    let output = child.wait_with_output().expect("Failed to read stdout");
+    assert!(
+        output.status.success(),
+        "Command failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.trim(),
+        "0042",
+        "explicit !!str tag should preserve the value as a string, not coerce to a number"
+    );
+}
+
+/// Test that an untagged leading-zero scalar is not coerced into an octal
+/// or decimal number (number-coercion regression guard — YAML 1.1's
+/// leading-zero-as-octal rule is a known divergence point between
+/// implementations; the original serde_yaml treats it as a plain string).
+#[test]
+fn test_yaml_leading_zero_scalar_not_coerced_to_number() {
+    let input = "code: 0042";
+
+    let mut child = parsm_command()
+        .arg(r#""code""#)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to start parsm");
+
+    {
+        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+        stdin
+            .write_all(input.as_bytes())
+            .expect("Failed to write to stdin");
+    }
+
+    let output = child.wait_with_output().expect("Failed to read stdout");
+    assert!(
+        output.status.success(),
+        "Command failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.trim(),
+        "0042",
+        "untagged leading-zero scalar should stay a string, not become an octal/decimal number"
+    );
+}
+
+/// Test that an implicit YAML 1.1 timestamp-like scalar is treated as a
+/// plain string, not specially parsed into a date/time value
+/// (number/date-coercion regression guard).
+#[test]
+fn test_yaml_implicit_timestamp_scalar_stays_string() {
+    let input = "created: 2024-01-15";
+
+    let mut child = parsm_command()
+        .arg(r#""created""#)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("Failed to start parsm");
+
+    {
+        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
+        stdin
+            .write_all(input.as_bytes())
+            .expect("Failed to write to stdin");
+    }
+
+    let output = child.wait_with_output().expect("Failed to read stdout");
+    assert!(
+        output.status.success(),
+        "Command failed: {:?}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.trim(),
+        "2024-01-15",
+        "implicit timestamp-like scalar should stay a plain string, not be coerced into a date type"
+    );
+}
