@@ -133,25 +133,21 @@ fn stays_rejected_empty_braced_variable() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "restore in P1.3: 'a == b' (adv-field-vs-field) — grammar rule / FilterValue::FieldRef: bare identifier RHS must resolve as a field reference, not a literal"]
 fn set_a_adv_field_vs_field() {
     assert_eq!(render("a == b", CANONICAL), CANONICAL);
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'age > limit' (adv-fvf-gt) — grammar rule / FilterValue::FieldRef, '>'"]
 fn set_a_adv_fvf_gt() {
     assert_eq!(render("age > limit", CANONICAL), CANONICAL);
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'score >= threshold' (adv-fvf-ge) — grammar rule / FilterValue::FieldRef, '>='; folds in the old regression_tests.field_to_field_comparison case"]
 fn set_a_adv_fvf_ge() {
     assert_eq!(render("score >= threshold", CANONICAL), CANONICAL);
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'version == target' (adv-fvf-str) — grammar rule / FilterValue::FieldRef, string fields"]
 fn set_a_adv_fvf_str() {
     assert_eq!(render("version == target", CANONICAL), CANONICAL);
 }

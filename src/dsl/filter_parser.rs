@@ -268,7 +268,7 @@ impl FilterParser {
                 FilterValue::Boolean(bool_val)
             }
             Rule::null => FilterValue::Null,
-            Rule::field_path => FilterValue::String(inner.as_str().to_string()),
+            Rule::field_path => FilterValue::FieldRef(DSLParser::parse_field_path(inner)),
             _ => FilterValue::String(inner.as_str().to_string()),
         }
     }

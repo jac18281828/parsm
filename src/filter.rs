@@ -88,6 +88,10 @@ pub enum FilterValue {
     Number(f64),
     Boolean(bool),
     Null,
+    /// The RHS of a comparison was a bare field path (e.g. `a == b`), not a
+    /// literal - resolved against the record before the op match in
+    /// `FilterEngine::evaluate_comparison`.
+    FieldRef(FieldPath),
 }
 
 impl FilterValue {
@@ -255,6 +259,20 @@ impl FilterEngine {
         let data_value = match field.get_value(data) {
             Some(v) => v,
             None => return false, // Field doesn't exist
+        };
+
+        // Resolve a field-vs-field RHS (`a == b`) against the record before
+        // any op runs, so every comparison below sees a plain value uniformly.
+        let resolved;
+        let filter_value: &FilterValue = match filter_value {
+            FilterValue::FieldRef(ref_field) => match ref_field.get_value(data) {
+                Some(v) => {
+                    resolved = FilterValue::from_json(v);
+                    &resolved
+                }
+                None => return false, // Referenced field doesn't exist
+            },
+            other => other,
         };
 
         match op {
