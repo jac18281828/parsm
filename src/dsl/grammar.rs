@@ -18,8 +18,9 @@ use crate::filter::{FieldPath, FilterExpr, Template};
 /// - Field selectors use bare identifiers without operators
 /// - Combined filter + template expressions are parsed as separate components
 ///
-/// The parser uses conservative fallback strategies to ensure predictable behavior
-/// and prevent ambiguous interpretations of user input.
+/// Pest's grammar is the sole parser: it either matches the input or the parse
+/// error propagates, ensuring predictable behavior and preventing ambiguous
+/// interpretations of user input.
 #[derive(Parser)]
 #[grammar = "pest/parsm.pest"]
 pub struct DSLParser;

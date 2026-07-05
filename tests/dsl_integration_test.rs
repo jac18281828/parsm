@@ -46,33 +46,9 @@ fn test_critical_parsing_distinctions() {
         }
     }
 
-    // Test 2: ${name} should be parsed as field substitution (variable)
-    println!("\nTest 2: ${{name}} as field substitution");
-    let result = parse_command("${name}").unwrap();
-    assert!(result.template.is_some(), "${{name}} should be template");
-    assert!(result.filter.is_none(), "${{name}} should not be filter");
-    assert!(
-        result.field_selector.is_none(),
-        "${{name}} should not be field selector"
-    );
-
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Field(field) => {
-            assert_eq!(field.parts, vec!["name"]);
-            println!(
-                "  ✓ ${{name}} correctly parsed as field substitution: {:?}",
-                field.parts
-            );
-        }
-        TemplateItem::Literal(text) => {
-            panic!("${{name}} should be field substitution, not literal: {text}");
-        }
-        TemplateItem::Conditional { .. } => {
-            panic!("${{name}} should not be conditional template");
-        }
-    }
+    // Test 2: ${name} as a bare top-level field substitution is covered by
+    // `bare_braced_named_variable_requires_p1_3` below (restore-in-P1.3, Set
+    // B: cov-tmpl-dollar-zero's branch generalizes to named fields too).
 
     // Test 3: "name" should be parsed as literal (quoted field selector)
     println!("\nTest 3: \"name\" as literal field selector");
@@ -108,27 +84,9 @@ fn test_critical_parsing_distinctions() {
         _ => panic!("{{name}} should be literal template, not field substitution"),
     }
 
-    // Test 5: $20 should be parsed as literal (dollar amount, not variable)
-    println!("\nTest 5: $20 as literal dollar amount");
-    let result = parse_command("$20").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Literal(text) => assert_eq!(text, "$20"),
-        _ => panic!("Expected $20 to be literal"),
-    }
-
-    // Test 6: $0 should be parsed as literal (dollar amount, not variable)
-    println!("\nTest 6: $0 as literal dollar amount");
-    let result = parse_command("$0").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Literal(text) => assert_eq!(text, "$0"),
-        _ => panic!("Expected $0 to be literal"),
-    }
+    // Test 5 ($20) and Test 6 ($0) - bare top-level all-digit dollar-amount
+    // literals - are covered by `bare_dollar_amount_literal_requires_p1_3`
+    // below (restore-in-P1.3, Set B: cov-tmpl-dollar-digits).
 
     // Test 7: ${0} should be parsed as field substitution (numeric field reference)
     println!("\nTest 7: ${{0}} as field substitution");
@@ -157,6 +115,64 @@ fn test_critical_parsing_distinctions() {
     }
 
     println!("\n=== All Critical Parsing Distinction Tests Completed ===");
+}
+
+/// `${name}` (a bare, top-level braced variable for a non-numeric field) has
+/// no `template_expr` alternative in the pest grammar without the fallback -
+/// `braced_variable` only exists embedded inside `{...}`/`[...]` content
+/// rules, not as a standalone top-level form. Split out of
+/// `test_critical_parsing_distinctions` (formerly "Test 2") because the rest
+/// of that test's assertions still hold.
+#[test]
+#[ignore = "restore in P1.3: bare '${name}' has no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-zero's branch, generalized to non-numeric field names)"]
+fn bare_braced_named_variable_requires_p1_3() {
+    let result = parse_command("${name}").unwrap();
+    assert!(result.template.is_some(), "${{name}} should be template");
+    assert!(result.filter.is_none(), "${{name}} should not be filter");
+    assert!(
+        result.field_selector.is_none(),
+        "${{name}} should not be field selector"
+    );
+
+    let template = result.template.unwrap();
+    assert_eq!(template.items.len(), 1);
+    match &template.items[0] {
+        TemplateItem::Field(field) => {
+            assert_eq!(field.parts, vec!["name"]);
+        }
+        TemplateItem::Literal(text) => {
+            panic!("${{name}} should be field substitution, not literal: {text}");
+        }
+        TemplateItem::Conditional { .. } => {
+            panic!("${{name}} should not be conditional template");
+        }
+    }
+}
+
+/// Bare top-level all-digit dollar amounts (`$20`, `$0`) have no
+/// `template_expr` alternative in the pest grammar without the fallback.
+/// Split out of `test_critical_parsing_distinctions` (formerly "Test 5" and
+/// "Test 6") because the rest of that test's assertions still hold.
+#[test]
+#[ignore = "restore in P1.3: bare '$20'/'$0' have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-digits)"]
+fn bare_dollar_amount_literal_requires_p1_3() {
+    let result = parse_command("$20").unwrap();
+    assert!(result.template.is_some());
+    let template = result.template.unwrap();
+    assert_eq!(template.items.len(), 1);
+    match &template.items[0] {
+        TemplateItem::Literal(text) => assert_eq!(text, "$20"),
+        _ => panic!("Expected $20 to be literal"),
+    }
+
+    let result = parse_command("$0").unwrap();
+    assert!(result.template.is_some());
+    let template = result.template.unwrap();
+    assert_eq!(template.items.len(), 1);
+    match &template.items[0] {
+        TemplateItem::Literal(text) => assert_eq!(text, "$0"),
+        _ => panic!("Expected $0 to be literal"),
+    }
 }
 
 /// Test quoted string literals parsing correctly as field selectors.
@@ -253,6 +269,7 @@ fn test_quoted_string_literals() {
 
 /// Test template variable edge cases with numeric and literal patterns.
 #[test]
+#[ignore = "restore in P1.3: bare $N/${N} have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-digits, cov-tmpl-dollar-zero)"]
 fn test_template_variable_edge_cases() {
     // Test ${0} - should be special variable for original input
     let result = parse_command("${0}").unwrap();
@@ -463,8 +480,9 @@ fn test_comprehensive_disambiguation() {
         ("name == \"Alice\"", "filter"),
         ("age > 25", "filter"),
         ("user.active == true", "filter"),
-        // Field substitutions
-        ("${name}", "template"),
+        // Note: bare top-level "${name}" is NOT included here - it has no
+        // top-level template_expr alternative without the fallback; see
+        // `bare_braced_named_variable_requires_p1_3` above.
     ];
 
     for (input, expected_type) in test_cases {

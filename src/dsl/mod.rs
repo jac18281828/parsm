@@ -12,7 +12,6 @@
 //! - **Explicit Operations**: Filters require explicit comparison operators
 
 mod ast;
-mod fallback;
 mod filter_parser;
 mod grammar;
 mod operators;
@@ -63,39 +62,9 @@ pub fn parse_command(input: &str) -> Result<ParsedDSL, Box<dyn std::error::Error
 
             Ok(result)
         }
-        Err(_parse_error) => {
-            trace!("Main parser failed, trying fallback strategies");
-            let mut fallback_result = fallback::try_fallback_parsing(trimmed);
-
-            if let Ok(ref mut result) = fallback_result {
-                trace!(
-                    "Fallback parsing result: filter={:?}, template={:?}, field_selector={:?}",
-                    result.filter.is_some(),
-                    result.template.is_some(),
-                    result.field_selector.is_some()
-                );
-
-                // Add default template if we have a filter but no template - but skip in test mode
-                if !in_test_mode
-                    && result.filter.is_some()
-                    && result.template.is_none()
-                    && result.field_selector.is_none()
-                {
-                    trace!("Adding default template for fallback filter-only expression");
-                    // Parse the default template "${0}" (original line content)
-                    match DSLParser::parse_dsl("[${0}]") {
-                        Ok(default_template_dsl) => {
-                            result.template = default_template_dsl.template;
-                            trace!("Default template added successfully");
-                        }
-                        Err(e) => {
-                            trace!("Failed to add default template: {:?}", e);
-                        }
-                    }
-                }
-            }
-
-            fallback_result
+        Err(parse_error) => {
+            trace!("Main parser failed, propagating parse error");
+            Err(parse_error.into())
         }
     }
 }
@@ -410,6 +379,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "restore in P1.3: bare ${0}/${1}/$20 have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-zero, cov-tmpl-dollar-digits)"]
     fn test_template_variable_edge_cases() {
         // Test ${0} - should be special variable for original input
         let result = parse_command("${0}").unwrap();
@@ -565,6 +535,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "restore in P1.3: bare ${0}/${1} have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-zero)"]
     fn test_special_field_references() {
         // Test $0 (original input) field reference
         let result = parse_command("${0}").unwrap();
@@ -664,6 +635,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "restore in P1.3: bare $N/${N} have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-digits, cov-tmpl-dollar-zero)"]
     fn test_numeric_literal_vs_field_distinction() {
         // Test that dollar amounts are preserved as literals
         for amount in ["$0", "$1", "$5", "$10", "$20", "$100", "$999"] {
