@@ -206,6 +206,30 @@ impl FilterParser {
         super::operators::parse_comparison_op(pair.as_str())
     }
 
+    /// Unescape a quoted string literal's raw content (`\"` -> `"`, `\\` ->
+    /// `\`). Any other backslash sequence is passed through unchanged rather
+    /// than silently dropping the backslash.
+    fn unescape_string_content(raw: &str) -> String {
+        let mut result = String::with_capacity(raw.len());
+        let mut chars = raw.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next() {
+                    Some('"') => result.push('"'),
+                    Some('\\') => result.push('\\'),
+                    Some(other) => {
+                        result.push('\\');
+                        result.push(other);
+                    }
+                    None => result.push('\\'),
+                }
+            } else {
+                result.push(c);
+            }
+        }
+        result
+    }
+
     fn parse_value(pair: Pair<Rule>) -> FilterValue {
         let pair_str = pair.as_str().to_string(); // Clone the string first
         let inner = match pair.into_inner().next() {
@@ -218,12 +242,14 @@ impl FilterParser {
         match inner.as_rule() {
             Rule::string_literal => {
                 let string_content = inner.into_inner().next().unwrap();
-                let content = string_content.as_str().to_string();
+                let content = Self::unescape_string_content(string_content.as_str());
                 FilterValue::String(content)
             }
             Rule::regex_literal => {
-                // For now, treat regex literals as strings (simple contains matching)
-                // Extract the pattern between the / / delimiters
+                // Regex patterns must reach the engine byte-preserving (raw, not
+                // unescaped) so e.g. `\d` stays `\d` - unescaping would corrupt
+                // the pattern into `d`. Extract the pattern between the `/ /`
+                // delimiters, exactly as written.
                 let regex_str = inner.as_str();
                 if regex_str.starts_with('/') && regex_str.ends_with('/') {
                     let pattern = &regex_str[1..regex_str.len() - 1];

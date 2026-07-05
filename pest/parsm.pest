@@ -64,8 +64,9 @@ regex_content = @{ (!"/" ~ ANY)* }
 regex_flags = @{ ("i" | "m" | "s" | "x")+ }
 
 string_literal = { "\"" ~ string_content ~ "\"" | "'" ~ string_content_single ~ "'" }
-string_content = @{ (!("\"") ~ ANY)* }
-string_content_single = @{ (!("'") ~ ANY)* }
+string_content = @{ (string_escape | !("\"") ~ ANY)* }
+string_content_single = @{ (string_escape | !("'") ~ ANY)* }
+string_escape = @{ "\\" ~ ANY }
 
 number = @{ "-"? ~ (float | integer) }
 float = @{ integer ~ "." ~ ASCII_DIGIT+ }

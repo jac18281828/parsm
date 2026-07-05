@@ -200,7 +200,6 @@ fn set_a_adv_cmp_then_tmpl_cond() {
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'text == \"say \\\"hi\\\"\"' (adv-str-escape) — string-escape: an escaped '\"' inside a quoted DSL string literal must be unescaped before comparison, not treated as a literal backslash+quote"]
 fn set_a_adv_str_escape() {
     // Escaping-heavy (Pattern D/E): shell the real binary with raw-string
     // argv so the shell/DSL escaping under test isn't masked by an
