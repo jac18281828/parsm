@@ -756,10 +756,10 @@ fn test_regex_matching() {
                     matches!(op, ComparisonOp::Regex),
                     "Should be regex operator"
                 );
-                if let FilterValue::String(pattern) = value {
+                if let FilterValue::Regex { pattern, .. } = value {
                     assert!(pattern.contains("^[A-Z]"), "Should contain regex pattern");
                 } else {
-                    panic!("Expected string value for regex pattern");
+                    panic!("Expected regex value for regex pattern");
                 }
             } else {
                 panic!("Expected comparison expression with regex operator");

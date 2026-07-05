@@ -92,6 +92,12 @@ pub enum FilterValue {
     /// literal - resolved against the record before the op match in
     /// `FilterEngine::evaluate_comparison`.
     FieldRef(FieldPath),
+    /// A `/pattern/flags` regex literal, carrying its optional flags
+    /// (`i`/`m`/`s`/`x`) through to `regex_match_string`.
+    Regex {
+        pattern: String,
+        flags: Option<String>,
+    },
 }
 
 impl FilterValue {
@@ -298,12 +304,13 @@ impl FilterEngine {
             ComparisonOp::StartsWith => Self::string_starts_with(data_value, filter_value),
             ComparisonOp::EndsWith => Self::string_ends_with(data_value, filter_value),
             ComparisonOp::Regex => {
-                let pattern = match filter_value {
-                    FilterValue::String(s) => s,
+                let (pattern, flags) = match filter_value {
+                    FilterValue::Regex { pattern, flags } => (pattern.as_str(), flags.as_deref()),
+                    FilterValue::String(s) => (s.as_str(), None),
                     _ => return false,
                 };
                 let text = value_to_string(data_value);
-                regex_match_string(&text, pattern, None)
+                regex_match_string(&text, pattern, flags)
             }
         }
     }

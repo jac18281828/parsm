@@ -248,15 +248,16 @@ impl FilterParser {
             Rule::regex_literal => {
                 // Regex patterns must reach the engine byte-preserving (raw, not
                 // unescaped) so e.g. `\d` stays `\d` - unescaping would corrupt
-                // the pattern into `d`. Extract the pattern between the `/ /`
-                // delimiters, exactly as written.
-                let regex_str = inner.as_str();
-                if regex_str.starts_with('/') && regex_str.ends_with('/') {
-                    let pattern = &regex_str[1..regex_str.len() - 1];
-                    FilterValue::String(pattern.to_string())
-                } else {
-                    FilterValue::String(regex_str.to_string())
-                }
+                // the pattern into `d`. Read the grammar's own regex_content /
+                // regex_flags pairs rather than slicing the raw text, since the
+                // latter breaks once optional flags follow the closing `/`.
+                let mut regex_inner = inner.into_inner();
+                let pattern = regex_inner
+                    .next()
+                    .map(|p| p.as_str().to_string())
+                    .unwrap_or_default();
+                let flags = regex_inner.next().map(|p| p.as_str().to_string());
+                FilterValue::Regex { pattern, flags }
             }
             Rule::number => {
                 let number_str = inner.as_str();
@@ -465,12 +466,28 @@ mod tests {
         let result = parse_filter_string("name ~= /[A-Z][a-z]+/").unwrap();
         match result {
             FilterExpr::Comparison {
-                value: FilterValue::String(pattern),
+                value: FilterValue::Regex { pattern, flags },
                 ..
             } => {
                 assert_eq!(pattern, "[A-Z][a-z]+");
+                assert_eq!(flags, None);
             }
-            _ => panic!("Expected regex pattern as string"),
+            _ => panic!("Expected regex pattern"),
+        }
+    }
+
+    #[test]
+    fn test_regex_literal_with_flags() {
+        let result = parse_filter_string("email ~= /alice/i").unwrap();
+        match result {
+            FilterExpr::Comparison {
+                value: FilterValue::Regex { pattern, flags },
+                ..
+            } => {
+                assert_eq!(pattern, "alice");
+                assert_eq!(flags.as_deref(), Some("i"));
+            }
+            _ => panic!("Expected regex pattern with flags"),
         }
     }
 }

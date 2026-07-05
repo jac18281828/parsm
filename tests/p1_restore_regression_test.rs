@@ -153,13 +153,11 @@ fn set_a_adv_fvf_str() {
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'email ~= /ALICE/i' (gram-op-regex-flag) — regex-flag threading: '/pattern/flags' must thread 'i' into the regex engine"]
 fn set_a_gram_op_regex_flag() {
     assert_eq!(render("email ~= /ALICE/i", CANONICAL), CANONICAL);
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'text ~= /^say/m' (gram-regex-flag-m) — regex-flag threading, '/m'"]
 fn set_a_gram_regex_flag_m() {
     assert_eq!(render("text ~= /^say/m", CANONICAL), CANONICAL);
 }
