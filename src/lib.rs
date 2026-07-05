@@ -349,13 +349,7 @@
 //!
 //! ### String Operations Examples
 //!
-//! Note: the bare `~` (contains) operator shown below is not currently
-//! parseable (`~=` regex is; a bare-substring `~` is not yet in the pest
-//! grammar) - restore in P1.3, tracked as `set_b_foss_contains_tilde` in
-//! `tests/p1_restore_regression_test.rs`. This example is `ignore`d so
-//! `cargo test` stays green until then.
-//!
-//! ```rust,ignore
+//! ```rust
 //! use parsm::{parse_command, FilterEngine};
 //! use serde_json::json;
 //!
@@ -441,11 +435,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! Note: the bare `~` (contains) operator is not currently parseable (see the
-//! String Operations note above) - restore in P1.3, tracked as
-//! `set_b_foss_contains_tilde` in `tests/p1_restore_regression_test.rs`.
-//!
-//! ```rust,ignore
+//! ```rust
 //! use parsm::parse_command;
 //!
 //! // String operations with boolean logic

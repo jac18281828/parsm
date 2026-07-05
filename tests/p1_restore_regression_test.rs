@@ -91,12 +91,18 @@ fn render_harness_sanity_check() {
     assert_eq!(render(r#"name == "Alice""#, CANONICAL), CANONICAL);
 }
 
-/// Bare `~` (contains) is not in the pest grammar (only `~=` is); with the
-/// fallback gone this must be a hard parse error, not a silent rescue.
-/// Restore `fallback.rs` and this test fails.
+/// Bare `~` (contains) was missing from the pest grammar (only `~=` was),
+/// so with the fallback gone it used to be a hard parse error rather than a
+/// silent rescue. P1.3 restores it as a real grammar operator (Set B:
+/// `foss-contains-tilde`) instead of resurrecting `fallback.rs`, so this now
+/// asserts the corrected, permanent behavior: parses, and evaluates as
+/// substring `Contains`.
 #[test]
-fn bare_tilde_errors_without_fallback() {
-    assert!(parsm::parse_command("email ~ \"@x\"").is_err());
+fn bare_tilde_parses_as_contains() {
+    assert_eq!(
+        render(r#"email ~ "@example.com""#, CANONICAL),
+        CANONICAL
+    );
 }
 
 /// `!active` (bare NOT, no `?`, as the *entire* expression) is a correct,
@@ -163,7 +169,6 @@ fn set_a_gram_regex_flag_m() {
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'email ~ \"@example.com\" && age > 25' (foss-tilde-and) — grammar rule: naive value capture greedily swallows '&& age > 25' instead of the grammar splitting the boolean chain; folds in the old regression_tests.contains_with_and case"]
 fn set_a_foss_tilde_and() {
     assert_eq!(
         render(r#"email ~ "@example.com" && age > 25"#, CANONICAL),
@@ -172,7 +177,6 @@ fn set_a_foss_tilde_and() {
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'email ~ \"@x\" || role == \"admin\"' (foss-tilde-or) — grammar rule, same greedy-value bug, '||'"]
 fn set_a_foss_tilde_or() {
     assert_eq!(
         render(r#"email ~ "@x" || role == "admin""#, CANONICAL),
@@ -215,13 +219,11 @@ fn set_a_adv_str_escape() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "restore in P1.3: 'email ~ \"@example.com\"' (foss-contains-tilde) — grammar rule: bare '~' (Contains) is missing from comparison_op (pest/parsm.pest), only '~=' exists"]
 fn set_b_foss_contains_tilde() {
     assert_eq!(render(r#"email ~ "@example.com""#, CANONICAL), CANONICAL);
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'email ~ \"@example\" [${name}]' (foss-tilde-tmpl) — grammar rule, same missing bare '~' operator, combined with a bracket template"]
 fn set_b_foss_tilde_tmpl() {
     assert_eq!(
         render(r#"email ~ "@example" [${name}]"#, CANONICAL),

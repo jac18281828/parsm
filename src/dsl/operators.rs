@@ -61,6 +61,10 @@ pub const OPERATORS: &[OperatorDef] = &[
         symbol: ">",
         op: ComparisonOp::GreaterThan,
     },
+    OperatorDef {
+        symbol: "~",
+        op: ComparisonOp::Contains,
+    },
 ];
 
 /// Parse a comparison operator from its string representation.

@@ -39,9 +39,9 @@ field_truthy = { field_path ~ "?" }
 or_op = { "||" }
 and_op = { "&&" }
 not_op = { "!" }
-comparison_op = { 
-    "==" | "!=" | "<=" | ">=" | "<" | ">" | 
-    "~=" | "^=" | "$=" | "*="
+comparison_op = {
+    "==" | "!=" | "<=" | ">=" | "<" | ">" |
+    "~=" | "~" | "^=" | "$=" | "*="
 }
 
 field_path = { field_component ~ ("." ~ field_component)* }
