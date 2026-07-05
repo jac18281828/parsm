@@ -292,11 +292,16 @@ fn set_b_digit_leading_field_comparison() {
     assert_eq!(render("1field == 5", r#"{"1field":5}"#), r#"{"1field":5}"#);
 }
 
+/// `age>25[name]extra]` (previously-unconfirmed branches: try_manual_parsing's
+/// DSLParser::parse_filter_only fallback at fallback.rs:188-193, and its basic
+/// brace/bracket literal fallback at fallback.rs:204-220) is a malformed,
+/// unbalanced-bracket template combined with a filter, not in `corpus.json`.
+/// Reclassified from a Set B restore target after review: pest already
+/// rejects this directly post-deletion (`expected EOI` at the second `]`) -
+/// there is no fallback-derived "correct" output to restore, only leftover
+/// first/last-byte-slicing garbage from the deleted code. It must keep
+/// rejecting; not a bug, not a P1.3 fix target.
 #[test]
-#[ignore = "restore in P1.3: 'age>25[name]extra]' (previously-unconfirmed branches: try_manual_parsing's DSLParser::parse_filter_only fallback at fallback.rs:188-193, and its basic brace/bracket literal fallback at fallback.rs:204-220) — malformed/nested-bracket template content combined with a filter has no grammar-level literal-recovery; P1.3 should make an explicit call on whether this pathological shape (not in corpus.json) is worth restoring at all, versus documenting it as a permanent rejection"]
-fn set_b_malformed_bracket_template_with_filter() {
-    assert_eq!(
-        render("age>25[name]extra]", r#"{"age":30,"name":"Alice"}"#),
-        "name]extra"
-    );
+fn stays_rejected_malformed_bracket_template_with_filter() {
+    assert!(parsm::parse_command("age>25[name]extra]").is_err());
 }
