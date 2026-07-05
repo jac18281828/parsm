@@ -320,3 +320,117 @@ fn stays_rejected_digit_leading_field_comparison() {
 fn stays_rejected_malformed_bracket_template_with_filter() {
     assert!(parsm::parse_command("age>25[name]extra]").is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Fuzz sweep - the top-level ordered choice (and every grammar/translation
+// change above) must only ever return Ok or a graceful Err, never panic.
+// ---------------------------------------------------------------------------
+
+/// Adversarial inputs covering unbalanced brackets/braces/parens, lone
+/// operators, dangling `${`/`$`/`~`/`:` fragments, malformed template
+/// conditionals, unterminated strings/regexes, deep nesting, empty string,
+/// and mixed template+filter shapes. Each must return a `Result` (`Ok` or
+/// `Err`) without panicking - this guards against a grammar edit (e.g. the
+/// new `template_conditional` arm, the new top-level `template_expr`
+/// alternatives) turning a graceful parse error into an
+/// `unwrap`/`unreachable!` panic. Hermetic: no network, no files.
+#[test]
+fn fuzz_sweep_parse_command_never_panics() {
+    let mut inputs: Vec<String> = [
+        "",
+        "{",
+        "}",
+        "[",
+        "]",
+        "{{{{{{{{{{",
+        "}}}}}}}}}}",
+        "((((((((((",
+        ")))))))))",
+        "&&",
+        "||",
+        "!",
+        "!!",
+        "!!!",
+        "==",
+        "~",
+        "~=",
+        "$",
+        "${",
+        "${}",
+        "${0",
+        "${0}",
+        "${?}",
+        "${a?b}",
+        "${a?b:}",
+        "${a?:b}",
+        "${a?:}",
+        ":",
+        "a:b",
+        "a ~ ",
+        "a ==",
+        "a == ",
+        "a && ",
+        "a &&",
+        " && b",
+        "!a &&",
+        "!a && ",
+        "{[}]",
+        "[{]}",
+        "{a [b}",
+        "[a {b]",
+        "\"",
+        "\"unterminated",
+        "'unterminated",
+        "\"a\\\"",
+        "/unterminated",
+        "a ~= /",
+        "a ~= //",
+        "a ~= /x",
+        "age > 25 [",
+        "age > 25 {",
+        "age > 25 [${}]",
+        "age>25[name]extra]",
+        "a == b == c",
+        "a && b || c &&",
+        "((a))",
+        "!(",
+        "!()",
+        "()",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    // Deep-but-bounded nesting: deep enough to be a meaningful adversarial
+    // case, shallow enough not to blow the test harness's (smaller) worker
+    // thread stack - recursive-descent stack depth on pathologically deep
+    // input (verified separately to overflow well beyond this) is a
+    // pre-existing architectural characteristic of the recursive parser,
+    // predating this arc's grammar edits, and is out of scope here.
+    inputs.push("(".repeat(100));
+    inputs.push(")".repeat(100));
+    inputs.push("{".repeat(100));
+    inputs.push("!".repeat(100));
+    inputs.push("${".repeat(100));
+    inputs.push(format!("{}active?{}", "(".repeat(40), ")".repeat(40)));
+
+    // Silence the default panic-hook noise for this sweep - a panic here is
+    // data (a failing input), not an unhandled test-process crash.
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let first_panic = inputs.iter().find_map(|input| {
+        let owned = input.clone();
+        std::panic::catch_unwind(|| {
+            let _ = parsm::parse_command(&owned);
+        })
+        .err()
+        .map(|_| input.clone())
+    });
+    std::panic::set_hook(previous_hook);
+
+    assert!(
+        first_panic.is_none(),
+        "parse_command panicked on input: {:?}",
+        first_panic.unwrap_or_default()
+    );
+}
