@@ -27,9 +27,6 @@ pub fn parse_command(input: &str) -> Result<ParsedDSL, Box<dyn std::error::Error
     let trimmed = input.trim();
     trace!("parse_command called with: '{}'", trimmed);
 
-    // Check if we're in a test environment
-    let in_test_mode = cfg!(test);
-
     // Try the main parser first
     match DSLParser::parse_dsl(trimmed) {
         Ok(mut result) => {
@@ -41,9 +38,8 @@ pub fn parse_command(input: &str) -> Result<ParsedDSL, Box<dyn std::error::Error
                 result.field_selector.is_some()
             );
 
-            // Add default template if we have a filter but no template - but skip in test mode
-            if !in_test_mode
-                && result.filter.is_some()
+            // Add default template if we have a filter but no template
+            if result.filter.is_some()
                 && result.template.is_none()
                 && result.field_selector.is_none()
             {
@@ -118,7 +114,16 @@ mod tests {
         let result = parse_command("age > 25").unwrap();
         assert!(result.filter.is_some());
         assert!(result.field_selector.is_none());
-        assert!(result.template.is_none());
+        // A filter-only expression gets the default "[${0}]" (original-input)
+        // template injected in production, including under `cargo test` now
+        // that the cfg!(test)-gated divergence is gone.
+        assert!(result.template.is_some());
+        let template = result.template.unwrap();
+        assert_eq!(template.items.len(), 1);
+        match &template.items[0] {
+            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["$0"]),
+            _ => panic!("Expected default template to be the $0 field"),
+        }
     }
 
     #[test]
@@ -564,11 +569,12 @@ mod tests {
         assert!(result.filter.is_none());
         assert!(result.template.is_none());
 
-        // "name?" as filter (truthy check)
+        // "name?" as filter (truthy check) - gets the default $0 template
+        // injected, same as any other filter-only expression in production.
         let result = parse_command("name?").unwrap();
         assert!(result.filter.is_some());
         assert!(result.field_selector.is_none());
-        assert!(result.template.is_none());
+        assert!(result.template.is_some());
 
         // "$name" as template
         let result = parse_command("$name").unwrap();
@@ -582,11 +588,11 @@ mod tests {
         assert!(result.filter.is_none());
         assert!(result.field_selector.is_none());
 
-        // "name == \"Alice\"" as filter
+        // "name == \"Alice\"" as filter - also gets the default $0 template.
         let result = parse_command("name == \"Alice\"").unwrap();
         assert!(result.filter.is_some());
         assert!(result.field_selector.is_none());
-        assert!(result.template.is_none());
+        assert!(result.template.is_some());
     }
 
     #[test]
