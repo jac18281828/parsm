@@ -224,34 +224,47 @@ fn set_b_foss_tilde_tmpl() {
     );
 }
 
+/// `!field` (no `?`) as one term of a chain was the "open design question" in
+/// CORPUS.md section 1a: silently accepted as `NOT(FieldTruthy)` by the
+/// deleted fallback (`try_boolean_with_truthy_fields`), while the same bare
+/// shape as the *entire* expression was already a hard rejection. Resolved:
+/// bare `!field` is rejected in every position, everywhere, so the
+/// conservative-parsing invariant (bare identifiers are ambiguous; require
+/// explicit `?`) is consistent - not restored as `NOT(FieldTruthy)`.
+/// Reclassified from a Set B restore target to a stays-rejected guard.
 #[test]
-#[ignore = "restore in P1.3: '!active && age > 25' (cov-bool-not-and-cmp) — grammar rule: bare '!field' (no '?') as one term of a chain isn't valid in not_expr/comparison_expr; this is the open design question in CORPUS.md section 1a and needs a deliberate call, not an accident"]
-fn set_b_cov_bool_not_and_cmp() {
-    assert_eq!(render("!active && age > 25", CANONICAL), "");
+fn stays_rejected_bare_not_in_and_chain_cmp() {
+    assert!(parsm::parse_command("!active && age > 25").is_err());
 }
 
+/// Same bare-`!field`-in-chain rejection, `&&` with a truthy term.
 #[test]
-#[ignore = "restore in P1.3: '!active && premium?' (cov-bool-not-and-truthy) — grammar rule, same bare-'!field'-in-chain design question"]
-fn set_b_cov_bool_not_and_truthy() {
-    assert_eq!(render("!active && premium?", CANONICAL), "");
+fn stays_rejected_bare_not_in_and_chain_truthy() {
+    assert!(parsm::parse_command("!active && premium?").is_err());
 }
 
+/// Same bare-`!field`-in-chain rejection, `||`.
 #[test]
-#[ignore = "restore in P1.3: '!active || age > 25' (cov-bool-not-or-cmp) — grammar rule, same bare-'!field'-in-chain design question, '||'"]
-fn set_b_cov_bool_not_or_cmp() {
-    assert_eq!(render("!active || age > 25", CANONICAL), CANONICAL);
+fn stays_rejected_bare_not_in_or_chain() {
+    assert!(parsm::parse_command("!active || age > 25").is_err());
 }
 
+/// Disposition rule (nested, undocumented fallback quirk): a bare, unescaped
+/// `{nested}` span inside a `{...}` template alongside a `$var` was only ever
+/// a P1.1-invented coverage input exercising `fallback.rs`'s naive
+/// string-splitter - no test, doc, or `--examples` case documents nested
+/// unescaped braces as intended syntax. Restoring it would commit new grammar
+/// complexity (a brace-depth-aware content rule) to preserve a fallback
+/// accident. Reclassified to a stays-rejected guard rather than restored.
 #[test]
-#[ignore = "restore in P1.3: '{a {nested} $name}' (cov-tmpl-nested-brace-var) — grammar rule: braced_template_content/interpolated_content doesn't accept a nested unescaped '{literal}' alongside a '$var'"]
-fn set_b_cov_tmpl_nested_brace_var() {
-    assert_eq!(render("{a {nested} $name}", CANONICAL), "a {nested} Alice");
+fn stays_rejected_nested_unescaped_brace_with_var() {
+    assert!(parsm::parse_command("{a {nested} $name}").is_err());
 }
 
+/// Same disposition: a bare nested `{literal}` span with no `$var` at all.
 #[test]
-#[ignore = "restore in P1.3: '{a{nested}b}' (cov-tmpl-nested-brace-literal) — grammar rule, nested unescaped '{literal}' with no '$' fails EOI inside braced_template_content"]
-fn set_b_cov_tmpl_nested_brace_literal() {
-    assert_eq!(render("{a{nested}b}", CANONICAL), "a{nested}b");
+fn stays_rejected_nested_unescaped_brace_literal() {
+    assert!(parsm::parse_command("{a{nested}b}").is_err());
 }
 
 #[test]
@@ -259,10 +272,14 @@ fn set_b_cov_tmpl_dollar_digits() {
     assert_eq!(render("$20", CANONICAL), "$20");
 }
 
+/// Disposition rule: a digit-leading `$1abc` bare variable was only ever a
+/// P1.1-invented coverage input exercising the deleted fallback's manual
+/// splitter - no test or doc documents digit-leading bare variables as
+/// intended syntax, and digit-leading names collide with number-literal
+/// parsing generally. Reclassified to a stays-rejected guard.
 #[test]
-#[ignore = "restore in P1.3: '$1abc' (cov-tmpl-digit-prefixed-var) — grammar rule: simple_variable requires non_numeric_field_path (alpha/'_' leading char), rejecting a digit-prefixed bare variable"]
-fn set_b_cov_tmpl_digit_prefixed_var() {
-    assert_eq!(render("$1abc", r#"{"1abc":"weird"}"#), "weird");
+fn stays_rejected_digit_prefixed_variable() {
+    assert!(parsm::parse_command("$1abc").is_err());
 }
 
 #[test]
@@ -270,16 +287,24 @@ fn set_b_cov_tmpl_dollar_zero() {
     assert_eq!(render("${0}", CANONICAL), CANONICAL);
 }
 
+/// Disposition rule: a digit-leading bare field selector (`123abc`) was only
+/// ever a P1.1-invented coverage input exercising the deleted fallback's
+/// field-selector branch - no test or doc documents digit-leading field
+/// selectors as intended syntax, and digit-leading names collide with
+/// number-literal parsing generally. Reclassified to a stays-rejected guard.
 #[test]
-#[ignore = "restore in P1.3: '123abc' (cov-field-numeric) — grammar rule / FieldPath: digit-leading bare field selectors aren't a valid field_path (identifier requires alpha/'_' first, numeric_identifier requires all-digit)"]
-fn set_b_cov_field_numeric() {
-    assert_eq!(render("123abc", CANONICAL), "");
+fn stays_rejected_digit_leading_field_selector() {
+    assert!(parsm::parse_command("123abc").is_err());
 }
 
+/// Disposition rule: a digit-leading field name on the LHS of a comparison
+/// (`1field == 5`) is the same identifier gap as `cov-field-numeric`, just in
+/// comparison position - no test or doc documents it as intended syntax, and
+/// digit-leading names collide with number-literal parsing generally.
+/// Reclassified to a stays-rejected guard.
 #[test]
-#[ignore = "restore in P1.3: '1field == 5' (previously-unconfirmed branch: parse_simple_filter's non-'~' operator arms, fallback.rs pre-deletion) — grammar rule / FieldPath: digit-leading field name in a comparison; same identifier gap as cov-field-numeric but in comparison position. Verified reachable for all 9 non-'~=' operators (==, !=, <, <=, >, >=, ^=, $=, *=) via the same code path; this test covers '=='"]
-fn set_b_digit_leading_field_comparison() {
-    assert_eq!(render("1field == 5", r#"{"1field":5}"#), r#"{"1field":5}"#);
+fn stays_rejected_digit_leading_field_comparison() {
+    assert!(parsm::parse_command("1field == 5").is_err());
 }
 
 /// `age>25[name]extra]` (previously-unconfirmed branches: try_manual_parsing's

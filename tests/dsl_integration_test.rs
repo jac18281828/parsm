@@ -124,7 +124,6 @@ fn test_critical_parsing_distinctions() {
 /// `test_critical_parsing_distinctions` (formerly "Test 2") because the rest
 /// of that test's assertions still hold.
 #[test]
-#[ignore = "restore in P1.3: bare '${name}' has no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-zero's branch, generalized to non-numeric field names)"]
 fn bare_braced_named_variable_requires_p1_3() {
     let result = parse_command("${name}").unwrap();
     assert!(result.template.is_some(), "${{name}} should be template");
@@ -154,7 +153,6 @@ fn bare_braced_named_variable_requires_p1_3() {
 /// Split out of `test_critical_parsing_distinctions` (formerly "Test 5" and
 /// "Test 6") because the rest of that test's assertions still hold.
 #[test]
-#[ignore = "restore in P1.3: bare '$20'/'$0' have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-digits)"]
 fn bare_dollar_amount_literal_requires_p1_3() {
     let result = parse_command("$20").unwrap();
     assert!(result.template.is_some());
@@ -269,7 +267,6 @@ fn test_quoted_string_literals() {
 
 /// Test template variable edge cases with numeric and literal patterns.
 #[test]
-#[ignore = "restore in P1.3: bare $N/${N} have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-digits, cov-tmpl-dollar-zero)"]
 fn test_template_variable_edge_cases() {
     // Test ${0} - should be special variable for original input
     let result = parse_command("${0}").unwrap();

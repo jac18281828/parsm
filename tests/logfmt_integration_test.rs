@@ -475,20 +475,20 @@ fn assert_logfmt_forced_format(input: &str, expression: &str, expected: &str) {
     );
 }
 
-/// A template that nests a `[...]` bracket span inside a `{...}` brace
-/// template (e.g. `{[${level}] ${msg} from ${service}}`) has no grammar
-/// support without the fallback - `braced_template_content` can't recover a
-/// nested, differently-delimited structural span the way the fallback's
-/// naive string-splitter did. Split out of `test_logfmt_forced_format`
-/// because the rest of that test's cases still hold.
+/// Disposition rule (same family as `tests/p1_restore_regression_test.rs`'s
+/// `stays_rejected_nested_unescaped_brace_with_var`/`_literal`): a template
+/// nesting a `[...]` bracket span inside a `{...}` brace template (e.g.
+/// `{[${level}] ${msg} from ${service}}`) was only ever reachable through the
+/// deleted fallback's naive string-splitter - no test or doc documents nested,
+/// differently-delimited structural spans as intended syntax. Restoring it
+/// would commit new grammar complexity to preserve a fallback accident, so
+/// this is reclassified to a stays-rejected guard rather than restored.
+/// Split out of `test_logfmt_forced_format` because the rest of that test's
+/// cases still hold.
 #[test]
-#[ignore = "restore in P1.3: '{[${level}] ${msg} from ${service}}' — grammar rule: braced_template_content has no support for a nested '[...]' span inside '{...}'; same family as Set B's cov-tmpl-nested-brace-var/cov-tmpl-nested-brace-literal, generalized to bracket-in-brace nesting"]
-fn logfmt_forced_format_nested_bracket_in_brace_requires_p1_3() {
-    assert_logfmt_forced_format(
-        "level=error msg=\"timeout\" service=api",
-        r#"{[${level}] ${msg} from ${service}}"#,
-        "[error] timeout from api",
-    );
+fn logfmt_forced_format_stays_rejected_nested_bracket_in_brace() {
+    let result = parsm::parse_command(r#"{[${level}] ${msg} from ${service}}"#);
+    assert!(result.is_err());
 }
 
 /// Test logfmt forced format filtering with --logfmt flag
