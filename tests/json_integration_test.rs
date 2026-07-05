@@ -315,7 +315,6 @@ fn test_json_replacement_template() {
 }
 
 #[test]
-#[ignore = "restore in P1.3: bare '~' (contains) is missing from comparison_op in pest/parsm.pest (only '~=' exists) without the fallback; see tests/p1_restore_regression_test.rs (Set B: foss-contains-tilde, foss-tilde-tmpl)"]
 fn test_json_string_operations() {
     // Test string operations like contains, startswith, endswith
     let input = r#"{"email": "user@example.com", "name": "John Doe", "status": "active_user"}"#;

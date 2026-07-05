@@ -64,6 +64,28 @@ impl TemplateParser {
             Rule::template_conditional => Ok(Template {
                 items: vec![Self::parse_template_conditional(inner)],
             }),
+            Rule::braced_variable => {
+                // Bare "${field}" at the top level - e.g. "${0}" (mapped to
+                // the $0 original-input field, same special-case as when
+                // embedded inside "{...}"/"[...]") or "${name}".
+                let field_path_pair = inner.into_inner().next().unwrap();
+                let field_path = DSLParser::parse_field_path(field_path_pair);
+                let field_path = if field_path.parts.len() == 1 && field_path.parts[0] == "0" {
+                    FieldPath::new(vec!["$0".to_string()])
+                } else {
+                    field_path
+                };
+                Ok(Template {
+                    items: vec![TemplateItem::Field(field_path)],
+                })
+            }
+            Rule::dollar_digits_literal => {
+                // Bare "$NNN" (all-digit) at the top level is a literal
+                // dollar amount, e.g. "$20" renders as "$20".
+                Ok(Template {
+                    items: vec![TemplateItem::Literal(inner.as_str().to_string())],
+                })
+            }
             _ => unreachable!("Unexpected template expression type"),
         }
     }

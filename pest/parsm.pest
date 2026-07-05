@@ -79,8 +79,16 @@ template_expr = {
     braced_template |
     bracketed_template |
     template_conditional |
+    braced_variable |
+    dollar_digits_literal |
     simple_variable
 }
+
+// Bare "$NNN" (all-digit) at the top level is a literal dollar amount, not a
+// field reference - e.g. "$20" renders as "$20". Distinct from the embedded
+// use inside {...}/[...] content, which is handled by parse_field_name's own
+// numeric-literal check.
+dollar_digits_literal = @{ "$" ~ ASCII_DIGIT+ }
 
 braced_template = { "{" ~ braced_template_content ~ "}" }
 bracketed_template = { "[" ~ bracketed_template_content ~ "]" }

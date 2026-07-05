@@ -379,7 +379,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "restore in P1.3: bare ${0}/${1}/$20 have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-zero, cov-tmpl-dollar-digits)"]
     fn test_template_variable_edge_cases() {
         // Test ${0} - should be special variable for original input
         let result = parse_command("${0}").unwrap();
@@ -535,7 +534,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "restore in P1.3: bare ${0}/${1} have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-zero)"]
     fn test_special_field_references() {
         // Test $0 (original input) field reference
         let result = parse_command("${0}").unwrap();
@@ -635,7 +633,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "restore in P1.3: bare $N/${N} have no top-level template_expr alternative without the fallback; see tests/p1_restore_regression_test.rs (Set B: cov-tmpl-dollar-digits, cov-tmpl-dollar-zero)"]
     fn test_numeric_literal_vs_field_distinction() {
         // Test that dollar amounts are preserved as literals
         for amount in ["$0", "$1", "$5", "$10", "$20", "$100", "$999"] {

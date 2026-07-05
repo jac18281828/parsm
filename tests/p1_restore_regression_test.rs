@@ -255,7 +255,6 @@ fn set_b_cov_tmpl_nested_brace_literal() {
 }
 
 #[test]
-#[ignore = "restore in P1.3: '$20' (cov-tmpl-dollar-digits) — grammar rule: bare '$NNN' (all-digit) as a top-level literal isn't a template_expr alternative"]
 fn set_b_cov_tmpl_dollar_digits() {
     assert_eq!(render("$20", CANONICAL), "$20");
 }
@@ -267,7 +266,6 @@ fn set_b_cov_tmpl_digit_prefixed_var() {
 }
 
 #[test]
-#[ignore = "restore in P1.3: '${0}' (cov-tmpl-dollar-zero) — grammar rule: bare '${N}' has no top-level template_expr alternative (braced_variable only exists embedded inside '{...}'/'[...]')"]
 fn set_b_cov_tmpl_dollar_zero() {
     assert_eq!(render("${0}", CANONICAL), CANONICAL);
 }
