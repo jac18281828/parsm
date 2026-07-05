@@ -152,15 +152,18 @@ impl FilterParser {
                         )))
                     }
                 } else {
-                    // This case handles bare field paths that appear in comparison_expr
-                    // According to the grammar, this shouldn't happen in boolean context
-                    // but might occur during fallback parsing
+                    // A bare field_path with no comparison_op/value following it:
+                    // the grammar's comparison_expr only reaches field_path this
+                    // way when nothing else in the alternation matched, so this
+                    // is always the ambiguous "bare identifier" case the DSL's
+                    // conservative-parsing design rejects (see mod.rs's module
+                    // docs) - never a valid boolean-context term.
                     Err(Box::new(pest::error::Error::new_from_pos(
-                    pest::error::ErrorVariant::CustomError {
-                        message: "Bare field in expression - use 'field?' for truthy check or add comparison operator".to_string(),
-                    },
-                    field_span.start_pos(),
-                )))
+                        pest::error::ErrorVariant::CustomError {
+                            message: "Bare field in expression - use 'field?' for truthy check or add comparison operator".to_string(),
+                        },
+                        field_span.start_pos(),
+                    )))
                 }
             }
             Rule::field_truthy => Self::parse_field_truthy(first),

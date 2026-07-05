@@ -99,10 +99,7 @@ fn render_harness_sanity_check() {
 /// substring `Contains`.
 #[test]
 fn bare_tilde_parses_as_contains() {
-    assert_eq!(
-        render(r#"email ~ "@example.com""#, CANONICAL),
-        CANONICAL
-    );
+    assert_eq!(render(r#"email ~ "@example.com""#, CANONICAL), CANONICAL);
 }
 
 /// `!active` (bare NOT, no `?`, as the *entire* expression) is a correct,
