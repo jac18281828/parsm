@@ -61,8 +61,55 @@ impl TemplateParser {
                 }
             }
             Rule::interpolated_text => Self::parse_interpolated_text(inner),
+            Rule::template_conditional => Ok(Template {
+                items: vec![Self::parse_template_conditional(inner)],
+            }),
             _ => unreachable!("Unexpected template expression type"),
         }
+    }
+
+    /// Build a `TemplateItem::Conditional` from a `template_conditional` pair:
+    /// `"${" ~ field_path ~ "?" ~ template_content ~ ":" ~ template_content ~ "}"`.
+    fn parse_template_conditional(pair: Pair<Rule>) -> TemplateItem {
+        let mut inner = pair.into_inner();
+        let field_path_pair = inner.next().unwrap();
+        let field = DSLParser::parse_field_path(field_path_pair);
+        let true_content = inner.next().unwrap();
+        let false_content = inner.next().unwrap();
+        let true_template = Self::parse_template_content_rule(true_content);
+        let false_template = Self::parse_template_content_rule(false_content);
+        TemplateItem::Conditional {
+            field,
+            true_template,
+            false_template,
+        }
+    }
+
+    /// Parse a `template_content` pair (`template_item*`, each item a
+    /// `template_variable | template_literal`) into a `Template`. Used for the
+    /// true/false branches of `${field?a:b}`.
+    fn parse_template_content_rule(pair: Pair<Rule>) -> Template {
+        let mut items = Vec::new();
+        for template_item in pair.into_inner() {
+            let inner = match template_item.into_inner().next() {
+                Some(inner) => inner,
+                None => continue,
+            };
+            match inner.as_rule() {
+                Rule::template_variable => {
+                    let field_path = Self::parse_template_variable(inner);
+                    items.push(TemplateItem::Field(field_path));
+                }
+                Rule::template_literal => {
+                    let text = inner.as_str().to_string();
+                    if !text.is_empty() {
+                        items.push(TemplateItem::Literal(text));
+                    }
+                }
+                _ => {}
+            }
+        }
+        Template { items }
     }
 
     fn parse_braced_template(pair: Pair<Rule>) -> Result<Template, Box<pest::error::Error<Rule>>> {
@@ -153,6 +200,10 @@ impl TemplateParser {
                                 if !text.is_empty() {
                                     items.push(TemplateItem::Literal(text));
                                 }
+                            }
+                            Rule::template_conditional => {
+                                trace!("Found template_conditional: '{}'", inner_item.as_str());
+                                items.push(Self::parse_template_conditional(inner_item));
                             }
                             _ => {
                                 trace!(

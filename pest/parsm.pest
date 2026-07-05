@@ -101,6 +101,7 @@ bracketed_template_content = {
 
 bracketed_template_item = {
     template_variable |
+    template_conditional |
     bracketed_template_literal
 }
 
@@ -141,7 +142,7 @@ template_item = {
     template_variable |
     template_literal
 }
-template_literal = @{ (!(template_variable | "}" | "]") ~ ANY)+ }
+template_literal = @{ (!(template_variable | "}" | "]" | ":") ~ ANY)+ }
 
 template_conditional = { 
     "${" ~ field_path ~ "?" ~ template_content ~ ":" ~ template_content ~ "}" 

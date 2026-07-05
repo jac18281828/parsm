@@ -181,19 +181,16 @@ fn set_a_foss_tilde_or() {
 }
 
 #[test]
-#[ignore = "restore in P1.3: '${active?yes:no}' (gram-tmpl-cond) — grammar rule: '${cond?a:b}' ternary conditional isn't implemented"]
 fn set_a_gram_tmpl_cond() {
     assert_eq!(render("${active?yes:no}", CANONICAL), "yes");
 }
 
 #[test]
-#[ignore = "restore in P1.3: '[${active?yes:no}]' (gram-tmpl-cond-br) — grammar rule, same missing feature, bracketed form"]
 fn set_a_gram_tmpl_cond_br() {
     assert_eq!(render("[${active?yes:no}]", CANONICAL), "yes");
 }
 
 #[test]
-#[ignore = "restore in P1.3: 'age > 25 [${active?on:off}]' (adv-cmp-then-tmpl-cond) — grammar rule, same missing feature, combined with a filter"]
 fn set_a_adv_cmp_then_tmpl_cond() {
     assert_eq!(render("age > 25 [${active?on:off}]", CANONICAL), "on");
 }
