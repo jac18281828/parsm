@@ -19,3 +19,6 @@
 Thumbs.db
 
 venv/
+
+# AI-coding scratch: task prompts, working plan, audit reports — not product
+/prompts/
