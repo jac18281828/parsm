@@ -10,6 +10,10 @@ Parsm is the powerful command-line tool that understands structured text better 
 
 By default, parsm outputs the original input when a filter matches. For custom output formatting, use templates.
 
+**0.8.3** removed a legacy fallback parser that could silently mis-parse certain filter/template
+expressions; parsing now runs entirely through one grammar. See [CHANGELOG.md](CHANGELOG.md) for
+the full list of fixes.
+
 ## Installation
 
 ### From crates.io
