@@ -20,5 +20,16 @@ jobs:
           node-version: 22.16.0
       - name: Install dependencies
         run: npm install -g @commitlint/{cli,config-conventional}
-      - name: Validate all commits from PR
-        run: npx commitlint --from HEAD~${{ github.event.pull_request.commits }} --to HEAD --verbose
+      - name: Validate commits
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            FROM="${{ github.event.pull_request.base.sha }}"
+            TO="${{ github.event.pull_request.head.sha }}"
+          else
+            FROM="${{ github.event.before }}"
+            TO="${{ github.sha }}"
+            if [ -z "$FROM" ] || [ "$FROM" = "0000000000000000000000000000000000000000" ]; then
+              FROM="HEAD~1"
+            fi
+          fi
+          npx commitlint --from "$FROM" --to "$TO" --verbose
