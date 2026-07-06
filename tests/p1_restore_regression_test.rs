@@ -221,6 +221,15 @@ fn set_b_foss_tilde_tmpl() {
     );
 }
 
+/// P1.4: a template nesting a `[...]` bracket span inside a `{...}` brace
+/// template renders correctly on `main` regardless of input format; this
+/// pins the JSON-input case (the regression was originally caught only via
+/// `tests/logfmt_integration_test.rs`'s logfmt-specific coverage).
+#[test]
+fn set_b_nested_bracket_in_brace_template() {
+    assert_eq!(render("{[${name}] ${role}}", CANONICAL), "[Alice] admin");
+}
+
 /// `!field` (no `?`) as one term of a chain was the "open design question" in
 /// CORPUS.md section 1a: silently accepted as `NOT(FieldTruthy)` by the
 /// deleted fallback (`try_boolean_with_truthy_fields`), while the same bare

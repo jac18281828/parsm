@@ -265,6 +265,13 @@ impl TemplateParser {
                     let parsed_template = Self::parse_template_content_manually(item.as_str())?;
                     items.extend(parsed_template.items);
                 }
+                Rule::braced_interpolated_content => {
+                    // Handle brace-only interpolated content, e.g. "[${level}] ${msg}",
+                    // where a literal "]" is ordinary content (see grammar comment).
+                    trace!("Found braced_interpolated_content: '{}'", item.as_str());
+                    let parsed_template = Self::parse_template_content_manually(item.as_str())?;
+                    items.extend(parsed_template.items);
+                }
                 _ => {
                     trace!("Unexpected rule in template content: {:?}", item.as_rule());
                 }

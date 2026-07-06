@@ -93,9 +93,9 @@ dollar_digits_literal = @{ "$" ~ ASCII_DIGIT+ }
 braced_template = { "{" ~ braced_template_content ~ "}" }
 bracketed_template = { "[" ~ bracketed_template_content ~ "]" }
 
-braced_template_content = { 
-    interpolated_content |
-    braced_template_item* 
+braced_template_content = {
+    braced_interpolated_content |
+    braced_template_item*
 }
 
 braced_template_item = {
@@ -142,8 +142,31 @@ safe_interpolated_literal = @{
     (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "]" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
 }
 
-interpolated_literal = @{ 
+interpolated_literal = @{
     (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "]" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
+}
+
+// Braced-only interpolated-content family: unlike the shared interpolated_*
+// rules above (which also serve bracketed_template_content and must exclude
+// "]" so it can close a bracket), a "}" is a brace template's only closing
+// delimiter, so a literal "]" is ordinary content here and must not be
+// excluded.
+braced_interpolated_content = {
+    (braced_interpolated_literal ~ template_variable ~ braced_interpolated_item*) |
+    (template_variable ~ braced_interpolated_item+)
+}
+
+braced_interpolated_item = {
+    template_variable |
+    safe_braced_interpolated_literal
+}
+
+safe_braced_interpolated_literal = @{
+    (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
+}
+
+braced_interpolated_literal = @{
+    (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
 }
 
 template_content = { template_item* }

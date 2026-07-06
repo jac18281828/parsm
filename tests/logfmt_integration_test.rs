@@ -424,10 +424,6 @@ fn test_logfmt_forced_format() {
             "42",
         ),
         // Test template with forced logfmt
-        //
-        // Note: a template mixing a nested `[...]` inside a `{...}` (e.g.
-        // `{[${level}] ${msg} from ${service}}`) is NOT included here - see
-        // `logfmt_forced_format_nested_bracket_in_brace_requires_p1_3` below.
         (
             "user=alice action=login success=true",
             r#"{User ${user} ${action}: ${success}}"#,
@@ -475,20 +471,18 @@ fn assert_logfmt_forced_format(input: &str, expression: &str, expected: &str) {
     );
 }
 
-/// Disposition rule (same family as `tests/p1_restore_regression_test.rs`'s
-/// `stays_rejected_nested_unescaped_brace_with_var`/`_literal`): a template
-/// nesting a `[...]` bracket span inside a `{...}` brace template (e.g.
-/// `{[${level}] ${msg} from ${service}}`) was only ever reachable through the
-/// deleted fallback's naive string-splitter - no test or doc documents nested,
-/// differently-delimited structural spans as intended syntax. Restoring it
-/// would commit new grammar complexity to preserve a fallback accident, so
-/// this is reclassified to a stays-rejected guard rather than restored.
-/// Split out of `test_logfmt_forced_format` because the rest of that test's
-/// cases still hold.
+/// A template nesting a `[...]` bracket span inside a `{...}` brace template
+/// (e.g. `{[${level}] ${msg} from ${service}}`) renders correctly on `main`
+/// and is restored by P1.4 (`pest/parsm.pest`'s `braced_interpolated_*`
+/// family). Split out of `test_logfmt_forced_format` because the rest of
+/// that test's cases are unrelated.
 #[test]
-fn logfmt_forced_format_stays_rejected_nested_bracket_in_brace() {
-    let result = parsm::parse_command(r#"{[${level}] ${msg} from ${service}}"#);
-    assert!(result.is_err());
+fn logfmt_forced_format_nested_bracket_in_brace() {
+    assert_logfmt_forced_format(
+        r#"level=error msg="timeout" service=api"#,
+        r#"{[${level}] ${msg} from ${service}}"#,
+        "[error] timeout from api",
+    );
 }
 
 /// Test logfmt forced format filtering with --logfmt flag
