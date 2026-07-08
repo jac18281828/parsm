@@ -32,6 +32,9 @@
   within noise in both directions. The fallback parser was only ever invoked for inputs pest
   already rejected, so removing it simplifies the code path without changing the common case's
   throughput
+* fixed a silent-empty-output bug where multi-document JSON input (JSON Lines) through a
+  filter or field selector was misdetected as headered CSV and produced no output with exit
+  code 0
 
 0.8.2 (2025-07-06)
 

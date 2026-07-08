@@ -706,3 +706,65 @@ fn test_json_forced_format_filtering() {
         }
     }
 }
+
+#[test]
+fn test_json_lines_filter() {
+    // Multi-document JSON (JSON Lines) input through a bare filter must not be
+    // misdetected as headered CSV and silently drop all output.
+    let input = "{\"id\": 1, \"name\": \"Alice\"}\n{\"id\": 2, \"name\": \"Bob\"}\n{\"id\": 3, \"name\": \"Charlie\"}\n";
+
+    let mut child = parsm_command()
+        .arg("id > 1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn parsm");
+
+    let stdin = child.stdin.take().expect("get stdin");
+    let mut stdin = stdin;
+    write!(stdin, "{input}").expect("write to stdin");
+    drop(stdin);
+
+    let result = child.wait_with_output().expect("wait for output");
+    assert!(
+        result.status.success(),
+        "parsm failed: stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert!(stdout.contains("\"name\": \"Bob\""), "stdout: {stdout}");
+    assert!(stdout.contains("\"name\": \"Charlie\""), "stdout: {stdout}");
+    assert!(!stdout.contains("\"name\": \"Alice\""), "stdout: {stdout}");
+}
+
+#[test]
+fn test_json_lines_field_selector() {
+    // Multi-document JSON (JSON Lines) input through a field selector must
+    // extract from each document in order, not be dropped by CSV misdetection.
+    let input = "{\"id\": 1, \"name\": \"Alice\"}\n{\"id\": 2, \"name\": \"Bob\"}\n{\"id\": 3, \"name\": \"Charlie\"}\n";
+
+    let mut child = parsm_command()
+        .arg("name")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn parsm");
+
+    let stdin = child.stdin.take().expect("get stdin");
+    let mut stdin = stdin;
+    write!(stdin, "{input}").expect("write to stdin");
+    drop(stdin);
+
+    let result = child.wait_with_output().expect("wait for output");
+    assert!(
+        result.status.success(),
+        "parsm failed: stderr={}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&result.stdout);
+    assert_eq!(stdout.trim(), "Alice\nBob\nCharlie");
+}

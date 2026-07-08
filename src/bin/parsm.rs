@@ -258,10 +258,8 @@ fn process_stream_with_filter(
             }
 
             match format {
-                DetectedFormat::Json => {
-                    if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&input)
-                        && !matches!(json_value, serde_json::Value::Array(_))
-                    {
+                DetectedFormat::Json => match serde_json::from_str::<serde_json::Value>(&input) {
+                    Ok(json_value) if !matches!(json_value, serde_json::Value::Array(_)) => {
                         // Single JSON object
                         if let Some(ref field_selector) = dsl.field_selector {
                             if let Some(extracted) = field_selector.extract_field(&json_value) {
@@ -281,7 +279,67 @@ fn process_stream_with_filter(
                             return Ok(());
                         }
                     }
-                }
+                    Err(_) => {
+                        // The whole input isn't a single JSON document. It may be
+                        // JSON Lines: a sequence of whitespace-separated JSON
+                        // values (typically one per line). Only claim it if every
+                        // yielded value parses cleanly and there is at least one -
+                        // otherwise fall through unchanged so ambiguous/malformed
+                        // input is handled exactly as before (e.g. by Yaml/Csv
+                        // below).
+                        let mut stream = serde_json::Deserializer::from_str(&input)
+                            .into_iter::<serde_json::Value>();
+                        let mut items: Vec<(serde_json::Value, String)> = Vec::new();
+                        let mut start = 0usize;
+                        let mut all_ok = true;
+                        while let Some(result) = stream.next() {
+                            match result {
+                                Ok(value) => {
+                                    let end = stream.byte_offset();
+                                    let source = input[start..end].trim().to_string();
+                                    start = end;
+                                    items.push((value, source));
+                                }
+                                Err(_) => {
+                                    all_ok = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if all_ok && !items.is_empty() {
+                            if let Some(ref field_selector) = dsl.field_selector {
+                                for (item, _) in &items {
+                                    if let Some(extracted) = field_selector.extract_field(item) {
+                                        writeln!(writer, "{extracted}")?;
+                                    }
+                                }
+                                return Ok(());
+                            } else {
+                                for (item, source) in &items {
+                                    let mut item_with_original = item.clone();
+                                    if let serde_json::Value::Object(ref mut obj) =
+                                        item_with_original
+                                    {
+                                        obj.insert(
+                                            "$0".to_string(),
+                                            serde_json::Value::String(source.clone()),
+                                        );
+                                    }
+                                    parsm::process_single_value(
+                                        &item_with_original,
+                                        dsl,
+                                        &mut writer,
+                                    )?;
+                                }
+                                return Ok(());
+                            }
+                        }
+                    }
+                    _ => {
+                        // Arrays are already handled by the sibling
+                        // DetectedFormat::JsonArray arm.
+                    }
+                },
                 DetectedFormat::JsonArray => {
                     if let Ok(serde_json::Value::Array(arr)) =
                         serde_json::from_str::<serde_json::Value>(&input)
