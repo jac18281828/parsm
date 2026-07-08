@@ -1,5 +1,6 @@
 use clap::{Arg, Command};
-use std::io;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader};
 use tracing::debug;
 
 use parsm::{
@@ -30,8 +31,8 @@ fn main() {
         .about("Understands structured text better than sed or awk")
         .arg(
             Arg::new("filter")
-                .help("Filter expression (optional)")
-                .value_name("FILTER")
+                .help("Expression: field selector, filter, template, or filter+template (optional)")
+                .value_name("EXPR")
                 .index(1),
         )
         .arg(
@@ -39,6 +40,14 @@ fn main() {
                 .help("Template expression for output formatting (optional)")
                 .value_name("TEMPLATE")
                 .index(2),
+        )
+        .arg(
+            Arg::new("file")
+                .short('f')
+                .long("file")
+                .value_name("FILE")
+                .help("Read input from FILE instead of stdin (repeatable; '-' = stdin)")
+                .action(clap::ArgAction::Append),
         )
         .arg(
             Arg::new("help-examples")
@@ -109,69 +118,87 @@ fn main() {
     let filter_expr = matches.get_one::<String>("filter");
     let template_expr = matches.get_one::<String>("template");
 
-    match (filter_expr, template_expr) {
+    // Determine the processing mode once: either plain format conversion (no
+    // expression given) or a parsed DSL (field selector, filter, template, or both).
+    let mode = match (filter_expr, template_expr) {
         (Some(filter), Some(template)) if !filter.trim().is_empty() => {
-            let parsed_dsl = match parse_separate_expressions(Some(filter), Some(template)) {
-                Ok(dsl) => dsl,
+            match parse_separate_expressions(Some(filter), Some(template)) {
+                Ok(dsl) => ProcessingMode::Filter(dsl),
                 Err(e) => {
                     eprintln!("Error parsing filter and template expression: {e}");
                     std::process::exit(1);
                 }
-            };
-            if let Err(e) = process_stream_with_filter(parsed_dsl, forced_format) {
-                eprintln!("Error processing stream: {e}");
-                std::process::exit(1);
             }
         }
-        (Some(_), Some(template)) => {
-            let parsed_dsl = match parse_separate_expressions(None, Some(template)) {
-                Ok(dsl) => dsl,
-                Err(e) => {
-                    eprintln!("Error parsing template expression: {e}");
-                    std::process::exit(1);
-                }
-            };
-            if let Err(e) = process_stream_with_filter(parsed_dsl, forced_format) {
-                eprintln!("Error processing stream: {e}");
+        (Some(_), Some(template)) => match parse_separate_expressions(None, Some(template)) {
+            Ok(dsl) => ProcessingMode::Filter(dsl),
+            Err(e) => {
+                eprintln!("Error parsing template expression: {e}");
                 std::process::exit(1);
             }
-        }
-        (Some(filter), None) => {
-            let parsed_dsl = match parse_command(filter) {
-                Ok(dsl) => dsl,
-                Err(e) => {
-                    eprintln!("Error parsing expression: {e}");
-                    std::process::exit(1);
-                }
-            };
-            if let Err(e) = process_stream_with_filter(parsed_dsl, forced_format) {
-                eprintln!("Error processing stream: {e}");
+        },
+        (Some(filter), None) => match parse_command(filter) {
+            Ok(dsl) => ProcessingMode::Filter(dsl),
+            Err(e) => {
+                eprintln!("Error parsing expression: {e}");
                 std::process::exit(1);
             }
-        }
-        (None, Some(template)) => {
-            let parsed_dsl = match parse_separate_expressions(None, Some(template)) {
-                Ok(dsl) => dsl,
-                Err(e) => {
-                    eprintln!("Error parsing template expression: {e}");
-                    std::process::exit(1);
-                }
-            };
-            if let Err(e) = process_stream_with_filter(parsed_dsl, forced_format) {
-                eprintln!("Error processing stream: {e}");
+        },
+        (None, Some(template)) => match parse_separate_expressions(None, Some(template)) {
+            Ok(dsl) => ProcessingMode::Filter(dsl),
+            Err(e) => {
+                eprintln!("Error parsing template expression: {e}");
                 std::process::exit(1);
             }
-        }
-        (None, None) => {
-            let stdin = io::stdin();
-            let mut stdout = io::stdout();
+        },
+        (None, None) => ProcessingMode::Convert,
+    };
 
-            if let Err(e) = process_stream(stdin.lock(), &mut stdout) {
-                eprintln!("Error processing stream: {e}");
+    // Build the ordered list of input sources: the `-f` values in order, or a
+    // single implicit stdin source when `-f` was not given at all.
+    let file_args: Vec<String> = matches
+        .get_many::<String>("file")
+        .map(|values| values.cloned().collect())
+        .unwrap_or_default();
+    let sources: Vec<String> = if file_args.is_empty() {
+        vec!["-".to_string()]
+    } else {
+        file_args
+    };
+
+    let mut stdout = io::stdout();
+
+    for source in &sources {
+        let reader: Box<dyn BufRead> = if source == "-" {
+            Box::new(io::stdin().lock())
+        } else {
+            let file = File::open(source).unwrap_or_else(|e| {
+                eprintln!("Error: cannot open file '{source}': {e}");
                 std::process::exit(1);
+            });
+            Box::new(BufReader::new(file))
+        };
+
+        let result = match &mode {
+            ProcessingMode::Convert => process_stream(reader, &mut stdout),
+            ProcessingMode::Filter(dsl) => {
+                process_stream_with_filter(reader, dsl, forced_format.clone())
             }
+        };
+
+        if let Err(e) = result {
+            eprintln!("Error processing stream from '{source}': {e}");
+            std::process::exit(1);
         }
     }
+}
+
+/// The resolved processing mode, computed once from the CLI expression arguments.
+enum ProcessingMode {
+    /// No expression given: pass input through, converting its detected format.
+    Convert,
+    /// A parsed DSL (field selector, filter, template, or a combination).
+    Filter(ParsedDSL),
 }
 
 /// Process input stream with the parsed DSL (filters, templates, field selectors).
@@ -182,6 +209,7 @@ fn main() {
 /// - Templates: Format output using template expressions
 ///
 /// # Arguments
+/// * `reader` - Input source to read from (stdin or a file)
 /// * `dsl` - Parsed DSL containing optional filter, template, and field selector
 /// * `forced_format` - Optional format to force parsing with, bypassing format detection
 ///
@@ -189,11 +217,12 @@ fn main() {
 /// * `Ok(())` on successful processing
 /// * `Err(Box<dyn std::error::Error>)` on processing errors
 fn process_stream_with_filter(
-    dsl: ParsedDSL,
+    mut reader: impl std::io::BufRead,
+    dsl: &ParsedDSL,
     forced_format: Option<DetectedFormat>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use parsm::StreamingParser;
-    use std::io::{BufRead, Read, Write};
+    use std::io::Write;
     debug!(
         "process_stream_with_filter called with DSL: filter={:?}, template={:?}, field_selector={:?}, forced_format={:?}",
         dsl.filter.is_some(),
@@ -202,7 +231,6 @@ fn process_stream_with_filter(
         forced_format
     );
 
-    let stdin = io::stdin();
     let stdout = io::stdout();
     let mut writer = stdout.lock();
 
@@ -210,7 +238,7 @@ fn process_stream_with_filter(
     if dsl.field_selector.is_some() || dsl.template.is_some() {
         // Field selectors and templates need the entire input to handle structured documents
         let mut input = String::new();
-        stdin.lock().read_to_string(&mut input)?;
+        reader.read_to_string(&mut input)?;
 
         // Use format detector to determine the most likely format
         let detected_formats = if let Some(forced) = forced_format {
@@ -249,7 +277,7 @@ fn process_stream_with_filter(
                                     serde_json::Value::String(input.trim().to_string()),
                                 );
                             }
-                            parsm::process_single_value(&value_with_original, &dsl, &mut writer)?;
+                            parsm::process_single_value(&value_with_original, dsl, &mut writer)?;
                             return Ok(());
                         }
                     }
@@ -275,11 +303,7 @@ fn process_stream_with_filter(
                                         serde_json::Value::String(input.trim().to_string()),
                                     );
                                 }
-                                parsm::process_single_value(
-                                    &item_with_original,
-                                    &dsl,
-                                    &mut writer,
-                                )?;
+                                parsm::process_single_value(&item_with_original, dsl, &mut writer)?;
                             }
                             return Ok(());
                         }
@@ -288,7 +312,7 @@ fn process_stream_with_filter(
                 DetectedFormat::Toml => {
                     if let Ok(toml_value) = toml::from_str::<toml::Value>(&input) {
                         let json_value = serde_json::to_value(toml_value)?;
-                        process_structured_value(json_value, &input, &dsl, &mut writer)?;
+                        process_structured_value(json_value, &input, dsl, &mut writer)?;
                         return Ok(());
                     }
                 }
@@ -296,12 +320,12 @@ fn process_stream_with_filter(
                     if let Ok(yaml_value) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&input)
                     {
                         let json_value = serde_json::to_value(yaml_value)?;
-                        process_structured_value(json_value, &input, &dsl, &mut writer)?;
+                        process_structured_value(json_value, &input, dsl, &mut writer)?;
                         return Ok(());
                     }
                 }
                 DetectedFormat::Csv => {
-                    if csv_parser::parse_csv_document(&input, &dsl, &mut writer)? {
+                    if csv_parser::parse_csv_document(&input, dsl, &mut writer)? {
                         return Ok(());
                     }
                 }
@@ -369,7 +393,7 @@ fn process_stream_with_filter(
                 match parser.parse_line(line) {
                     Ok(parsed_line) => {
                         let json_value = convert_parsed_line_to_json(parsed_line, line)?;
-                        parsm::process_single_value(&json_value, &dsl, &mut writer)?;
+                        parsm::process_single_value(&json_value, dsl, &mut writer)?;
                     }
                     Err(e) => {
                         if line_count == 1 {
@@ -384,7 +408,6 @@ fn process_stream_with_filter(
         }
     } else {
         // For filters and templates, use true streaming (line-by-line processing)
-        let reader = stdin.lock();
         let mut parser = StreamingParser::new();
         let mut line_count = 0;
 
@@ -409,7 +432,7 @@ fn process_stream_with_filter(
 
                     if passes_filter {
                         // Use the shared implementation from the library
-                        parsm::process_single_value(&json_value, &dsl, &mut writer)?;
+                        parsm::process_single_value(&json_value, dsl, &mut writer)?;
                     }
                 }
                 Err(e) => {
@@ -548,6 +571,9 @@ fn print_usage_examples() {
     println!();
     println!("  # Complex conditions:");
     println!(r#"  parsm 'name == "Alice" && age > 25 [${{name}}: active]'"#);
+    println!();
+    println!("  # Read input from a file instead of stdin (-f is repeatable, '-' means stdin):");
+    println!(r#"  parsm -f package.json 'name'"#);
     println!();
     println!("  # Just convert formats (no filter):");
     println!("  echo 'name: Alice' | parsm  # YAML to JSON");

@@ -1,3 +1,10 @@
+0.8.4 (2026-07-07)
+
+* added `-f`/`--file` to read input from one or more files instead of stdin; repeatable,
+  each file is detected and processed independently, and `-` means stdin
+* relabeled the first positional argument from `[FILTER]` to `[EXPR]` in `--help` output to
+  reflect that it can be a field selector, filter, template, or filter+template
+
 0.8.3 (2026-07-05)
 
 * removed the legacy hand-rolled fallback parser (`fallback.rs`, ~800 lines) that silently

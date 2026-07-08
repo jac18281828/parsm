@@ -41,7 +41,7 @@ cargo build --release
 
 ```bash
 # Basic usage
-parsm [FILTER] [TEMPLATE]
+parsm [OPTIONS] [EXPR] [TEMPLATE]
 
 # Examples
 parsm --examples
@@ -57,6 +57,9 @@ echo '{"age": 30}' | parsm 'age > 25'
 
 # Filter and format
 echo '{"name": "Alice", "age": 30}' | parsm 'age > 25 [${name} is ${age}]'
+
+# Read input from a file instead of stdin
+parsm -f package.json 'name'
 ```
 
 ## Supported Formats
@@ -130,13 +133,14 @@ echo 'level=error msg="DB error"' | parsm 'level == "error" [${msg}]'
 ## CLI
 
 ```bash
-parsm [OPTIONS] [FILTER] [TEMPLATE]
+parsm [OPTIONS] [EXPR] [TEMPLATE]
 
 Arguments:
-  [FILTER]    Filter expression (optional)
+  [EXPR]      Expression: field selector, filter, template, or filter+template (optional)
   [TEMPLATE]  Template expression for output formatting (optional)
 
 Options:
+  -f, --file <FILE>  Read input from FILE instead of stdin (repeatable; '-' = stdin)
       --examples  Show usage examples
       --json      Force JSON format detection
       --yaml      Force YAML format detection
