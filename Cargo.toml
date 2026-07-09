@@ -25,7 +25,7 @@ path = "src/bin/parsm.rs"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 csv = "1.1"
-toml = "0.9.5"
+toml = "1.1.2"
 serde_yaml_ng = "0.10"
 pest = "2.8.1"
 pest_derive = "2.8.1"
