@@ -1,11 +1,4 @@
-0.8.4 (2026-07-07)
-
-* added `-f`/`--file` to read input from one or more files instead of stdin; repeatable,
-  each file is detected and processed independently, and `-` means stdin
-* relabeled the first positional argument from `[FILTER]` to `[EXPR]` in `--help` output to
-  reflect that it can be a field selector, filter, template, or filter+template
-
-0.8.3 (2026-07-05)
+0.8.3 (2026-07-08)
 
 * removed the legacy hand-rolled fallback parser (`fallback.rs`, ~800 lines) that silently
   rescued pest grammar failures with different, sometimes-wrong semantics; pest is now the
@@ -35,6 +28,10 @@
 * fixed a silent-empty-output bug where multi-document JSON input (JSON Lines) through a
   filter or field selector was misdetected as headered CSV and produced no output with exit
   code 0
+* added `-f`/`--file` to read input from one or more files instead of stdin; repeatable,
+  each file is detected and processed independently, and `-` means stdin
+* relabeled the first positional argument from `[FILTER]` to `[EXPR]` in `--help` output to
+  reflect that it can be a field selector, filter, template, or filter+template
 
 0.8.2 (2025-07-06)
 
