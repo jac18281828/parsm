@@ -9,5 +9,5 @@ RUN sudo apt-get update && \
     sudo rm -rf /var/lib/apt/lists/* /var/tmp/* /tmp/*
 
 ENV USER=rust
-ENV PATH=${PATH}:/home/rust/.cargo/bin:/go/bin
+ENV PATH=${PATH}:/home/rust/.cargo/bin
 USER rust
