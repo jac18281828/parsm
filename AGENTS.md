@@ -53,7 +53,7 @@ Before marking work complete, run and report:
 1. `cargo check`
 2. `cargo fmt --check`
 3. `cargo clippy --all-targets --all-features --no-deps -- -D warnings`
-4. `cargo test`
+4. All tests pass (unit, doc, and integration)
 5. `bin/quick_test.sh`
 6. `python3 bin/integration_test.py`
 

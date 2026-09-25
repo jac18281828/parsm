@@ -6,7 +6,7 @@ Contributions are welcome: a bug report, a fix, input parsm reads or prints wron
 
 1. Fork the repo and branch from `main`.
 2. Add tests for anything that changes behavior.
-3. Update the docs when you change what they describe.
+3. Update README.md, `parsm --examples` (`print_usage_examples` in `src/bin/parsm.rs`), and CHANGELOG.md when you change what they describe.
 4. Make the checks below pass.
 5. Open the pull request.
 
@@ -22,7 +22,7 @@ bin/quick_test.sh
 python3 bin/integration_test.py
 ```
 
-Both scripts build the release binary and check its output end to end.
+`bin/quick_test.sh` builds the release binary and checks its output end to end; `python3 bin/integration_test.py` reuses the binary.
 
 ## Tests
 
@@ -46,7 +46,13 @@ Ask in an issue before adding a dependency.
 
 ## Bug reports
 
-The smallest input plus expression is the reproduction. Include the command, actual output, expected output and `parsm --version`. Give one runnable example and run it on the branch to confirm its output.
+The smallest input plus expression is the reproduction. Include the command, actual output, expected output and `parsm --version`.
+
+```sh
+echo '{"name":"Alice","age":30}' | parsm 'age > 25 [${name}]'
+```
+
+This prints `Alice`.
 
 ## Working with an AI agent
 
