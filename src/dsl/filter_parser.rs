@@ -165,12 +165,19 @@ impl FilterParser {
                 }
                 // A `~=` value compiles once at parse time, whether it came
                 // as a `/pattern/flags` literal (already CompiledRegex from
-                // parse_value) or a plain string. An invalid pattern is a
-                // parse error naming it, not a silent non-match at every
-                // record.
+                // parse_value), a plain string, or a number/boolean literal
+                // stringified the same way `*=`/`^=`/`$=` stringify their
+                // right-hand side. An invalid pattern is a parse error
+                // naming it, not a silent non-match at every record.
                 let value = if op == ComparisonOp::Regex {
-                    match value {
-                        FilterValue::String(pattern) => {
+                    let literal_pattern = match &value {
+                        FilterValue::String(pattern) => Some(pattern.clone()),
+                        FilterValue::Number(n) => Some(n.to_string()),
+                        FilterValue::Boolean(b) => Some(b.to_string()),
+                        _ => None,
+                    };
+                    match literal_pattern {
+                        Some(pattern) => {
                             let compiled = CompiledRegex::compile(&pattern, None).map_err(|e| {
                                 Box::new(pest::error::Error::new_from_pos(
                                     pest::error::ErrorVariant::CustomError {
@@ -181,7 +188,7 @@ impl FilterParser {
                             })?;
                             FilterValue::Regex(compiled)
                         }
-                        other => other,
+                        None => value,
                     }
                 } else {
                     value

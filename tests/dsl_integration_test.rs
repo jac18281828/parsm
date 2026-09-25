@@ -1148,6 +1148,24 @@ fn proof_string_operator_stringifies_numeric_rhs() {
     assert_eq!(stdout, r#"{"port":8080}"#);
 }
 
+/// OWNER: `~=` stringifies a number literal on the right, like
+/// `*=`/`^=`/`$=`, and compiles its text as a regex pattern at parse time.
+#[test]
+fn proof_regex_operator_stringifies_numeric_rhs() {
+    let (stdout, stderr, code) = run_parsm(&["a ~= 5"], r#"{"a":"150"}"#);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, r#"{"a":"150"}"#);
+}
+
+/// OWNER: `~=` stringifies a boolean literal on the right the same way; a
+/// non-matching pattern filters the record out, exit 0.
+#[test]
+fn proof_regex_operator_stringifies_boolean_rhs() {
+    let (stdout, stderr, code) = run_parsm(&["a ~= true"], r#"{"a":"x"}"#);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "");
+}
+
 /// #6: an invalid regex literal is a parse error naming the pattern, never
 /// a silent substring-match fallback.
 #[test]
