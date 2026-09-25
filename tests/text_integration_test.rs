@@ -478,6 +478,36 @@ fn test_text_mixed_content() {
     assert_eq!(lines[2], "Status=OK -> Count=42");
 }
 
+#[test]
+fn test_text_multibyte_detection_prefix() {
+    // The 100-byte detection prefix must land on a char boundary. Byte 100
+    // of this line falls inside the two-byte UTF-8 encoding of 'é'.
+    let first_word = format!("{}{}", "x".repeat(99), 'é');
+    let input = format!("{first_word} tail");
+
+    let mut child = parsm_command()
+        .arg("[${word_0}]")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn parsm");
+
+    let stdin = child.stdin.as_mut().expect("get stdin");
+    stdin.write_all(input.as_bytes()).expect("write to stdin");
+    drop(child.stdin.take());
+
+    let output = child.wait_with_output().expect("wait for parsm");
+    assert!(
+        output.status.success(),
+        "parsm failed: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), first_word);
+}
+
 /// Test text forced format detection with --text flag
 #[test]
 fn test_text_forced_format() {

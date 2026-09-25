@@ -62,8 +62,10 @@ impl FormatDetector {
     pub fn detect(input: &str) -> Vec<(DetectedFormat, f32)> {
         let mut candidates = Vec::new();
 
-        // Fast path: check first few bytes for common structural indicators
-        let prefix = &input[..input.len().min(100)];
+        // Fast path: check first few bytes for common structural indicators.
+        // The cut stays on a char boundary so a multibyte character isn't split.
+        let prefix_end = Self::char_boundary_at_most(input, 100);
+        let prefix = &input[..prefix_end];
         let trimmed_prefix = prefix.trim_start();
 
         // High confidence structural indicators
@@ -103,6 +105,15 @@ impl FormatDetector {
         candidates.retain(|(format, _)| seen.insert(format.clone()));
 
         candidates
+    }
+
+    /// Largest byte offset at most `max` that lands on a UTF-8 char boundary.
+    fn char_boundary_at_most(input: &str, max: usize) -> usize {
+        let mut end = input.len().min(max);
+        while !input.is_char_boundary(end) {
+            end -= 1;
+        }
+        end
     }
 
     /// Check if content looks like TOML format
