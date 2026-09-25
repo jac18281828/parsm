@@ -1094,6 +1094,43 @@ fn proof_unbalanced_bracket_is_a_parse_error() {
     );
 }
 
+/// OWNER: `\]` escapes a literal `]` too, symmetric with `\[`.
+#[test]
+fn proof_close_bracket_escape_is_a_literal_bracket() {
+    let (stdout, stderr, code) = run_parsm(&[r"[a \] b]"], "{}");
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "a ] b");
+}
+
+/// OWNER: an unescaped, unbalanced `]` inside a bracketed template is a
+/// parse error naming the `\]` escape as the fix.
+#[test]
+fn proof_unbalanced_close_bracket_is_a_parse_error() {
+    let (_, stderr, code) = run_parsm(&["[a ] b]"], "{}");
+    assert_eq!(code, 1);
+    assert!(
+        stderr.contains(r"\]"),
+        "stderr should name the '\\]' escape: {stderr}"
+    );
+}
+
+/// OWNER: the two-argument form's hint dispatch covers argument 2 too - an
+/// unbalanced bracket in the template position names both the argument and
+/// the `\[` escape.
+#[test]
+fn proof_two_argument_form_names_bracket_hint_in_template_position() {
+    let (_, stderr, code) = run_parsm(&["a > 0", "[a [ b]"], r#"{"a":5}"#);
+    assert_eq!(code, 1);
+    assert!(
+        stderr.contains("argument 2"),
+        "stderr should name argument 2: {stderr}"
+    );
+    assert!(
+        stderr.contains(r"\["),
+        "stderr should name the '\\[' escape: {stderr}"
+    );
+}
+
 /// #4: `~` is contains; a regex literal after it is a parse error naming `~=`.
 #[test]
 fn proof_tilde_contains_rejects_regex_literal() {
