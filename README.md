@@ -161,19 +161,9 @@ Options:
 | Field extraction | ✅ Simple `name` syntax | ✅ `.name` syntax | Limited    | ❌ No       |
 | Simple syntax    | ✅ Low       | Medium     | Complex    | Medium     |
 
-## Development
-
-- Build: `cargo build`
-- Test: `cargo test`
-- Lint: `cargo fmt && cargo clippy`
-
 ## Contributing
 
-1. Fork repository
-2. Create feature branch
-3. Write tests and code
-4. Run tests and lint checks
-5. Submit a pull request
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines, including how to run the test suite before pushing.
 
 ## Crates.io
 
