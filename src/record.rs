@@ -156,11 +156,13 @@ fn row_view(fields: &[String], header: Option<&CsvHeader>) -> Map<String, Value>
     view
 }
 
-/// `word_0`… hold the words and `_array` all of them.
+/// `word_0`… and `1`… hold the words, `_array` all of them.
 fn words_view(words: &[String]) -> Map<String, Value> {
     let mut view = Map::new();
     for (index, word) in words.iter().enumerate() {
-        view.insert(format!("word_{index}"), Value::String(word.clone()));
+        let word = Value::String(word.clone());
+        view.insert(format!("word_{index}"), word.clone());
+        view.insert((index + 1).to_string(), word);
     }
     view.insert("_array".to_string(), strings(words));
     view
@@ -255,6 +257,7 @@ mod tests {
             record.view(),
             json!({
                 "word_0": "hello", "word_1": "world",
+                "1": "hello", "2": "world",
                 "_array": ["hello", "world"], "$0": "hello  world"
             })
         );

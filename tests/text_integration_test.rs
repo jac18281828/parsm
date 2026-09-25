@@ -664,6 +664,15 @@ fn text_convert_writes_word_arrays() {
 }
 
 #[test]
+fn text_exposes_1_based_positional_fields() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${1}-${2}]");
+    let output = common::run(cmd, "Alice 30");
+    assert_eq!(common::stdout_of(&output), "Alice-30\n");
+    assert!(output.status.success());
+}
+
+#[test]
 fn missing_field_prints_nothing() {
     let mut cmd = parsm_command();
     cmd.arg("nope");
