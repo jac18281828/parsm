@@ -1214,7 +1214,7 @@ fn proof_bare_not_invalid_field_gets_no_bad_hint() {
     let (_, stderr, code) = run_parsm(&["!a..b"], "{}");
     assert_eq!(code, 1);
     assert!(
-        !stderr.contains("?' is not supported"),
+        !stderr.contains("!a..b?"),
         "stderr should not offer a '!a..b?' style hint: {stderr}"
     );
 }
