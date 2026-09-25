@@ -784,8 +784,11 @@ fn test_regex_matching() {
                     matches!(op, ComparisonOp::Regex),
                     "Should be regex operator"
                 );
-                if let FilterValue::Regex { pattern, .. } = value {
-                    assert!(pattern.contains("^[A-Z]"), "Should contain regex pattern");
+                if let FilterValue::Regex(compiled) = value {
+                    assert!(
+                        compiled.pattern.contains("^[A-Z]"),
+                        "Should contain regex pattern"
+                    );
                 } else {
                     panic!("Expected regex value for regex pattern");
                 }
@@ -902,13 +905,17 @@ fn test_all_comparison_operators() {
         panic!("Expected ends with comparison");
     }
 
-    // Test regex operator (~=)
+    // Test regex operator (~=) - a string value under ~= compiles once at
+    // parse time into CompiledRegex too, the same as a /pattern/ literal.
     let result = parse_command(r#"email ~= "@.*\.com$""#).unwrap();
     assert!(result.filter.is_some());
     if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
         assert_eq!(field.parts, vec!["email"]);
         assert_eq!(op, ComparisonOp::Regex);
-        assert_eq!(value, FilterValue::String("@.*\\.com$".to_string()));
+        match value {
+            FilterValue::Regex(compiled) => assert_eq!(compiled.pattern, "@.*\\.com$"),
+            other => panic!("Expected compiled regex value, got {other:?}"),
+        }
     } else {
         panic!("Expected regex comparison");
     }
@@ -1071,4 +1078,64 @@ fn proof_bracket_escape_is_a_literal_bracket() {
     let (stdout, stderr, code) = run_parsm(&[r"[a \[ b]"], "{}");
     assert_eq!(code, 0, "stderr: {stderr}");
     assert_eq!(stdout, "a [ b");
+}
+
+/// #4: `~` is contains; a regex literal after it is a parse error naming `~=`.
+#[test]
+fn proof_tilde_contains_rejects_regex_literal() {
+    let (_, stderr, code) = run_parsm(&["name ~ /A.*e/"], r#"{"name":"Alice"}"#);
+    assert_eq!(code, 1);
+    assert!(stderr.contains("~="), "stderr should name '~=': {stderr}");
+}
+
+/// #5: a string operator stringifies a number on the right, so `port *= 80`
+/// matches `8080`. No template means the pipeline prints the record.
+#[test]
+fn proof_string_operator_stringifies_numeric_rhs() {
+    let (stdout, stderr, code) = run_parsm(&["port *= 80"], r#"{"port":8080}"#);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, r#"{"port":8080}"#);
+}
+
+/// #6: an invalid regex literal is a parse error naming the pattern, never
+/// a silent substring-match fallback.
+#[test]
+fn proof_invalid_regex_literal_is_a_parse_error() {
+    let (_, stderr, code) = run_parsm(&["s ~= /[b/"], r#"{"s":"a[b"}"#);
+    assert_eq!(code, 1);
+    assert!(
+        stderr.contains("invalid regex pattern '[b'"),
+        "stderr should name the specific pattern: {stderr}"
+    );
+}
+
+/// F1: a quoted string under `~=` compiles as a regex at parse time, same
+/// as a `/pattern/` literal - an invalid pattern is a parse error naming
+/// it, not a silent non-match at every record.
+#[test]
+fn proof_invalid_regex_string_is_a_parse_error() {
+    let (_, stderr, code) = run_parsm(&[r#"s ~= "[b""#], r#"{"s":"a[b"}"#);
+    assert_eq!(code, 1);
+    assert!(
+        stderr.contains("invalid regex pattern '[b'"),
+        "stderr should name the specific pattern: {stderr}"
+    );
+}
+
+/// #7: the 'x' (extended) flag takes effect - insignificant whitespace in
+/// the pattern.
+#[test]
+fn proof_regex_x_flag_takes_effect() {
+    let (stdout, stderr, code) = run_parsm(&["s ~= /a b/x"], r#"{"s":"ab"}"#);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, r#"{"s":"ab"}"#);
+}
+
+/// F3: `\'` inside a single-quoted string unescapes to a literal `'`, the
+/// same as `\"` and `\\`.
+#[test]
+fn proof_single_quote_escape_unescapes() {
+    let (stdout, stderr, code) = run_parsm(&[r"'it\'s'"], r#"{"it's":"Y"}"#);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "Y");
 }

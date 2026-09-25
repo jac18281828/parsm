@@ -69,14 +69,15 @@ pub const OPERATORS: &[OperatorDef] = &[
 
 /// Parse a comparison operator from its string representation.
 ///
-/// Returns the corresponding `ComparisonOp` variant, or `ComparisonOp::Equal`
-/// as a default fallback for unknown operators.
-pub fn parse_comparison_op(op_str: &str) -> ComparisonOp {
+/// The grammar's `comparison_op` rule only ever matches one of `OPERATORS`'
+/// symbols, so a caller passing grammar-matched text never sees `Err` here;
+/// an unknown symbol is still an error, never a silent `Equal` fallback.
+pub fn parse_comparison_op(op_str: &str) -> Result<ComparisonOp, String> {
     OPERATORS
         .iter()
         .find(|op| op.symbol == op_str)
         .map(|op| op.op.clone())
-        .unwrap_or(ComparisonOp::Equal)
+        .ok_or_else(|| format!("unknown comparison operator '{op_str}'"))
 }
 
 #[cfg(test)]
@@ -91,18 +92,36 @@ mod tests {
     #[test]
     fn test_parse_comparison_op() {
         // Symbol-based operators from the grammar
-        assert_eq!(parse_comparison_op("=="), ComparisonOp::Equal);
-        assert_eq!(parse_comparison_op("!="), ComparisonOp::NotEqual);
-        assert_eq!(parse_comparison_op("<"), ComparisonOp::LessThan);
-        assert_eq!(parse_comparison_op("<="), ComparisonOp::LessThanOrEqual);
-        assert_eq!(parse_comparison_op(">"), ComparisonOp::GreaterThan);
-        assert_eq!(parse_comparison_op(">="), ComparisonOp::GreaterThanOrEqual);
-        assert_eq!(parse_comparison_op("*="), ComparisonOp::Contains);
-        assert_eq!(parse_comparison_op("^="), ComparisonOp::StartsWith);
-        assert_eq!(parse_comparison_op("$="), ComparisonOp::EndsWith);
+        assert_eq!(parse_comparison_op("==").unwrap(), ComparisonOp::Equal);
+        assert_eq!(parse_comparison_op("!=").unwrap(), ComparisonOp::NotEqual);
+        assert_eq!(parse_comparison_op("<").unwrap(), ComparisonOp::LessThan);
+        assert_eq!(
+            parse_comparison_op("<=").unwrap(),
+            ComparisonOp::LessThanOrEqual
+        );
+        assert_eq!(parse_comparison_op(">").unwrap(), ComparisonOp::GreaterThan);
+        assert_eq!(
+            parse_comparison_op(">=").unwrap(),
+            ComparisonOp::GreaterThanOrEqual
+        );
+        assert_eq!(parse_comparison_op("*=").unwrap(), ComparisonOp::Contains);
+        assert_eq!(parse_comparison_op("^=").unwrap(), ComparisonOp::StartsWith);
+        assert_eq!(parse_comparison_op("$=").unwrap(), ComparisonOp::EndsWith);
 
-        // Test fallback
-        assert_eq!(parse_comparison_op("unknown"), ComparisonOp::Equal);
+        // An unknown symbol is an error, never a silent `Equal` fallback.
+        assert!(parse_comparison_op("unknown").is_err());
+    }
+
+    /// Every symbol in the operator table parses to its own variant, and an
+    /// unknown symbol is always an error.
+    #[test]
+    fn every_operator_symbol_parses_and_unknown_errors() {
+        for op in OPERATORS {
+            assert_eq!(parse_comparison_op(op.symbol).unwrap(), op.op);
+        }
+        assert!(parse_comparison_op("=").is_err());
+        assert!(parse_comparison_op("<>").is_err());
+        assert!(parse_comparison_op("").is_err());
     }
 
     #[test]

@@ -92,12 +92,9 @@ pub enum FilterValue {
     /// literal - resolved against the record before the op match in
     /// `FilterEngine::evaluate_comparison`.
     FieldRef(FieldPath),
-    /// A `/pattern/flags` regex literal, carrying its optional flags
-    /// (`i`/`m`/`s`/`x`) through to `regex_match_string`.
-    Regex {
-        pattern: String,
-        flags: Option<String>,
-    },
+    /// A `/pattern/flags` regex literal, compiled once when the expression
+    /// is parsed.
+    Regex(CompiledRegex),
 }
 
 impl FilterValue {
@@ -109,6 +106,44 @@ impl FilterValue {
             Value::Null => FilterValue::Null,
             _ => FilterValue::String(value.to_string()),
         }
+    }
+}
+
+/// A `/pattern/flags` regex literal compiled once at parse time. Equality
+/// compares the source pattern and flags, not the compiled automaton.
+#[derive(Debug, Clone)]
+pub struct CompiledRegex {
+    pub pattern: String,
+    pub flags: Option<String>,
+    regex: std::sync::Arc<regex::Regex>,
+}
+
+impl CompiledRegex {
+    /// Compile `pattern` with `flags` (`i`/`m`/`s`/`x`, any combination).
+    /// Errors carry the pattern so the caller can name it.
+    pub fn compile(pattern: &str, flags: Option<&str>) -> Result<Self, regex::Error> {
+        let has_flag = |f: char| flags.is_some_and(|flags| flags.contains(f));
+        let regex = regex::RegexBuilder::new(pattern)
+            .case_insensitive(has_flag('i'))
+            .multi_line(has_flag('m'))
+            .dot_matches_new_line(has_flag('s'))
+            .ignore_whitespace(has_flag('x'))
+            .build()?;
+        Ok(Self {
+            pattern: pattern.to_string(),
+            flags: flags.map(|f| f.to_string()),
+            regex: std::sync::Arc::new(regex),
+        })
+    }
+
+    pub fn is_match(&self, text: &str) -> bool {
+        self.regex.is_match(text)
+    }
+}
+
+impl PartialEq for CompiledRegex {
+    fn eq(&self, other: &Self) -> bool {
+        self.pattern == other.pattern && self.flags == other.flags
     }
 }
 
@@ -186,32 +221,6 @@ fn value_to_string(value: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Null => "null".to_string(),
         Value::Array(_) | Value::Object(_) => serde_json::to_string(value).unwrap_or_default(),
-    }
-}
-
-/// Consolidated regex matching implementation
-fn regex_match_string(text: &str, pattern: &str, flags: Option<&str>) -> bool {
-    // Handle flags for regex compilation
-    let case_insensitive = flags.is_some_and(|f| f.contains('i'));
-    let multiline = flags.is_some_and(|f| f.contains('m'));
-    let dot_matches_newline = flags.is_some_and(|f| f.contains('s'));
-
-    let mut regex_builder = regex::RegexBuilder::new(pattern);
-    regex_builder
-        .case_insensitive(case_insensitive)
-        .multi_line(multiline)
-        .dot_matches_new_line(dot_matches_newline);
-
-    match regex_builder.build() {
-        Ok(regex) => regex.is_match(text),
-        Err(_) => {
-            // Fallback to substring matching if regex compilation fails
-            if case_insensitive {
-                text.to_lowercase().contains(&pattern.to_lowercase())
-            } else {
-                text.contains(pattern)
-            }
-        }
     }
 }
 
@@ -304,13 +313,18 @@ impl FilterEngine {
             ComparisonOp::StartsWith => Self::string_starts_with(data_value, filter_value),
             ComparisonOp::EndsWith => Self::string_ends_with(data_value, filter_value),
             ComparisonOp::Regex => {
-                let (pattern, flags) = match filter_value {
-                    FilterValue::Regex { pattern, flags } => (pattern.as_str(), flags.as_deref()),
-                    FilterValue::String(s) => (s.as_str(), None),
-                    _ => return false,
-                };
                 let text = value_to_string(data_value);
-                regex_match_string(&text, pattern, flags)
+                match filter_value {
+                    FilterValue::Regex(compiled) => compiled.is_match(&text),
+                    // A field-to-field `~=` (`a ~= b`) resolves its pattern
+                    // from the record, so it can only compile per record,
+                    // unlike a literal pattern, which compiles once at
+                    // parse time. An invalid pattern here does not match.
+                    FilterValue::String(pattern) => CompiledRegex::compile(pattern, None)
+                        .map(|compiled| compiled.is_match(&text))
+                        .unwrap_or(false),
+                    _ => false,
+                }
             }
         }
     }
@@ -362,33 +376,36 @@ impl FilterEngine {
         }
     }
 
-    fn string_contains(data_value: &Value, filter_value: &FilterValue) -> bool {
+    /// A string operator's right-hand side as text: a string as-is, a number
+    /// stringified so `port *= 80` matches `8080` (the left side is already
+    /// stringified via `value_to_string`). Any other value has no meaningful
+    /// text form for `*=`/`^=`/`$=`.
+    fn string_op_pattern(filter_value: &FilterValue) -> Option<String> {
         match filter_value {
-            FilterValue::String(pattern) => {
-                let text = value_to_string(data_value);
-                text.contains(pattern)
-            }
-            _ => false,
+            FilterValue::String(pattern) => Some(pattern.clone()),
+            FilterValue::Number(n) => Some(n.to_string()),
+            _ => None,
+        }
+    }
+
+    fn string_contains(data_value: &Value, filter_value: &FilterValue) -> bool {
+        match Self::string_op_pattern(filter_value) {
+            Some(pattern) => value_to_string(data_value).contains(&pattern),
+            None => false,
         }
     }
 
     fn string_starts_with(data_value: &Value, filter_value: &FilterValue) -> bool {
-        match filter_value {
-            FilterValue::String(pattern) => {
-                let text = value_to_string(data_value);
-                text.starts_with(pattern)
-            }
-            _ => false,
+        match Self::string_op_pattern(filter_value) {
+            Some(pattern) => value_to_string(data_value).starts_with(&pattern),
+            None => false,
         }
     }
 
     fn string_ends_with(data_value: &Value, filter_value: &FilterValue) -> bool {
-        match filter_value {
-            FilterValue::String(pattern) => {
-                let text = value_to_string(data_value);
-                text.ends_with(pattern)
-            }
-            _ => false,
+        match Self::string_op_pattern(filter_value) {
+            Some(pattern) => value_to_string(data_value).ends_with(&pattern),
+            None => false,
         }
     }
 }
@@ -496,39 +513,6 @@ mod tests {
 
         let object_result = value_to_string(&json!({"key": "value"}));
         assert!(object_result.contains("key") && object_result.contains("value"));
-    }
-
-    #[test]
-    fn test_regex_match_string() {
-        // Basic pattern matching
-        assert!(regex_match_string("hello world", "world", None));
-        assert!(!regex_match_string("hello world", "xyz", None));
-
-        // Case sensitivity without flags
-        assert!(!regex_match_string("Hello World", "hello", None));
-
-        // Case insensitive with 'i' flag
-        assert!(regex_match_string("Hello World", "hello", Some("i")));
-        assert!(regex_match_string("HELLO WORLD", "hello", Some("i")));
-
-        // Regex patterns
-        assert!(regex_match_string("test123", r"\d+", None));
-        assert!(regex_match_string("user@example.com", r"@.*\.com", None));
-        assert!(!regex_match_string("notanemail", r"@.*\.com", None));
-
-        // Multiline flag
-        assert!(regex_match_string("line1\nline2", "^line2", Some("m")));
-
-        // Dot matches newline flag
-        assert!(regex_match_string(
-            "line1\nline2",
-            "line1.*line2",
-            Some("s")
-        ));
-
-        // Invalid regex should fall back to substring matching
-        assert!(regex_match_string("test[bracket", "[bracket", None));
-        assert!(regex_match_string("TEST[BRACKET", "[bracket", Some("i")));
     }
 
     #[test]

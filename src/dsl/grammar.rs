@@ -215,7 +215,33 @@ impl DSLParser {
 
     fn parse_string_literal(pair: Pair<Rule>) -> String {
         let string_content = pair.into_inner().next().unwrap();
-        string_content.as_str().to_string()
+        Self::unescape_string_content(string_content.as_str())
+    }
+
+    /// Unescape a quoted string literal's raw content (`\"` -> `"`, `\'` ->
+    /// `'`, `\\` -> `\`). Any other backslash sequence is passed through
+    /// unchanged rather than silently dropping the backslash. Shared by
+    /// field selectors and filter string values.
+    pub(super) fn unescape_string_content(raw: &str) -> String {
+        let mut result = String::with_capacity(raw.len());
+        let mut chars = raw.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next() {
+                    Some('"') => result.push('"'),
+                    Some('\'') => result.push('\''),
+                    Some('\\') => result.push('\\'),
+                    Some(other) => {
+                        result.push('\\');
+                        result.push(other);
+                    }
+                    None => result.push('\\'),
+                }
+            } else {
+                result.push(c);
+            }
+        }
+        result
     }
 
     pub fn parse_field_path(pair: Pair<Rule>) -> FieldPath {

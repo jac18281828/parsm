@@ -3,7 +3,7 @@
 use pest::iterators::Pair;
 
 use super::grammar::{DSLParser, Rule};
-use crate::filter::{ComparisonOp, FieldPath, FilterExpr, FilterValue};
+use crate::filter::{ComparisonOp, CompiledRegex, FieldPath, FilterExpr, FilterValue};
 
 pub struct FilterParser;
 
@@ -11,11 +11,13 @@ impl FilterParser {
     pub fn parse_filter_expr(
         pair: Pair<Rule>,
     ) -> Result<FilterExpr, Box<pest::error::Error<Rule>>> {
+        // filter_expr = { boolean_expr }: always exactly one inner pair.
         let inner = pair.into_inner().next().unwrap();
         Self::parse_condition(inner)
     }
 
     fn parse_condition(pair: Pair<Rule>) -> Result<FilterExpr, Box<pest::error::Error<Rule>>> {
+        // boolean_expr = { or_expr }: always exactly one inner pair.
         let inner = pair.into_inner().next().unwrap();
         Self::parse_or_expr(inner)
     }
@@ -86,6 +88,8 @@ impl FilterParser {
     }
 
     fn parse_not_expr(pair: Pair<Rule>) -> Result<FilterExpr, Box<pest::error::Error<Rule>>> {
+        // not_expr = { not_op ~ WS* ~ not_expr | comparison_expr }: one of
+        // the two alternatives always leaves at least one inner pair.
         let mut inner = pair.into_inner();
         let first = inner.next().unwrap();
 
@@ -136,35 +140,53 @@ impl FilterParser {
 
         match first.as_rule() {
             Rule::field_path => {
-                let field_span = first.as_span();
+                // field_path ~ WS* ~ comparison_op ~ WS* ~ value: this alt of
+                // comparison_expr only matches with both an operator and a
+                // value present, so both pairs are always here.
                 let field = DSLParser::parse_field_path(first);
-                if let Some(op_pair) = inner.next() {
-                    let op = Self::parse_comparison_op(op_pair);
-                    if let Some(value_pair) = inner.next() {
-                        let value = Self::parse_value(value_pair);
-                        Ok(FilterExpr::Comparison { field, op, value })
-                    } else {
-                        Err(Box::new(pest::error::Error::new_from_pos(
-                            pest::error::ErrorVariant::CustomError {
-                                message: "Expected value after comparison operator".to_string(),
-                            },
-                            field_span.end_pos(),
-                        )))
+                let op_pair = inner.next().unwrap();
+                let op_str = op_pair.as_str().to_string();
+                let op = Self::parse_comparison_op(op_pair)?;
+                let value_pair = inner.next().unwrap();
+                let value_span = value_pair.as_span();
+                let value = Self::parse_value(value_pair)?;
+                // `~` and `*=` both mean Contains, one meaning per operator;
+                // a regex literal is only valid after `~=`, which already
+                // matches regexes. Name whichever symbol the user typed.
+                if op == ComparisonOp::Contains && matches!(value, FilterValue::Regex(_)) {
+                    return Err(Box::new(pest::error::Error::new_from_pos(
+                        pest::error::ErrorVariant::CustomError {
+                            message: format!(
+                                "'{op_str}' is contains, not regex match - use '~=' for a regex pattern"
+                            ),
+                        },
+                        value_span.start_pos(),
+                    )));
+                }
+                // A `~=` value compiles once at parse time, whether it came
+                // as a `/pattern/flags` literal (already CompiledRegex from
+                // parse_value) or a plain string. An invalid pattern is a
+                // parse error naming it, not a silent non-match at every
+                // record.
+                let value = if op == ComparisonOp::Regex {
+                    match value {
+                        FilterValue::String(pattern) => {
+                            let compiled = CompiledRegex::compile(&pattern, None).map_err(|e| {
+                                Box::new(pest::error::Error::new_from_pos(
+                                    pest::error::ErrorVariant::CustomError {
+                                        message: format!("invalid regex pattern '{pattern}': {e}"),
+                                    },
+                                    value_span.start_pos(),
+                                ))
+                            })?;
+                            FilterValue::Regex(compiled)
+                        }
+                        other => other,
                     }
                 } else {
-                    // A bare field_path with no comparison_op/value following it:
-                    // the grammar's comparison_expr only reaches field_path this
-                    // way when nothing else in the alternation matched, so this
-                    // is always the ambiguous "bare identifier" case the DSL's
-                    // conservative-parsing design rejects (see mod.rs's module
-                    // docs) - never a valid boolean-context term.
-                    Err(Box::new(pest::error::Error::new_from_pos(
-                        pest::error::ErrorVariant::CustomError {
-                            message: "Bare field in expression - use 'field?' for truthy check or add comparison operator".to_string(),
-                        },
-                        field_span.start_pos(),
-                    )))
-                }
+                    value
+                };
+                Ok(FilterExpr::Comparison { field, op, value })
             }
             Rule::field_truthy => Self::parse_field_truthy(first),
             Rule::boolean_expr => {
@@ -205,47 +227,29 @@ impl FilterParser {
         }
     }
 
-    fn parse_comparison_op(pair: Pair<Rule>) -> ComparisonOp {
-        super::operators::parse_comparison_op(pair.as_str())
+    fn parse_comparison_op(
+        pair: Pair<Rule>,
+    ) -> Result<ComparisonOp, Box<pest::error::Error<Rule>>> {
+        let span = pair.as_span();
+        super::operators::parse_comparison_op(pair.as_str()).map_err(|message| {
+            Box::new(pest::error::Error::new_from_pos(
+                pest::error::ErrorVariant::CustomError { message },
+                span.start_pos(),
+            ))
+        })
     }
 
-    /// Unescape a quoted string literal's raw content (`\"` -> `"`, `\\` ->
-    /// `\`). Any other backslash sequence is passed through unchanged rather
-    /// than silently dropping the backslash.
-    fn unescape_string_content(raw: &str) -> String {
-        let mut result = String::with_capacity(raw.len());
-        let mut chars = raw.chars();
-        while let Some(c) = chars.next() {
-            if c == '\\' {
-                match chars.next() {
-                    Some('"') => result.push('"'),
-                    Some('\\') => result.push('\\'),
-                    Some(other) => {
-                        result.push('\\');
-                        result.push(other);
-                    }
-                    None => result.push('\\'),
-                }
-            } else {
-                result.push(c);
-            }
-        }
-        result
-    }
-
-    fn parse_value(pair: Pair<Rule>) -> FilterValue {
-        let pair_str = pair.as_str().to_string(); // Clone the string first
-        let inner = match pair.into_inner().next() {
-            Some(inner) => inner,
-            None => {
-                // Fallback - treat the whole pair as a string value
-                return FilterValue::String(pair_str);
-            }
-        };
-        match inner.as_rule() {
+    fn parse_value(pair: Pair<Rule>) -> Result<FilterValue, Box<pest::error::Error<Rule>>> {
+        // value = { string_literal | regex_literal | number | boolean | null
+        // | field_path }: exactly one alternative always matches.
+        let span = pair.as_span();
+        let inner = pair.into_inner().next().unwrap();
+        Ok(match inner.as_rule() {
             Rule::string_literal => {
+                // string_literal = { "\"" ~ string_content ~ "\"" | "'" ~
+                // string_content_single ~ "'" }: always exactly one inner pair.
                 let string_content = inner.into_inner().next().unwrap();
-                let content = Self::unescape_string_content(string_content.as_str());
+                let content = DSLParser::unescape_string_content(string_content.as_str());
                 FilterValue::String(content)
             }
             Rule::regex_literal => {
@@ -260,7 +264,15 @@ impl FilterParser {
                     .map(|p| p.as_str().to_string())
                     .unwrap_or_default();
                 let flags = regex_inner.next().map(|p| p.as_str().to_string());
-                FilterValue::Regex { pattern, flags }
+                let compiled = CompiledRegex::compile(&pattern, flags.as_deref()).map_err(|e| {
+                    Box::new(pest::error::Error::new_from_pos(
+                        pest::error::ErrorVariant::CustomError {
+                            message: format!("invalid regex pattern '{pattern}': {e}"),
+                        },
+                        span.start_pos(),
+                    ))
+                })?;
+                FilterValue::Regex(compiled)
             }
             Rule::number => {
                 let number_str = inner.as_str();
@@ -274,7 +286,7 @@ impl FilterParser {
             Rule::null => FilterValue::Null,
             Rule::field_path => FilterValue::FieldRef(DSLParser::parse_field_path(inner)),
             _ => FilterValue::String(inner.as_str().to_string()),
-        }
+        })
     }
 }
 
@@ -285,7 +297,10 @@ mod tests {
     use crate::filter::{ComparisonOp, FilterExpr, FilterValue};
 
     fn parse_filter_string(input: &str) -> Result<FilterExpr, Box<pest::error::Error<Rule>>> {
-        DSLParser::parse_filter_only(input)
+        // The grammar's filter_expr is atomic per input here (no field
+        // selector or template alternative can also match), so a filter is
+        // always present on success.
+        DSLParser::parse_dsl(input).map(|dsl| dsl.filter.unwrap())
     }
 
     #[test]
@@ -469,11 +484,11 @@ mod tests {
         let result = parse_filter_string("name ~= /[A-Z][a-z]+/").unwrap();
         match result {
             FilterExpr::Comparison {
-                value: FilterValue::Regex { pattern, flags },
+                value: FilterValue::Regex(compiled),
                 ..
             } => {
-                assert_eq!(pattern, "[A-Z][a-z]+");
-                assert_eq!(flags, None);
+                assert_eq!(compiled.pattern, "[A-Z][a-z]+");
+                assert_eq!(compiled.flags, None);
             }
             _ => panic!("Expected regex pattern"),
         }
@@ -484,13 +499,43 @@ mod tests {
         let result = parse_filter_string("email ~= /alice/i").unwrap();
         match result {
             FilterExpr::Comparison {
-                value: FilterValue::Regex { pattern, flags },
+                value: FilterValue::Regex(compiled),
                 ..
             } => {
-                assert_eq!(pattern, "alice");
-                assert_eq!(flags.as_deref(), Some("i"));
+                assert_eq!(compiled.pattern, "alice");
+                assert_eq!(compiled.flags.as_deref(), Some("i"));
             }
             _ => panic!("Expected regex pattern with flags"),
         }
+    }
+
+    #[test]
+    fn invalid_regex_literal_is_a_parse_error_naming_the_pattern() {
+        let err = parse_filter_string("name ~= /[b/").unwrap_err();
+        let message = err.to_string();
+        assert!(
+            message.contains("[b"),
+            "error should name the invalid pattern: {message}"
+        );
+    }
+
+    #[test]
+    fn regex_literal_honors_the_x_flag() {
+        // The 'x' (extended) flag lets whitespace in the pattern be
+        // insignificant, so "a b" matches "ab".
+        let result = parse_filter_string("s ~= /a b/x").unwrap();
+        match result {
+            FilterExpr::Comparison {
+                value: FilterValue::Regex(compiled),
+                ..
+            } => assert!(compiled.is_match("ab")),
+            _ => panic!("Expected regex pattern"),
+        }
+    }
+
+    #[test]
+    fn tilde_contains_rejects_a_regex_literal() {
+        let err = parse_filter_string("name ~ /A.*e/").unwrap_err();
+        assert!(err.to_string().contains("~="));
     }
 }

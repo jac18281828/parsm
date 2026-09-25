@@ -67,6 +67,42 @@ run_test() {
     echo
 }
 
+# Function to run a test expecting a parse error naming a specific fix.
+run_error_test() {
+    local test_name="$1"
+    local input="$2"
+    local args="$3"
+    local description="$4"
+    local expected_stderr_substring="$5"
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+
+    echo -e "${YELLOW}Test $TESTS_RUN: $test_name${NC}"
+    echo "  $description"
+    echo "  Input: $input"
+    echo "  Args: $args"
+
+    local actual_stderr
+    local exit_code
+    local stderr_file
+    stderr_file=$(mktemp)
+    echo -e "$input" | $PARSM "$args" >/dev/null 2>"$stderr_file"
+    exit_code=$?
+    actual_stderr=$(cat "$stderr_file")
+    rm -f "$stderr_file"
+
+    if [ $exit_code -ne 0 ] && [[ "$actual_stderr" == *"$expected_stderr_substring"* ]]; then
+        echo -e "  ${GREEN}✓ PASS${NC} - Stderr: $actual_stderr"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "  ${RED}✗ FAIL${NC} - Exit code: $exit_code"
+        echo -e "    Expected stderr to contain: $expected_stderr_substring"
+        echo -e "    Actual stderr:   $actual_stderr"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    echo
+}
+
 echo -e "${BLUE}Starting Parsm Quick Tests${NC}"
 echo "============================="
 echo
@@ -407,11 +443,11 @@ run_test "EMPTY_STRING_CONTAINS" \
     "Contains with empty string" \
     '{"text": "hello world"}'
 
-run_test "REGEX_FALLBACK_INVALID" \
+run_error_test "REGEX_INVALID_IS_PARSE_ERROR" \
     '{"text": "hello"}' \
     'text ~= "[invalid"' \
-    "Regex with invalid pattern (should fallback)" \
-    ''
+    "Regex with invalid pattern is a parse error, not a silent non-match" \
+    "invalid regex pattern"
 
 run_test "CROSS_TYPE_STRING_NUMBER" \
     '{"version": "1.5", "min_version": 1.2}' \
