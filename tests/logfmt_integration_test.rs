@@ -3,6 +3,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
+mod common;
+
 /// Helper function to create a Command with proper environment setup
 fn parsm_command() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
@@ -321,8 +323,11 @@ fn test_logfmt_format_detection() {
 
     assert_eq!(lines.len(), 1);
 
-    // Now we expect the original input as output instead of JSON
-    assert_eq!(lines[0], input.trim());
+    // Convert mode writes the logfmt record as JSON, keys in input order
+    assert_eq!(
+        lines[0],
+        r#"{"time":"2023-12-01T10:00:00Z","level":"info","msg":"Application started","version":"1.2.3"}"#
+    );
 }
 
 #[test]
@@ -596,4 +601,29 @@ fn test_logfmt_detection_requires_successful_parse() {
             "Failed for input '{input}' with expression '{expression}'",
         );
     }
+}
+
+fn stdout_of(output: &std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
+fn logfmt_filter_streams_first_record_before_eof() {
+    let mut cmd = parsm_command();
+    cmd.arg(r#"level == "error""#);
+    let streamed = common::first_line_while_open(cmd, "level=error x=1", "level=info x=2");
+    assert_eq!(streamed.first.as_deref(), Some("level=error x=1"));
+    assert_eq!(streamed.rest, "");
+    assert!(streamed.status.success());
+}
+
+#[test]
+fn debug_log_names_detected_format_on_stderr() {
+    let mut cmd = parsm_command();
+    cmd.env("RUST_LOG", "parsm=debug").arg("a");
+    let output = common::run(cmd, "a=1");
+    assert_eq!(stdout_of(&output), "1\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("logfmt"), "stderr: {stderr}");
+    assert!(output.status.success());
 }

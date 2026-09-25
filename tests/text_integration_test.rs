@@ -3,6 +3,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
+mod common;
+
 /// Helper function to create a Command with proper environment setup
 fn parsm_command() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
@@ -197,8 +199,11 @@ fn test_text_format_detection() {
 
     assert_eq!(lines.len(), 1);
 
-    // Now we expect the original input as output instead of JSON
-    assert_eq!(lines[0], input.trim());
+    // Convert mode writes the text record as an array of words
+    assert_eq!(
+        lines[0],
+        r#"["this","is","plain","text","without","special","formatting"]"#
+    );
 }
 
 #[test]
@@ -305,10 +310,9 @@ fn test_text_nonexistent_field() {
     let output = child.wait_with_output().expect("wait for parsm");
     assert!(output.status.success(), "parsm failed: {output:?}");
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Should produce warnings but not crash
-    assert!(stdout.trim().is_empty() || !output.stderr.is_empty());
+    // A record without the field prints nothing and warns nothing
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
 }
 
 #[test]
@@ -631,4 +635,65 @@ fn test_text_forced_format_filtering() {
             );
         }
     }
+}
+
+fn stdout_of(output: &std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
+fn text_template_streams_first_record_before_eof() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${word_0}]");
+    let streamed = common::first_line_while_open(cmd, "hello world", "bye now");
+    assert_eq!(streamed.first.as_deref(), Some("hello"));
+    assert_eq!(streamed.rest, "bye\n");
+    assert!(streamed.status.success());
+}
+
+#[test]
+fn forced_text_reads_json_as_words() {
+    let mut cmd = parsm_command();
+    cmd.args(["--text", "[${word_0}]"]);
+    let output = common::run(cmd, r#"{"a":1}"#);
+    assert_eq!(stdout_of(&output), "{\"a\":1}\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn text_convert_writes_word_arrays() {
+    let output = common::run(parsm_command(), "hello world");
+    assert_eq!(stdout_of(&output), "[\"hello\",\"world\"]\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn missing_field_prints_nothing() {
+    let mut cmd = parsm_command();
+    cmd.arg("nope");
+    let output = common::run(cmd, "x y");
+    assert_eq!(stdout_of(&output), "");
+    assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
+fn bracketed_word_is_text() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${0}]");
+    let output = common::run(cmd, "[a]");
+    assert_eq!(stdout_of(&output), "[a]\n");
+    assert!(output.status.success());
+
+    let output = common::run(parsm_command(), "[a]");
+    assert_eq!(stdout_of(&output), "[\"[a]\"]\n");
+}
+
+#[test]
+fn leading_number_with_trailing_words_is_text() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${word_1}]");
+    let output = common::run(cmd, "200 OK");
+    assert_eq!(stdout_of(&output), "OK\n");
+    assert!(output.status.success());
 }

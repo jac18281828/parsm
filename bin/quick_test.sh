@@ -165,7 +165,7 @@ run_test "MULTILINE_YAML" \
     '---\nname: Alice\nage: 30\n---\nname: Bob\nage: 25\n---\nname: Charlie\nage: 40' \
     'age > 25' \
     "Multiline YAML filtering" \
-    $'age: 30\nage: 40'
+    $'name: Alice\nage: 30\nname: Charlie\nage: 40'
 
 run_test "MULTILINE_TOML" \
     '[user1]\nname = "Alice"\nage = 30\n\n[user2]\nname = "Bob"\nage = 25\n\n[user3]\nname = "Charlie"\nage = 40' \
@@ -215,8 +215,8 @@ run_test "COMPLEX_BOOLEAN" \
 run_test "NO_ARGS_PASSTHROUGH" \
     '{"name": "Alice"}' \
     '' \
-    "No arguments passthrough" \
-    '{"name": "Alice"}'
+    "No arguments converts to compact JSON" \
+    '{"name":"Alice"}'
 
 # Comprehensive operator tests
 echo -e "${BLUE}=== Comprehensive Operator Tests ===${NC}"

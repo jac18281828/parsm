@@ -3,6 +3,8 @@ use std::io::Write;
 use std::process::Command;
 use tempfile::NamedTempFile;
 
+mod common;
+
 /// Helper function to create a Command with proper environment setup
 fn parsm_command() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
@@ -630,22 +632,24 @@ fn test_csv_multiline_output() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    // Test default output (should preserve original lines)
+    // Convert mode writes one JSON object per data row, keyed by header
     let output = parsm_command()
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");
 
     assert!(output.status.success(), "parsm failed: {output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Default output should be the original lines
-    let lines: Vec<&str> = stdout.trim().split('\n').collect();
-    assert_eq!(lines.len(), 4); // Header + 3 data rows
-    assert_eq!(lines[0], "name,age,occupation");
-    assert_eq!(lines[1], "Alice,30,Engineer");
-    assert_eq!(lines[2], "Bob,25,Designer");
-    assert_eq!(lines[3], "Charlie,35,Manager");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        concat!(
+            r#"{"name":"Alice","age":"30","occupation":"Engineer"}"#,
+            "\n",
+            r#"{"name":"Bob","age":"25","occupation":"Designer"}"#,
+            "\n",
+            r#"{"name":"Charlie","age":"35","occupation":"Manager"}"#,
+            "\n",
+        )
+    );
 
     // Test filtering functionality on multiline CSV
     let filter_output = parsm_command()
@@ -695,22 +699,24 @@ fn test_csv_multiline_output_field() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    // Test default output (should preserve original lines)
+    // Convert mode writes one JSON object per data row, keyed by header
     let output = parsm_command()
         .stdin(File::open(file.path()).unwrap())
         .output()
         .expect("run parsm");
 
     assert!(output.status.success(), "parsm failed: {output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Default output should be the original lines
-    let lines: Vec<&str> = stdout.trim().split('\n').collect();
-    assert_eq!(lines.len(), 4); // Header + 3 data rows
-    assert_eq!(lines[0], "name,age,occupation");
-    assert_eq!(lines[1], "Alice,30,Engineer");
-    assert_eq!(lines[2], "Bob,25,Designer");
-    assert_eq!(lines[3], "Charlie,35,Manager");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        concat!(
+            r#"{"name":"Alice","age":"30","occupation":"Engineer"}"#,
+            "\n",
+            r#"{"name":"Bob","age":"25","occupation":"Designer"}"#,
+            "\n",
+            r#"{"name":"Charlie","age":"35","occupation":"Manager"}"#,
+            "\n",
+        )
+    );
 
     // Test filtering functionality on multiline CSV
     let filter_output = parsm_command()
@@ -764,7 +770,7 @@ fn test_csv_output_regression() {
     let mut file = NamedTempFile::new().expect("create temp file");
     write!(file, "{input}").expect("write temp file");
 
-    // Test default output (should preserve original input)
+    // Convert mode writes one JSON object per data row, keyed by header
     let output = parsm_command()
         .arg("--csv")
         .stdin(File::open(file.path()).unwrap())
@@ -775,10 +781,17 @@ fn test_csv_output_regression() {
         output.status.success(),
         "parsm default output failed: {output:?}"
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Default output should match original input
-    assert_eq!(stdout.trim(), input);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        concat!(
+            r#"{"name":"Alice","age":"30","active":"true"}"#,
+            "\n",
+            r#"{"name":"Bob","age":"25","active":"false"}"#,
+            "\n",
+            r#"{"name":"Charlie","age":"35","active":"true"}"#,
+            "\n",
+        )
+    );
 
     // Test filtering by field index
     let filter_output = parsm_command()
@@ -818,4 +831,24 @@ fn test_csv_output_regression() {
         field_stdout.trim().lines().collect::<Vec<&str>>().join(","),
         "Alice,Bob,Charlie"
     );
+}
+
+fn stdout_of(output: &std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
+fn forced_csv_converts_a_line_without_commas() {
+    let mut cmd = parsm_command();
+    cmd.arg("--csv");
+    let output = common::run(cmd, "a b");
+    assert_eq!(stdout_of(&output), "[\"a b\"]\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn csv_without_header_converts_to_field_arrays() {
+    let output = common::run(parsm_command(), "1,2,3");
+    assert_eq!(stdout_of(&output), "[\"1\",\"2\",\"3\"]\n");
+    assert!(output.status.success());
 }

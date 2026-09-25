@@ -138,7 +138,7 @@ def create_test_cases() -> dict:
         TestCase("json_null_value", '{"name": null, "age": 30}', ["name"], 
                 "Handle null values", expected_stdout='null'),
         TestCase("json_passthrough", '{"name": "Alice"}', [], 
-                "JSON passthrough without args", expected_stdout='{"name": "Alice"}'),
+                "JSON converted to compact JSON without args", expected_stdout='{"name":"Alice"}'),
     ]
     
     # CSV Tests

@@ -1,9 +1,11 @@
-//! Realistic example: parsm auto-detects format per input stream and parses
-//! accordingly, using the library API directly (no CLI, no subprocess).
+//! Realistic example: parsm auto-detects the format of each input stream and
+//! reads it as records, using the library API directly (no CLI, no
+//! subprocess).
 //!
 //! Run with: cargo run --example streaming_format_detection
 
-use parsm::StreamingParser;
+use parsm::Records;
+use std::io::Cursor;
 
 fn main() {
     let samples = [
@@ -12,9 +14,13 @@ fn main() {
         ("logfmt", "level=error msg=timeout service=api"),
     ];
 
-    for (label, line) in samples {
-        let mut parser = StreamingParser::new();
-        let parsed = parser.parse_line(line).expect("sample line should parse");
-        println!("{label}: {parsed:?}");
+    for (label, input) in samples {
+        let mut records = Records::open(Cursor::new(input), None).expect("in-memory input reads");
+        let format = records.format();
+        let record = records
+            .next()
+            .expect("sample has one record")
+            .expect("sample record parses");
+        println!("{label}: {format} {}", record.to_json());
     }
 }

@@ -3,6 +3,8 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use tempfile::NamedTempFile;
 
+mod common;
+
 /// Helper function to create a Command with proper environment setup
 fn parsm_command() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
@@ -256,30 +258,38 @@ fn test_json_array_of_primitives() {
 
 #[test]
 fn test_json_malformed_input() {
-    // Test with malformed JSON - should handle gracefully
+    // A guessed JSON value that fails before its first record falls through
+    // the precedence table; this input is read as text lines.
     let input = r#"{"name": "Invalid JSON"
 {"name": "Second line", "age": 25}"#;
+    let mut cmd = parsm_command();
+    cmd.arg("[${word_1}]");
+    let output = common::run(cmd, input);
+    assert_eq!(stdout_of(&output), "\"Invalid\n\"Second\n");
+    assert!(output.status.success());
 
-    let mut child = parsm_command()
-        .arg("name == \"Second line\" {${name}}")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
+    // Forced JSON never falls through: the first-record failure is fatal.
+    let mut cmd = parsm_command();
+    cmd.args(["--json", "name"]);
+    let output = common::run(cmd, input);
+    assert_eq!(stdout_of(&output), "");
+    assert_eq!(output.status.code(), Some(1));
 
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
-    // The tool should handle malformed JSON gracefully without crashing
-    assert!(
-        result.status.success(),
-        "parsm should handle malformed JSON gracefully"
+    // After the first record, a failure warns and the stream resumes at the
+    // next line.
+    let mut cmd = parsm_command();
+    cmd.arg("name");
+    let output = common::run(
+        cmd,
+        "{\"name\": \"First\"}\n{\"name\": \"Broken\"\n{\"name\": \"Third\"}",
     );
-    // Note: Current behavior with malformed JSON may not process subsequent lines
+    assert_eq!(stdout_of(&output), "First\nThird\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.starts_with("Warning: failed to parse line 2: "),
+        "stderr: {stderr}"
+    );
+    assert!(output.status.success());
 }
 
 #[test]
@@ -824,4 +834,79 @@ fn test_json_lines_field_selector() {
 
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert_eq!(stdout.trim(), "Alice\nBob\nCharlie");
+}
+
+fn stdout_of(output: &std::process::Output) -> String {
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
+fn json_filter_streams_first_record_before_eof() {
+    let mut cmd = parsm_command();
+    cmd.arg("a > 1");
+    let streamed = common::first_line_while_open(cmd, r#"{"a":2}"#, r#"{"a":3}"#);
+    assert_eq!(streamed.first.as_deref(), Some(r#"{"a":2}"#));
+    assert_eq!(streamed.rest, "{\"a\":3}\n");
+    assert!(streamed.status.success());
+}
+
+#[test]
+fn json_array_items_carry_their_own_source() {
+    let mut cmd = parsm_command();
+    cmd.arg("a > 3");
+    let output = common::run(cmd, r#"[{"a":1},{"a":5},{"a":7}]"#);
+    assert_eq!(stdout_of(&output), "{\"a\":5}\n{\"a\":7}\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn json_pretty_values_are_one_record_each() {
+    let mut cmd = parsm_command();
+    cmd.arg("a");
+    let output = common::run(cmd, "{\n \"a\": 1\n}\n{\n \"a\": 5\n}\n");
+    assert_eq!(stdout_of(&output), "1\n5\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn json_lines_and_pretty_values_mix() {
+    let mut cmd = parsm_command();
+    cmd.arg("a");
+    let output = common::run(cmd, "{\"a\":1}\n{\n \"a\":5\n}\n");
+    assert_eq!(stdout_of(&output), "1\n5\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn forced_json_rejects_text_input() {
+    let mut cmd = parsm_command();
+    cmd.args(["--json", r#"word_0 == "hello""#]);
+    let output = common::run(cmd, "hello world");
+    assert_eq!(stdout_of(&output), "");
+    assert_eq!(output.status.code(), Some(1));
+}
+
+#[test]
+fn json_convert_keeps_key_order_per_item() {
+    let output = common::run(parsm_command(), r#"[{"b":1,"a":2},{"c":3}]"#);
+    assert_eq!(stdout_of(&output), "{\"b\":1,\"a\":2}\n{\"c\":3}\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn json_scalar_exposes_original_input() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${0}]");
+    let output = common::run(cmd, "42");
+    assert_eq!(stdout_of(&output), "42\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn json_values_sharing_a_line_are_separate_records() {
+    let mut cmd = parsm_command();
+    cmd.arg("a");
+    let output = common::run(cmd, r#"{"a":1} {"a":2}"#);
+    assert_eq!(stdout_of(&output), "1\n2\n");
+    assert!(output.status.success());
 }

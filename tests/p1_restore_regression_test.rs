@@ -23,27 +23,27 @@
 //! rejecting forever - those get permanent, non-ignored guards instead of a
 //! restore-in-P1.3 pin.
 
-use serde_json::Value;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 const CANONICAL: &str = r#"{"name":"Alice","age":30,"active":true,"premium":true,"admin":false,"moderator":true,"banned":false,"email":"alice@example.com","a":5,"b":5,"c":5,"role":"admin","score":98.5,"threshold":95.0,"limit":25,"version":"2.0","target":"2.0","user":{"verified":true,"email":"alice@example.com","name":"Alice"},"count":0,"text":"say hi"}"#;
 
-/// Render `expr` against `raw_input` exactly the way the CLI does for a single
-/// record: parse the JSON, inject the raw source text under the `$0`
-/// pseudo-field (this is what the default `${0}` template and "no template"
-/// fallback resolve to - see `process_single_value` in `src/lib.rs`), then run
-/// the real filter+template pipeline. Returns stdout with the trailing
-/// newline stripped, or `""` if the record was filtered out.
+/// Render `expr` against `raw_input` exactly the way the CLI does: read it as
+/// JSON through the record pipeline (which exposes the raw source text as the
+/// `$0` pseudo-field that the default `${0}` template and "no template"
+/// output resolve to), then filter and render. Returns stdout with the
+/// trailing newline stripped, or `""` if the record was filtered out.
 fn render(expr: &str, raw_input: &str) -> String {
-    let mut data: Value = serde_json::from_str(raw_input).expect("fixture must be valid JSON");
-    if let Value::Object(ref mut obj) = data {
-        obj.insert("$0".to_string(), Value::String(raw_input.to_string()));
-    }
     let parsed =
         parsm::parse_command(expr).unwrap_or_else(|e| panic!("'{expr}' should parse: {e}"));
     let mut buf = Vec::new();
-    parsm::process_single_value(&data, &parsed, &mut buf).expect("processing should succeed");
+    parsm::process(
+        std::io::Cursor::new(raw_input),
+        Some(parsm::Format::Json),
+        parsm::Action::Evaluate(&parsed),
+        &mut buf,
+    )
+    .expect("processing should succeed");
     String::from_utf8(buf)
         .expect("output must be utf8")
         .trim_end_matches('\n')

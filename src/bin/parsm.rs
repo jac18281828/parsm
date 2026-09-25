@@ -1,12 +1,19 @@
-use clap::{Arg, Command};
+use clap::{Arg, ArgMatches, Command};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use tracing::debug;
 
-use parsm::{
-    DetectedFormat, FilterEngine, FormatDetector, ParsedDSL, ParsedLine, csv_parser, parse_command,
-    parse_separate_expressions, process_stream,
-};
+use parsm::{Action, Format, ParsedDSL, parse_command, parse_separate_expressions, process};
+
+/// The format flags: argument id, long flag and the format it forces.
+const FORMAT_FLAGS: [(&str, &str, Format); 6] = [
+    ("format-json", "json", Format::Json),
+    ("format-yaml", "yaml", Format::Yaml),
+    ("format-csv", "csv", Format::Csv),
+    ("format-toml", "toml", Format::Toml),
+    ("format-logfmt", "logfmt", Format::Logfmt),
+    ("format-text", "text", Format::Text),
+];
 
 /// Main entry point for the parsm command-line tool.
 ///
@@ -28,95 +35,14 @@ fn main() {
 
     debug!("Starting parsm");
 
-    let matches = Command::new(env!("CARGO_PKG_NAME"))
-        .version(env!("CARGO_PKG_VERSION"))
-        .author(env!("CARGO_PKG_AUTHORS"))
-        .about("Understands structured text better than sed or awk")
-        .arg(
-            Arg::new("filter")
-                .help("Expression: field selector, filter, template, or filter+template (optional)")
-                .value_name("EXPR")
-                .index(1),
-        )
-        .arg(
-            Arg::new("template")
-                .help("Template expression for output formatting (optional)")
-                .value_name("TEMPLATE")
-                .index(2),
-        )
-        .arg(
-            Arg::new("file")
-                .short('f')
-                .long("file")
-                .value_name("FILE")
-                .help("Read input from FILE instead of stdin (repeatable; '-' = stdin)")
-                .action(clap::ArgAction::Append),
-        )
-        .arg(
-            Arg::new("help-examples")
-                .long("examples")
-                .help("Show usage examples")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("format-json")
-                .long("json")
-                .help("Force JSON format detection")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("format-yaml")
-                .long("yaml")
-                .help("Force YAML format detection")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("format-csv")
-                .long("csv")
-                .help("Force CSV format detection")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("format-toml")
-                .long("toml")
-                .help("Force TOML format detection")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("format-logfmt")
-                .long("logfmt")
-                .help("Force logfmt format detection")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("format-text")
-                .long("text")
-                .help("Force plain text format detection")
-                .action(clap::ArgAction::SetTrue),
-        )
-        .get_matches();
+    let matches = cli().get_matches();
 
     if matches.get_flag("help-examples") {
         print_usage_examples();
         return;
     }
 
-    // Determine forced format if any
-    let forced_format = if matches.get_flag("format-json") {
-        Some(DetectedFormat::Json)
-    } else if matches.get_flag("format-yaml") {
-        Some(DetectedFormat::Yaml)
-    } else if matches.get_flag("format-csv") {
-        Some(DetectedFormat::Csv)
-    } else if matches.get_flag("format-toml") {
-        Some(DetectedFormat::Toml)
-    } else if matches.get_flag("format-logfmt") {
-        Some(DetectedFormat::Logfmt)
-    } else if matches.get_flag("format-text") {
-        Some(DetectedFormat::PlainText)
-    } else {
-        None
-    };
+    let forced_format = forced_format(&matches);
 
     let filter_expr = matches.get_one::<String>("filter");
     let template_expr = matches.get_one::<String>("template");
@@ -169,7 +95,11 @@ fn main() {
         file_args
     };
 
-    let mut stdout = io::stdout();
+    let action = match &mode {
+        ProcessingMode::Convert => Action::Convert,
+        ProcessingMode::Filter(dsl) => Action::Evaluate(dsl),
+    };
+    let stdout = io::stdout();
 
     for source in &sources {
         let reader: Box<dyn BufRead> = if source == "-" {
@@ -182,405 +112,71 @@ fn main() {
             Box::new(BufReader::new(file))
         };
 
-        let result = match &mode {
-            ProcessingMode::Convert => process_stream(reader, &mut stdout),
-            ProcessingMode::Filter(dsl) => {
-                process_stream_with_filter(reader, dsl, forced_format.clone())
-            }
-        };
-
-        if let Err(e) = result {
+        debug!("reading {source}");
+        if let Err(e) = process(reader, forced_format, action, &mut stdout.lock()) {
             eprintln!("Error processing stream from '{source}': {e}");
             std::process::exit(1);
         }
     }
 }
 
+/// The command-line interface.
+fn cli() -> Command {
+    Command::new(env!("CARGO_PKG_NAME"))
+        .version(env!("CARGO_PKG_VERSION"))
+        .author(env!("CARGO_PKG_AUTHORS"))
+        .about("Understands structured text better than sed or awk")
+        .arg(
+            Arg::new("filter")
+                .help("Expression: field selector, filter, template, or filter+template (optional)")
+                .value_name("EXPR")
+                .index(1),
+        )
+        .arg(
+            Arg::new("template")
+                .help("Template expression for output formatting (optional)")
+                .value_name("TEMPLATE")
+                .index(2),
+        )
+        .arg(
+            Arg::new("file")
+                .short('f')
+                .long("file")
+                .value_name("FILE")
+                .help("Read input from FILE instead of stdin (repeatable; '-' = stdin)")
+                .action(clap::ArgAction::Append),
+        )
+        .arg(
+            Arg::new("help-examples")
+                .long("examples")
+                .help("Show usage examples")
+                .action(clap::ArgAction::SetTrue),
+        )
+        .args(FORMAT_FLAGS.map(|(id, long, format)| {
+            Arg::new(id)
+                .long(long)
+                .help(format!(
+                    "Read input as {}, skipping detection",
+                    format.name()
+                ))
+                .action(clap::ArgAction::SetTrue)
+        }))
+}
+
+/// The format named by the first format flag given.
+fn forced_format(matches: &ArgMatches) -> Option<Format> {
+    FORMAT_FLAGS
+        .iter()
+        .find(|(id, _, _)| matches.get_flag(id))
+        .map(|&(_, _, format)| format)
+}
+
 /// The resolved processing mode, computed once from the CLI expression arguments.
 enum ProcessingMode {
-    /// No expression given: pass input through, converting its detected format.
+    /// No expression given: write each record as a line of JSON.
     Convert,
     /// A parsed DSL (field selector, filter, template, or a combination).
     Filter(ParsedDSL),
-}
-
-/// Process input stream with the parsed DSL (filters, templates, field selectors).
-///
-/// This function handles different processing modes:
-/// - Field selection: Extract specific fields from JSON objects/arrays
-/// - Filtering: Apply boolean expressions to filter input lines
-/// - Templates: Format output using template expressions
-///
-/// # Arguments
-/// * `reader` - Input source to read from (stdin or a file)
-/// * `dsl` - Parsed DSL containing optional filter, template, and field selector
-/// * `forced_format` - Optional format to force parsing with, bypassing format detection
-///
-/// # Returns
-/// * `Ok(())` on successful processing
-/// * `Err(Box<dyn std::error::Error>)` on processing errors
-fn process_stream_with_filter(
-    mut reader: impl std::io::BufRead,
-    dsl: &ParsedDSL,
-    forced_format: Option<DetectedFormat>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    use parsm::StreamingParser;
-    use std::io::Write;
-    debug!(
-        "process_stream_with_filter called with DSL: filter={:?}, template={:?}, field_selector={:?}, forced_format={:?}",
-        dsl.filter.is_some(),
-        dsl.template.is_some(),
-        dsl.field_selector.is_some(),
-        forced_format
-    );
-
-    let stdout = io::stdout();
-    let mut writer = stdout.lock();
-
-    // Only read entire input for field selectors, templates, or when necessary for document parsing
-    if dsl.field_selector.is_some() || dsl.template.is_some() {
-        // Field selectors and templates need the entire input to handle structured documents
-        let mut input = String::new();
-        reader.read_to_string(&mut input)?;
-
-        // Use format detector to determine the most likely format
-        let detected_formats = if let Some(forced) = forced_format {
-            // Use detection but filter to only formats compatible with the forced one
-            FormatDetector::detect(&input)
-                .into_iter()
-                .filter(|(format, _)| format.is_compatible_with(&forced))
-                .collect()
-        } else {
-            FormatDetector::detect(&input)
-        };
-
-        // Try parsing in order of confidence
-        for (format, confidence) in detected_formats {
-            if confidence < 0.5 {
-                break; // Skip low-confidence formats
-            }
-
-            match format {
-                DetectedFormat::Json => match serde_json::from_str::<serde_json::Value>(&input) {
-                    Ok(json_value) if !matches!(json_value, serde_json::Value::Array(_)) => {
-                        // Single JSON object
-                        if let Some(ref field_selector) = dsl.field_selector {
-                            if let Some(extracted) = field_selector.extract_field(&json_value) {
-                                writeln!(writer, "{extracted}")?;
-                            }
-                            return Ok(());
-                        } else {
-                            // For templates, process the single value
-                            let mut value_with_original = json_value.clone();
-                            if let serde_json::Value::Object(ref mut obj) = value_with_original {
-                                obj.insert(
-                                    "$0".to_string(),
-                                    serde_json::Value::String(input.trim().to_string()),
-                                );
-                            }
-                            parsm::process_single_value(&value_with_original, dsl, &mut writer)?;
-                            return Ok(());
-                        }
-                    }
-                    Err(_) => {
-                        // The whole input isn't a single JSON document. It may be
-                        // JSON Lines: a sequence of whitespace-separated JSON
-                        // values (typically one per line). Only claim it if every
-                        // yielded value parses cleanly and there is at least one -
-                        // otherwise fall through unchanged so ambiguous/malformed
-                        // input is handled exactly as before (e.g. by Yaml/Csv
-                        // below).
-                        let mut stream = serde_json::Deserializer::from_str(&input)
-                            .into_iter::<serde_json::Value>();
-                        let mut items: Vec<(serde_json::Value, String)> = Vec::new();
-                        let mut start = 0usize;
-                        let mut all_ok = true;
-                        while let Some(result) = stream.next() {
-                            match result {
-                                Ok(value) => {
-                                    let end = stream.byte_offset();
-                                    let source = input[start..end].trim().to_string();
-                                    start = end;
-                                    items.push((value, source));
-                                }
-                                Err(_) => {
-                                    all_ok = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if all_ok && !items.is_empty() {
-                            if let Some(ref field_selector) = dsl.field_selector {
-                                for (item, _) in &items {
-                                    if let Some(extracted) = field_selector.extract_field(item) {
-                                        writeln!(writer, "{extracted}")?;
-                                    }
-                                }
-                                return Ok(());
-                            } else {
-                                for (item, source) in &items {
-                                    let mut item_with_original = item.clone();
-                                    if let serde_json::Value::Object(ref mut obj) =
-                                        item_with_original
-                                    {
-                                        obj.insert(
-                                            "$0".to_string(),
-                                            serde_json::Value::String(source.clone()),
-                                        );
-                                    }
-                                    parsm::process_single_value(
-                                        &item_with_original,
-                                        dsl,
-                                        &mut writer,
-                                    )?;
-                                }
-                                return Ok(());
-                            }
-                        }
-                    }
-                    _ => {
-                        // Arrays are already handled by the sibling
-                        // DetectedFormat::JsonArray arm.
-                    }
-                },
-                DetectedFormat::JsonArray => {
-                    if let Ok(serde_json::Value::Array(arr)) =
-                        serde_json::from_str::<serde_json::Value>(&input)
-                    {
-                        if let Some(ref field_selector) = dsl.field_selector {
-                            for item in &arr {
-                                if let Some(extracted) = field_selector.extract_field(item) {
-                                    writeln!(writer, "{extracted}")?;
-                                }
-                            }
-                            return Ok(());
-                        } else {
-                            // For templates, process each array item
-                            for item in &arr {
-                                let mut item_with_original = item.clone();
-                                if let serde_json::Value::Object(ref mut obj) = item_with_original {
-                                    obj.insert(
-                                        "$0".to_string(),
-                                        serde_json::Value::String(input.trim().to_string()),
-                                    );
-                                }
-                                parsm::process_single_value(&item_with_original, dsl, &mut writer)?;
-                            }
-                            return Ok(());
-                        }
-                    }
-                }
-                DetectedFormat::Toml => {
-                    if let Ok(toml_value) = toml::from_str::<toml::Value>(&input) {
-                        let json_value = serde_json::to_value(toml_value)?;
-                        process_structured_value(json_value, &input, dsl, &mut writer)?;
-                        return Ok(());
-                    }
-                }
-                DetectedFormat::Yaml => {
-                    if let Ok(yaml_value) = serde_yaml_ng::from_str::<serde_yaml_ng::Value>(&input)
-                    {
-                        let json_value = serde_json::to_value(yaml_value)?;
-                        process_structured_value(json_value, &input, dsl, &mut writer)?;
-                        return Ok(());
-                    }
-                }
-                DetectedFormat::Csv => {
-                    if csv_parser::parse_csv_document(&input, dsl, &mut writer)? {
-                        return Ok(());
-                    }
-                }
-                DetectedFormat::Logfmt => {
-                    // Logfmt is typically handled line-by-line, skip document parsing
-                    continue;
-                }
-                DetectedFormat::PlainText => {
-                    // Plain text is handled line-by-line, skip document parsing
-                    continue;
-                }
-            }
-        }
-
-        // Fall back to line-by-line processing for field selectors
-        if let Some(ref field_selector) = dsl.field_selector {
-            let lines = input.lines();
-            let mut parser = StreamingParser::new();
-            let mut line_count = 0;
-
-            for line in lines {
-                line_count += 1;
-
-                if line.trim().is_empty() {
-                    continue;
-                }
-
-                match parser.parse_line(line) {
-                    Ok(parsed_line) => {
-                        let json_value = convert_parsed_line_to_json(parsed_line, line)?;
-                        if let Some(extracted) = field_selector.extract_field(&json_value) {
-                            writeln!(writer, "{extracted}")?;
-                        } else {
-                            writeln!(writer)?;
-                            eprintln!(
-                                "Warning: Field '{}' not found in line {}",
-                                field_selector.parts.join("."),
-                                line_count
-                            );
-                        }
-                    }
-                    Err(e) => {
-                        if line_count == 1 {
-                            return Err(Box::new(e));
-                        } else {
-                            eprintln!("Warning: Failed to parse line {line_count}: {e}");
-                            eprintln!("Line content: {line}");
-                        }
-                    }
-                }
-            }
-        } else {
-            // For templates, fall back to line-by-line processing
-            let lines = input.lines();
-            let mut parser = StreamingParser::new();
-            let mut line_count = 0;
-
-            for line in lines {
-                line_count += 1;
-
-                if line.trim().is_empty() {
-                    continue;
-                }
-
-                match parser.parse_line(line) {
-                    Ok(parsed_line) => {
-                        let json_value = convert_parsed_line_to_json(parsed_line, line)?;
-                        parsm::process_single_value(&json_value, dsl, &mut writer)?;
-                    }
-                    Err(e) => {
-                        if line_count == 1 {
-                            return Err(Box::new(e));
-                        } else {
-                            eprintln!("Warning: Failed to parse line {line_count}: {e}");
-                            eprintln!("Line content: {line}");
-                        }
-                    }
-                }
-            }
-        }
-    } else {
-        // For filters and templates, use true streaming (line-by-line processing)
-        let mut parser = StreamingParser::new();
-        let mut line_count = 0;
-
-        for line_result in reader.lines() {
-            let line = line_result?;
-            line_count += 1;
-
-            if line.trim().is_empty() {
-                continue;
-            }
-
-            match parser.parse_line(&line) {
-                Ok(parsed_line) => {
-                    let json_value = convert_parsed_line_to_json(parsed_line, &line)?;
-
-                    // Use the shared implementation for consistent behavior
-                    let passes_filter = if let Some(ref filter) = dsl.filter {
-                        FilterEngine::evaluate(filter, &json_value)
-                    } else {
-                        true
-                    };
-
-                    if passes_filter {
-                        // Use the shared implementation from the library
-                        parsm::process_single_value(&json_value, dsl, &mut writer)?;
-                    }
-                }
-                Err(e) => {
-                    if line_count == 1 {
-                        return Err(Box::new(e));
-                    } else {
-                        eprintln!("Warning: Failed to parse line {line_count}: {e}");
-                        eprintln!("Line content: {line}");
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Convert a parsed line to a JSON value.
-///
-/// This function takes a `ParsedLine` from the parser and converts it to a `serde_json::Value`
-/// for consistent processing. It also adds the original input as a special `$$` field.
-///
-/// # Arguments
-/// * `parsed_line` - The parsed line data structure
-/// * `original_input` - The original input string that was parsed
-///
-/// # Returns
-/// * `Ok(serde_json::Value)` - The converted JSON value
-/// * `Err(Box<dyn std::error::Error>)` - Conversion error
-fn convert_parsed_line_to_json(
-    parsed_line: ParsedLine,
-    original_input: &str,
-) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    use serde_json::Value;
-
-    let json_value = match parsed_line {
-        ParsedLine::Json(mut val) => {
-            if let Value::Object(ref mut obj) = val {
-                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            }
-            val
-        }
-        ParsedLine::Csv(record) => {
-            let mut obj = serde_json::Map::new();
-            obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            for (i, field) in record.iter().enumerate() {
-                obj.insert(format!("field_{i}"), Value::String(field.to_string()));
-            }
-            let values: Vec<Value> = record
-                .iter()
-                .map(|field| Value::String(field.to_string()))
-                .collect();
-            obj.insert("_array".to_string(), Value::Array(values));
-            Value::Object(obj)
-        }
-        ParsedLine::Toml(val) => {
-            let mut json_val = serde_json::to_value(val)?;
-            if let Value::Object(ref mut obj) = json_val {
-                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            }
-            json_val
-        }
-        ParsedLine::Yaml(val) => {
-            let mut json_val = serde_json::to_value(val)?;
-            if let Value::Object(ref mut obj) = json_val {
-                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            }
-            json_val
-        }
-        ParsedLine::Logfmt(mut val) => {
-            if let Value::Object(ref mut obj) = val {
-                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            }
-            val
-        }
-        ParsedLine::Text(words) => {
-            let mut obj = serde_json::Map::new();
-            obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            for (i, word) in words.iter().enumerate() {
-                obj.insert(format!("word_{i}"), Value::String(word.clone()));
-            }
-            let values: Vec<Value> = words.into_iter().map(Value::String).collect();
-            obj.insert("_array".to_string(), Value::Array(values));
-            Value::Object(obj)
-        }
-    };
-    Ok(json_value)
 }
 
 /// Print comprehensive usage examples and help documentation.
@@ -636,10 +232,10 @@ fn print_usage_examples() {
     println!("  # Read input from a file instead of stdin (-f is repeatable, '-' means stdin):");
     println!(r#"  parsm -f package.json 'name'"#);
     println!();
-    println!("  # Just convert formats (no filter):");
-    println!("  echo 'name: Alice' | parsm  # YAML to JSON");
+    println!("  # Convert to JSON, one line per record (no expression):");
+    println!("  echo 'name: Alice' | parsm  # {{\"name\":\"Alice\"}}");
     println!();
-    println!("  # Force specific format detection:");
+    println!("  # Force the input format (at most one flag; skips detection):");
     println!(r#"  echo 'Alice,30' | parsm --csv '[${{field_0}} is ${{field_1}}]'"#);
     println!(r#"  echo 'level=error msg=timeout' | parsm --logfmt 'level == "error"'"#);
     println!("  echo 'name: Alice' | parsm --yaml 'name'");
@@ -670,51 +266,13 @@ fn print_usage_examples() {
     println!("  $100                        # Literal dollar amounts (invalid variable names)");
     println!();
     println!("FORMAT FLAGS:");
-    println!("  --json                      # Force JSON format detection");
-    println!("  --yaml                      # Force YAML format detection");
-    println!("  --csv                       # Force CSV format detection");
-    println!("  --toml                      # Force TOML format detection");
-    println!("  --logfmt                    # Force logfmt format detection");
-    println!("  --text                      # Force plain text format detection");
+    println!("  --json                      # Read input as JSON, skipping detection");
+    println!("  --yaml                      # Read input as YAML, skipping detection");
+    println!("  --csv                       # Read input as CSV, skipping detection");
+    println!("  --toml                      # Read input as TOML, skipping detection");
+    println!("  --logfmt                    # Read input as logfmt, skipping detection");
+    println!("  --text                      # Read input as text, skipping detection");
     println!();
-}
-
-/// Process a structured value (JSON object/array, converted TOML/YAML)
-fn process_structured_value(
-    json_value: serde_json::Value,
-    original_input: &str,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<(), Box<dyn std::error::Error>> {
-    match &json_value {
-        serde_json::Value::Array(arr) => {
-            // Process each item in array
-            for item in arr {
-                let mut item_with_original = item.clone();
-                if let serde_json::Value::Object(ref mut obj) = item_with_original {
-                    obj.insert(
-                        "$0".to_string(),
-                        serde_json::Value::String(original_input.trim().to_string()),
-                    );
-                }
-
-                parsm::process_single_value(&item_with_original, dsl, writer)?;
-            }
-        }
-        _ => {
-            // Single object/value
-            let mut value_with_original = json_value.clone();
-            if let serde_json::Value::Object(ref mut obj) = value_with_original {
-                obj.insert(
-                    "$0".to_string(),
-                    serde_json::Value::String(original_input.trim().to_string()),
-                );
-            }
-
-            parsm::process_single_value(&value_with_original, dsl, writer)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -760,20 +318,28 @@ mod tests {
         // but that's not needed for this simple rendering test
     }
 
-    /// Test CSV data conversion to JSON format.
+    /// Test CSV fields reach templates as field_0, field_1, ...
     #[test]
     fn test_csv_conversion() {
-        use parsm::StreamingParser;
+        let dsl = parse_command("[${field_0}|${field_1}|${field_2}]").unwrap();
+        let mut output = Vec::new();
+        process(
+            std::io::Cursor::new("Alice,30,Engineer"),
+            None,
+            Action::Evaluate(&dsl),
+            &mut output,
+        )
+        .unwrap();
+        assert_eq!(String::from_utf8(output).unwrap(), "Alice|30|Engineer\n");
+    }
 
-        let mut parser = StreamingParser::new();
-        let csv_line = "Alice,30,Engineer";
-
-        let result = parser.parse_line(csv_line).unwrap();
-        let json_value = convert_parsed_line_to_json(result, csv_line).unwrap();
-
-        assert_eq!(json_value["field_0"], "Alice");
-        assert_eq!(json_value["field_1"], "30");
-        assert_eq!(json_value["field_2"], "Engineer");
+    /// A format flag names the format it forces.
+    #[test]
+    fn test_format_flag_forces_format() {
+        let matches = cli().try_get_matches_from(["parsm", "--csv"]).unwrap();
+        assert_eq!(forced_format(&matches), Some(Format::Csv));
+        let matches = cli().try_get_matches_from(["parsm"]).unwrap();
+        assert_eq!(forced_format(&matches), None);
     }
 
     /// Test field selection parsing and extraction.

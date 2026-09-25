@@ -28,7 +28,14 @@ fn filter_and_template_example_produces_expected_matches() {
 #[test]
 fn streaming_format_detection_example_detects_each_format() {
     let stdout = run_example("streaming_format_detection");
-    assert!(stdout.contains("json: Json("), "stdout was: {stdout}");
-    assert!(stdout.contains("csv: Csv("), "stdout was: {stdout}");
-    assert!(stdout.contains("logfmt: Logfmt("), "stdout was: {stdout}");
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(
+        lines,
+        vec![
+            r#"json: json {"name":"Alice","age":30}"#,
+            r#"csv: csv ["Alice","30","Engineer"]"#,
+            r#"logfmt: logfmt {"level":"error","msg":"timeout","service":"api"}"#,
+        ],
+        "streaming_format_detection example output changed: {stdout}"
+    );
 }

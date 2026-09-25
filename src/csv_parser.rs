@@ -1,127 +1,113 @@
-use crate::ParsedDSL;
-/// CSV parsing module with header detection and field mapping
-///
-/// This module provides specialized CSV parsing that can:
-/// - Detect header rows automatically by comparing field types
-/// - Map header names to field names for easy access
-/// - Fall back to indexed field names (field_0, field_1, etc.)
-use serde_json::{Map, Value};
-use std::io::Write;
+//! CSV rows as records, keyed by header names when the input has a header
+//! row.
 
-/// Parse CSV document and process it
-/// Returns true if parsing was successful, false otherwise
-pub fn parse_csv_document(
-    input: &str,
-    dsl: &ParsedDSL,
-    writer: &mut std::io::StdoutLock,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    let lines: Vec<&str> = input.lines().collect();
-    if lines.is_empty() {
-        return Ok(false);
+use std::collections::VecDeque;
+use std::io::{self, BufRead};
+use std::sync::Arc;
+
+use crate::detect::Format;
+use crate::lines::{Line, LineSource};
+use crate::parse::parse_csv_line;
+use crate::record::{CsvHeader, Record};
+use crate::records::RecordError;
+
+/// Data rows sampled after the first row to decide whether it is a header.
+const HEADER_SAMPLE_ROWS: usize = 5;
+
+/// Records from CSV input. The first row and up to [`HEADER_SAMPLE_ROWS`]
+/// data rows are buffered for header detection; later rows stream.
+pub(crate) struct CsvRecords<R> {
+    source: LineSource<R>,
+    buffered: VecDeque<Line>,
+    header: Option<Arc<CsvHeader>>,
+    primed: bool,
+    started: bool,
+    parsed_any: bool,
+}
+
+impl<R: BufRead> CsvRecords<R> {
+    pub(crate) fn new(source: LineSource<R>) -> Self {
+        Self {
+            source,
+            buffered: VecDeque::new(),
+            header: None,
+            primed: false,
+            started: false,
+            parsed_any: false,
+        }
     }
 
-    let has_headers = lines.len() > 1 && detect_header_row(&lines);
-
-    let mut rdr_no_headers = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(input.as_bytes());
-
-    let header_names = if has_headers {
-        parse_csv_header_names(lines[0])
-    } else {
-        Vec::new()
-    };
-
-    let mut records = Vec::new();
-
-    for (line_idx, result) in rdr_no_headers.records().enumerate() {
-        let record = match result {
-            Ok(record) => record,
-            Err(_) => continue,
-        };
-
-        let mut obj = Map::new();
-
-        let original_line_value = if let Some(original_line) = lines.get(line_idx) {
-            original_line.to_string()
-        } else {
-            input.trim().to_string()
-        };
-
-        obj.insert("0".to_string(), Value::String(original_line_value));
-
-        for (i, field) in record.iter().enumerate() {
-            let field_value = field.to_string();
-            let index = i + 1;
-
-            obj.insert(index.to_string(), Value::String(field_value.clone()));
-
-            let field_name = format!("field_{i}");
-            obj.insert(field_name.clone(), Value::String(field_value.clone()));
-        }
-
-        if let Some(original_line) = lines.get(line_idx) {
-            obj.insert("$0".to_string(), Value::String(original_line.to_string()));
-            obj.insert("${0}".to_string(), Value::String(original_line.to_string()));
-        }
-
-        if has_headers && line_idx > 0 {
-            for (i, field) in record.iter().enumerate() {
-                if let Some(header_name) = header_names.get(i) {
-                    let field_value = field.to_string();
-                    let header_name_lowercase = header_name.to_lowercase();
-
-                    obj.insert(header_name.clone(), Value::String(field_value.clone()));
-                    if header_name.to_lowercase() != *header_name {
-                        obj.insert(
-                            header_name_lowercase.clone(),
-                            Value::String(field_value.clone()),
-                        );
-                    }
-
-                    obj.insert(header_name.clone(), Value::String(field_value.clone()));
-                    obj.insert(
-                        format!("${header_name}"),
-                        Value::String(field_value.clone()),
-                    );
-                    obj.insert(
-                        format!("${{{header_name}}}"),
-                        Value::String(field_value.clone()),
-                    );
-                }
+    /// The next row line; blank lines and leading `#` lines are skipped.
+    fn next_row_line(&mut self) -> io::Result<Option<Line>> {
+        while let Some(line) = self.source.next_line()? {
+            if line.is_blank() || (!self.started && line.is_comment()) {
+                continue;
             }
+            self.started = true;
+            return Ok(Some(line));
         }
-
-        let values: Vec<Value> = record
-            .iter()
-            .map(|field| Value::String(field.to_string()))
-            .collect();
-        obj.insert("_array".to_string(), Value::Array(values));
-
-        records.push(Value::Object(obj));
+        Ok(None)
     }
 
-    if records.is_empty() {
-        return Ok(false);
+    fn prime(&mut self) -> io::Result<()> {
+        self.primed = true;
+        while self.buffered.len() <= HEADER_SAMPLE_ROWS {
+            let Some(line) = self.next_row_line()? else {
+                break;
+            };
+            self.buffered.push_back(line);
+        }
+        let sample: Vec<&str> = self.buffered.iter().map(|l| l.text.as_str()).collect();
+        if !detect_header_row(&sample) {
+            return Ok(());
+        }
+        let header = self
+            .buffered
+            .pop_front()
+            .and_then(|line| parse_csv_line(&line.text));
+        if let Some(fields) = header {
+            self.header = Some(Arc::new(CsvHeader::new(&fields)));
+            self.parsed_any = true;
+        }
+        Ok(())
     }
 
-    let records_to_process = if has_headers && !records.is_empty() {
-        &records[1..]
-    } else {
-        &records[..]
-    };
+    fn next_line(&mut self) -> io::Result<Option<Line>> {
+        if !self.primed {
+            self.prime()?;
+        }
+        match self.buffered.pop_front() {
+            Some(line) => Ok(Some(line)),
+            None => self.next_row_line(),
+        }
+    }
 
-    for record in records_to_process {
-        if let Some(ref field_selector) = dsl.field_selector {
-            if let Some(extracted) = field_selector.extract_field(record) {
-                writeln!(writer, "{extracted}")?;
+    fn record(&mut self, line: Line) -> Result<Record, RecordError> {
+        match parse_csv_line(&line.text) {
+            Some(fields) => {
+                self.parsed_any = true;
+                Ok(Record::row(&fields, self.header.clone(), line.text))
             }
-        } else {
-            crate::process_single_value(record, dsl, writer)?;
+            None => Err(RecordError::parse(
+                self.parsed_any,
+                Format::Csv,
+                line.number,
+                "not a CSV row",
+            )),
         }
     }
+}
 
-    Ok(true)
+impl<R: BufRead> Iterator for CsvRecords<R> {
+    type Item = Result<Record, RecordError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.next_line() {
+            Ok(Some(line)) => Some(self.record(line)),
+            Ok(None) => None,
+            Err(error) => Some(Err(RecordError::Io(error))),
+        }
+    }
 }
 
 /// Detects a header row in CSV data by analyzing the first row and sample data rows.
@@ -179,30 +165,6 @@ fn is_numeric(field: &str) -> bool {
         && field
             .chars()
             .all(|c| c.is_ascii_digit() || c == '.' || c == '-' || c == '+' || c.is_whitespace())
-}
-
-/// Parses a single CSV line into fields.
-fn parse_csv_line(line: &str) -> Option<csv::StringRecord> {
-    let mut rdr = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(line.as_bytes());
-    rdr.records().next().transpose().ok()?
-}
-
-/// Parses header names from a CSV line, returning them as lowercase strings.
-fn parse_csv_header_names(line: &str) -> Vec<String> {
-    let mut rdr = csv::ReaderBuilder::new()
-        .has_headers(false)
-        .from_reader(line.as_bytes());
-
-    if let Ok(Some(record)) = rdr.records().next().transpose() {
-        record
-            .iter()
-            .map(|field| field.trim().to_lowercase())
-            .collect()
-    } else {
-        Vec::new()
-    }
 }
 
 #[cfg(test)]

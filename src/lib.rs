@@ -10,16 +10,17 @@
 //! ## Quick Start
 //!
 //! ```rust
-//! use parsm::{parse_command, process_stream, StreamingParser};
+//! use parsm::{Action, parse_command, process};
 //! use std::io::Cursor;
 //!
 //! // Parse a filter expression
 //! let dsl = parse_command(r#"age > 25 {${name} is ${age} years old}"#)?;
 //!
-//! // Process streaming data
+//! // Detect the input's format and process each record
 //! let input = r#"{"name": "Alice", "age": 30}"#;
 //! let mut output = Vec::new();
-//! process_stream(Cursor::new(input), &mut output)?;
+//! process(Cursor::new(input), None, Action::Evaluate(&dsl), &mut output)?;
+//! assert_eq!(String::from_utf8(output)?, "Alice is 30 years old\n");
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -124,17 +125,19 @@
 //! ### Format Detection and Parsing
 //!
 //! ```rust
-//! use parsm::StreamingParser;
+//! use parsm::{Format, Records, detect_format};
+//! use std::io::Cursor;
 //!
-//! // Create separate parsers for different formats
-//! let mut json_parser = StreamingParser::new();
-//! let json_result = json_parser.parse_line(r#"{"name": "Alice"}"#)?;
+//! // One detector chooses the format from the input
+//! assert_eq!(detect_format(r#"{"name": "Alice"}"#), Format::Json);
+//! assert_eq!(detect_format("Alice,30,Engineer"), Format::Csv);
+//! assert_eq!(detect_format("level=error msg=timeout"), Format::Logfmt);
 //!
-//! let mut csv_parser = StreamingParser::new();
-//! let csv_result = csv_parser.parse_line("Alice,30,Engineer")?;
-//!
-//! let mut logfmt_parser = StreamingParser::new();
-//! let logfmt_result = logfmt_parser.parse_line("level=error msg=timeout")?;
+//! // Records carry their parsed value and their own source text
+//! let mut records = Records::open(Cursor::new("level=error msg=timeout"), None)?;
+//! let record = records.next().expect("one record")?;
+//! assert_eq!(record.source(), "level=error msg=timeout");
+//! assert_eq!(record.to_json()["level"], "error");
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -142,20 +145,22 @@
 //!
 //! The library consists of several key components:
 //!
-//! - [`parse`]: Multi-format parser with automatic detection
+//! - [`detect`]: The one format detector and its precedence table
+//! - [`records`]: One record pipeline from input to [`Record`]s, for every format
+//! - [`pipeline`]: Records to output, converted or filtered and rendered
 //! - [`filter`]: Boolean expression evaluation engine
 //! - [`dsl`]: Domain-specific language parser using Pest
-//! - High-level functions for stream processing
 //!
 //! ## Error Handling
 //!
-//! - **First line errors**: Fatal (format detection failure)
-//! - **Subsequent errors**: Warnings with continued processing
-//! - **Missing fields**: Graceful fallback behavior
+//! - **First record errors**: Fatal when the format is forced; a guess falls
+//!   through to the next format
+//! - **Later record errors**: Warnings; the record is skipped
+//! - **Missing fields**: The record prints nothing
 //!
 //! ## Performance
 //!
-//! - **Streaming**: Line-by-line processing for constant memory usage
+//! - **Streaming**: JSON, logfmt, CSV and text records are written as they complete
 //! - **Format detection**: Efficient with intelligent fallback
 //! - **Large files**: Scales to gigabyte-scale data processing
 //!
@@ -166,8 +171,7 @@
 //! ### Field Extraction Examples
 //!
 //! ```rust
-//! use parsm::{parse_command, process_stream};
-//! use serde_json::json;
+//! use parsm::{Action, parse_command, process};
 //! use std::io::Cursor;
 //!
 //! // Simple field extraction
@@ -183,11 +187,11 @@
 //! assert!(dsl.field_selector.is_some());
 //!
 //! // Process real data with field extraction
+//! let dsl = parse_command("name")?;
 //! let input = r#"{"name": "Alice", "age": 30}"#;
 //! let mut output = Vec::new();
-//! process_stream(Cursor::new(input), &mut output)?;
-//! let result = String::from_utf8(output)?;
-//! assert!(result.contains("Alice") || result.contains("30"));
+//! process(Cursor::new(input), None, Action::Evaluate(&dsl), &mut output)?;
+//! assert_eq!(String::from_utf8(output)?, "Alice\n");
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -447,7 +451,7 @@
 //! ### Format-Specific Examples
 //!
 //! ```rust
-//! use parsm::{parse_command, StreamingParser};
+//! use parsm::parse_command;
 //!
 //! // CSV field access patterns (legacy field names still supported)
 //! let dsl = parse_command("field_0 == \"Alice\"")?;
@@ -502,230 +506,65 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-use std::error::Error;
-use std::io::{BufRead, Write};
-
 // Module declarations
 pub mod csv_parser;
+pub mod detect;
+mod documents;
 pub mod dsl;
 pub mod filter;
 pub mod format_detector;
+mod json_stream;
+mod lines;
 pub mod parse;
 pub mod parser_registry;
+pub mod pipeline;
+pub mod record;
+pub mod records;
 
+pub use detect::{Format, detect_format};
 pub use dsl::{ParsedDSL, parse_command, parse_separate_expressions};
 pub use filter::{
     ComparisonOp, FieldPath, FilterEngine, FilterExpr, FilterValue, Template, TemplateItem,
 };
 pub use format_detector::{DetectedFormat, FormatDetector};
-pub use parse::{ParsedLine, StreamingParser};
 pub use parser_registry::{DocumentParser, ParserRegistry};
-
-/// Process a stream of input data with optional DSL filter and template
-pub fn process_stream<R: BufRead, W: Write>(
-    reader: R,
-    writer: &mut W,
-) -> Result<(), Box<dyn Error>> {
-    let mut parser = StreamingParser::new();
-    let mut line_count = 0;
-
-    for line_result in reader.lines() {
-        line_count += 1;
-        let line = line_result?;
-
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        match parser.parse_line(&line) {
-            Ok(_parsed_line) => {
-                // Default to returning the original input directly rather than the augmented JSON
-                writeln!(writer, "{line}")?;
-            }
-            Err(e) => {
-                if line_count == 1 {
-                    return Err(Box::new(e));
-                } else {
-                    eprintln!("Warning: Failed to parse line {line_count}: {e}");
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// Process a single value with filter and template/field selector
-/// This is a utility function used by both the main binary and CSV parser to ensure consistent behavior
-pub fn process_single_value(
-    value: &serde_json::Value,
-    dsl: &ParsedDSL,
-    writer: &mut impl std::io::Write,
-) -> Result<(), Box<dyn std::error::Error>> {
-    tracing::debug!(
-        "process_single_value called with DSL: filter={:?}, template={:?}, field_selector={:?}",
-        dsl.filter.is_some(),
-        dsl.template.is_some(),
-        dsl.field_selector.is_some()
-    );
-
-    // Apply filter if present
-    let passes_filter = if let Some(ref filter) = dsl.filter {
-        let result = FilterEngine::evaluate(filter, value);
-        tracing::debug!("Filter evaluation result: {}", result);
-        result
-    } else {
-        true
-    };
-
-    if passes_filter {
-        // Handle field selection first (takes precedence)
-        if let Some(ref field_selector) = dsl.field_selector {
-            if let Some(extracted) = field_selector.extract_field(value) {
-                tracing::debug!("Field selection extracted: {}", extracted);
-                writeln!(writer, "{extracted}")?;
-            }
-        } else {
-            // Handle template or default output
-            let output = if let Some(ref template) = dsl.template {
-                tracing::debug!("Using template with {} items", template.items.len());
-                template.render(value)
-            } else {
-                tracing::debug!("No template specified, defaulting to ${{0}}");
-                // Default to returning ${0} (the original input)
-                if let Some(original) = value.get("$0") {
-                    if let Some(original_str) = original.as_str() {
-                        tracing::debug!("Using original input from $0 (string): {}", original_str);
-                        original_str.to_string()
-                    } else {
-                        tracing::debug!("Using original input from $0 (json): {}", original);
-                        serde_json::to_string(original)?
-                    }
-                } else {
-                    tracing::debug!("No $0 field found, using full value: {}", value);
-                    serde_json::to_string(value)?
-                }
-            };
-            tracing::debug!("Output: {}", output);
-            writeln!(writer, "{output}")?;
-        }
-    }
-    Ok(())
-}
-
-#[allow(dead_code)]
-fn convert_to_json(
-    parsed_line: parse::ParsedLine,
-    original_input: &str,
-) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-    use serde_json::Value;
-
-    let mut json_value = match parsed_line {
-        parse::ParsedLine::Json(mut val) => {
-            if let Value::Object(ref mut obj) = val {
-                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            }
-            val
-        }
-        parse::ParsedLine::Csv(record) => {
-            let mut obj = serde_json::Map::new();
-            obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            for (i, field) in record.iter().enumerate() {
-                obj.insert(format!("field_{i}"), Value::String(field.to_string()));
-            }
-            let values: Vec<Value> = record
-                .iter()
-                .map(|field| Value::String(field.to_string()))
-                .collect();
-            obj.insert("_array".to_string(), Value::Array(values));
-            Value::Object(obj)
-        }
-        parse::ParsedLine::Toml(val) => {
-            let mut json_val = serde_json::to_value(val)?;
-            if let Value::Object(ref mut obj) = json_val {
-                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            }
-            json_val
-        }
-        parse::ParsedLine::Yaml(val) => {
-            let mut json_val = serde_json::to_value(val)?;
-            if let Value::Object(ref mut obj) = json_val {
-                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            }
-            json_val
-        }
-        parse::ParsedLine::Logfmt(mut val) => {
-            if let Value::Object(ref mut obj) = val {
-                obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            }
-            val
-        }
-        parse::ParsedLine::Text(words) => {
-            let mut obj = serde_json::Map::new();
-            obj.insert("$0".to_string(), Value::String(original_input.to_string()));
-            for (i, word) in words.iter().enumerate() {
-                let word = Value::String(word.clone());
-                obj.insert(format!("word_{i}"), word);
-            }
-            let values: Vec<Value> = words.into_iter().map(Value::String).collect();
-            obj.insert("_array".to_string(), Value::Array(values));
-            Value::Object(obj)
-        }
-    };
-
-    // Add indexed fields (1-based) for templates
-    if let Value::Object(ref mut obj) = json_value
-        && let Some(Value::Array(ref arr)) = obj.get("_array").cloned()
-    {
-        for (i, value) in arr.iter().enumerate() {
-            obj.insert((i + 1).to_string(), value.clone());
-        }
-    }
-
-    Ok(json_value)
-}
+pub use pipeline::{Action, process, write_record};
+pub use record::Record;
+pub use records::{RecordError, Records};
 
 #[cfg(test)]
 mod integration_tests {
     use super::*;
-    use std::io::BufReader;
+    use std::error::Error;
     use std::io::Cursor;
+
+    fn convert(input: &str) -> Result<String, Box<dyn Error>> {
+        let mut output = Vec::new();
+        process(Cursor::new(input), None, Action::Convert, &mut output)?;
+        Ok(String::from_utf8(output)?)
+    }
 
     #[test]
     fn test_end_to_end_json_processing() -> Result<(), Box<dyn Error>> {
-        let input = r#"{"name": "Alice", "age": 30}"#;
-        let mut output = Vec::new();
-        process_stream(BufReader::new(Cursor::new(input)), &mut output)?;
-
-        let result = String::from_utf8(output)?;
-        assert!(result.contains("Alice"));
-        assert!(result.contains("30"));
+        let result = convert(r#"{"name": "Alice", "age": 30}"#)?;
+        assert_eq!(result, "{\"name\":\"Alice\",\"age\":30}\n");
         Ok(())
     }
 
     #[test]
     fn test_end_to_end_csv_processing() -> Result<(), Box<dyn Error>> {
-        let input = "Alice,30,Engineer";
-        let mut output = Vec::new();
-        process_stream(BufReader::new(Cursor::new(input)), &mut output)?;
-
-        let result = String::from_utf8(output)?;
-        assert!(result.contains("Alice"));
-        assert!(result.contains("30"));
-        assert!(result.contains("Engineer"));
+        let result = convert("Alice,30,Engineer")?;
+        assert_eq!(result, "[\"Alice\",\"30\",\"Engineer\"]\n");
         Ok(())
     }
 
     #[test]
     fn test_end_to_end_logfmt_processing() -> Result<(), Box<dyn Error>> {
-        let input = "level=error msg=timeout service=api";
-        let mut output = Vec::new();
-        process_stream(BufReader::new(Cursor::new(input)), &mut output)?;
-
-        let result = String::from_utf8(output)?;
-        assert!(result.contains("error"));
-        assert!(result.contains("timeout"));
-        assert!(result.contains("api"));
+        let result = convert("level=error msg=timeout service=api")?;
+        assert_eq!(
+            result,
+            "{\"level\":\"error\",\"msg\":\"timeout\",\"service\":\"api\"}\n"
+        );
         Ok(())
     }
 
@@ -738,40 +577,32 @@ mod integration_tests {
 
     #[test]
     fn test_mixed_format_processing() -> Result<(), Box<dyn Error>> {
-        // Test that different parsers can handle their respective formats
-        let json_input = r#"{"name": "Alice"}"#;
-        let csv_input = "Alice,30";
-        let yaml_input = "name: Alice";
-
-        let mut json_output = Vec::new();
-        let mut csv_output = Vec::new();
-        let mut yaml_output = Vec::new();
-
-        process_stream(BufReader::new(Cursor::new(json_input)), &mut json_output)?;
-        process_stream(BufReader::new(Cursor::new(csv_input)), &mut csv_output)?;
-        process_stream(BufReader::new(Cursor::new(yaml_input)), &mut yaml_output)?;
-
-        assert!(!json_output.is_empty());
-        assert!(!csv_output.is_empty());
-        assert!(!yaml_output.is_empty());
+        assert_eq!(convert(r#"{"name": "Alice"}"#)?, "{\"name\":\"Alice\"}\n");
+        assert_eq!(convert("Alice,30")?, "[\"Alice\",\"30\"]\n");
+        assert_eq!(convert("name: Alice")?, "{\"name\":\"Alice\"}\n");
         Ok(())
     }
 
     #[test]
-    fn test_no_filter_passthrough() -> Result<(), Box<dyn Error>> {
-        let input = r#"{"name": "Alice", "age": 30}"#;
+    fn test_filter_writes_matching_source() -> Result<(), Box<dyn Error>> {
+        let dsl = parse_command("age > 25")?;
+        let input = "{\"name\": \"Alice\", \"age\": 30}\n{\"name\": \"Bob\", \"age\": 20}";
         let mut output = Vec::new();
-        process_stream(BufReader::new(Cursor::new(input)), &mut output)?;
-
-        let result = String::from_utf8(output)?;
-        // Should pass through and convert to JSON
-        assert!(result.contains("Alice"));
+        process(
+            Cursor::new(input),
+            None,
+            Action::Evaluate(&dsl),
+            &mut output,
+        )?;
+        assert_eq!(
+            String::from_utf8(output)?,
+            "{\"name\": \"Alice\", \"age\": 30}\n"
+        );
         Ok(())
     }
 
     #[test]
     fn test_utility_functions() -> Result<(), Box<dyn Error>> {
-        // Test that basic utility functions work
         let dsl = parse_command("name")?;
         assert!(dsl.field_selector.is_some());
 
@@ -780,73 +611,6 @@ mod integration_tests {
 
         let dsl = parse_command("$name")?;
         assert!(dsl.template.is_some());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_convert_to_json() -> Result<(), Box<dyn Error>> {
-        use serde_json::json;
-
-        // Test JSON conversion
-        let json_line = parse::ParsedLine::Json(json!({"name": "Alice", "age": 30}));
-        let original_json = r#"{"name": "Alice", "age": 30}"#;
-        let json_result = convert_to_json(json_line, original_json)?;
-        assert_eq!(json_result["name"], "Alice");
-        assert_eq!(json_result["age"], 30);
-        assert_eq!(json_result["$0"], original_json);
-
-        // Test CSV conversion
-        let mut csv_record = csv::StringRecord::new();
-        csv_record.push_field("Alice");
-        csv_record.push_field("30");
-        csv_record.push_field("Engineer");
-        let csv_line = parse::ParsedLine::Csv(csv_record);
-        let original_csv = "Alice,30,Engineer";
-        let csv_result = convert_to_json(csv_line, original_csv)?;
-        assert_eq!(csv_result["field_0"], "Alice");
-        assert_eq!(csv_result["field_1"], "30");
-        assert_eq!(csv_result["field_2"], "Engineer");
-        assert_eq!(csv_result["$0"], original_csv);
-        assert_eq!(csv_result["1"], "Alice"); // 1-based indexing for templates
-        assert_eq!(csv_result["2"], "30");
-        assert_eq!(csv_result["3"], "Engineer");
-
-        // Test YAML conversion
-        let yaml_data =
-            serde_yaml_ng::from_str::<serde_yaml_ng::Value>("name: Alice\nage: 30").unwrap();
-        let yaml_line = parse::ParsedLine::Yaml(yaml_data);
-        let original_yaml = "name: Alice\nage: 30";
-        let yaml_result = convert_to_json(yaml_line, original_yaml)?;
-        assert_eq!(yaml_result["name"], "Alice");
-        assert_eq!(yaml_result["age"], 30);
-        assert_eq!(yaml_result["$0"], original_yaml);
-
-        // Test Text conversion
-        let text_line =
-            parse::ParsedLine::Text(vec!["Alice".into(), "30".into(), "Engineer".into()]);
-        let original_text = "Alice 30 Engineer";
-        let text_result = convert_to_json(text_line, original_text)?;
-        assert_eq!(text_result["word_0"], "Alice");
-        assert_eq!(text_result["word_1"], "30");
-        assert_eq!(text_result["word_2"], "Engineer");
-        assert_eq!(text_result["$0"], original_text);
-        assert_eq!(text_result["1"], "Alice"); // 1-based indexing for templates
-        assert_eq!(text_result["2"], "30");
-        assert_eq!(text_result["3"], "Engineer");
-
-        // Test Logfmt conversion
-        let mut logfmt_map = serde_json::Map::new();
-        logfmt_map.insert("level".into(), json!("error"));
-        logfmt_map.insert("msg".into(), json!("timeout"));
-        logfmt_map.insert("service".into(), json!("api"));
-        let logfmt_line = parse::ParsedLine::Logfmt(serde_json::Value::Object(logfmt_map));
-        let original_logfmt = "level=error msg=timeout service=api";
-        let logfmt_result = convert_to_json(logfmt_line, original_logfmt)?;
-        assert_eq!(logfmt_result["level"], "error");
-        assert_eq!(logfmt_result["msg"], "timeout");
-        assert_eq!(logfmt_result["service"], "api");
-        assert_eq!(logfmt_result["$0"], original_logfmt);
 
         Ok(())
     }

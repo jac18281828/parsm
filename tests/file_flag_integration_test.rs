@@ -113,9 +113,7 @@ fn test_missing_file_exits_with_error() {
 }
 
 /// Convert mode (no expression given) still works with `-f`: the file's
-/// content flows through `process_stream`. The exact output format of
-/// convert mode is out of scope here; only confirm the file's content made
-/// it through instead of an empty/stdin read.
+/// content is read instead of stdin and written as JSON.
 #[test]
 fn test_file_flag_convert_mode() {
     let mut file = NamedTempFile::new().expect("create temp file");
@@ -133,10 +131,9 @@ fn test_file_flag_convert_mode() {
         "parsm failed: stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("name"),
-        "expected converted output to contain 'name', got: {stdout}"
+    assert_eq!(
+        String::from_utf8_lossy(&output.stdout),
+        "{\"name\":\"Alice\"}\n"
     );
 }
 
