@@ -380,10 +380,9 @@ mod tests {
 
     #[test]
     fn test_parse_in_expression() {
-        // The 'in' operator has been removed from the grammar
-        // This test should now expect a parse error
+        // The grammar has no 'in' operator.
         let result = parse_filter_string("status in [\"active\", \"pending\"]");
-        assert!(result.is_err(), "IN operator should no longer be supported");
+        assert!(result.is_err(), "IN operator should not be supported");
     }
 
     #[test]

@@ -286,7 +286,7 @@ mod tests {
 
     use serde_json::json;
 
-    use parsm::{FilterEngine, filter::TemplateItem};
+    use parsm::FilterEngine;
 
     /// Test JSON filtering with equality comparison.
     #[test]
@@ -425,83 +425,26 @@ mod tests {
         assert!(result.is_none());
     }
 
-    /// Test debug output of template parsing.
-    #[test]
-    fn debug_template_parsing() {
-        let dsl = parse_command(r#"{${name} is ${age} years old}"#).unwrap();
-
-        if let Some(ref template) = dsl.template {
-            println!("Template items: {:?}", template.items);
-            let json_data = json!({"name": "Alice", "age": 30});
-            let output = template.render(&json_data);
-            println!("Template output: '{output}'");
-        } else {
-            panic!("Expected template");
-        }
-    }
-
-    /// Test detailed debug output of template rendering.
-    #[test]
-    fn debug_template_rendering_detailed() {
-        let dsl = parse_command(r#"{${name} is ${age} years old}"#).unwrap();
-
-        if let Some(ref template) = dsl.template {
-            println!("Template items: {:?}", template.items);
-            let json_data = json!({"name": "Alice", "age": 30});
-
-            let mut result = String::new();
-            for (i, item) in template.items.iter().enumerate() {
-                match item {
-                    TemplateItem::Field(field) => {
-                        if let Some(value) = field.get_value(&json_data) {
-                            let formatted = value.to_string();
-                            println!("Item {i}: Field({field:?}) -> '{formatted}'");
-                            result.push_str(&formatted);
-                        }
-                    }
-                    TemplateItem::Literal(text) => {
-                        println!("Item {i}: Literal -> '{text}'");
-                        result.push_str(text);
-                    }
-                    TemplateItem::Conditional { .. } => {
-                        println!("Item {i}: Conditional");
-                    }
-                }
-            }
-
-            println!("Manual result: '{result}'");
-            let template_result = template.render(&json_data);
-            println!("Template result: '{template_result}'");
-        } else {
-            panic!("Expected template");
-        }
-    }
-
-    /// Test interpolated template syntax
+    /// Test a bracketed template with interpolated literal text.
     #[test]
     fn test_interpolated_template() {
         let dsl = parse_command(r#"[Hello ${name}, you are ${age} years old]"#).unwrap();
 
-        if let Some(ref template) = dsl.template {
-            println!("Interpolated template items: {:?}", template.items);
-            let json_data = json!({"name": "Alice", "age": 30});
-            let output = template.render(&json_data);
-            println!("Interpolated output: '{output}'");
-        } else {
-            println!("No template found");
-        }
+        let template = dsl.template.expect("expected template");
+        let json_data = json!({"name": "Alice", "age": 30});
+        assert_eq!(
+            template.render(&json_data),
+            "Hello Alice, you are 30 years old"
+        );
     }
 
-    /// Test a template with explicit spacing
+    /// Test a template with underscore-adjacent field variables.
     #[test]
-    fn debug_simple_template() {
+    fn test_underscore_adjacent_template_variables() {
         let dsl = parse_command(r#"{${name}_is_${age}_years_old}"#).unwrap();
 
-        if let Some(ref template) = dsl.template {
-            println!("Simple template items: {:?}", template.items);
-            let json_data = json!({"name": "Alice", "age": 30});
-            let output = template.render(&json_data);
-            println!("Simple output: '{output}'");
-        }
+        let template = dsl.template.expect("expected template");
+        let json_data = json!({"name": "Alice", "age": 30});
+        assert_eq!(template.render(&json_data), "Alice_is_30_years_old");
     }
 }

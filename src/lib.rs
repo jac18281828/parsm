@@ -567,7 +567,20 @@ mod integration_tests {
     #[test]
     fn test_complex_filter_expressions() -> Result<(), Box<dyn Error>> {
         let dsl = parse_command(r#"age > 25 && name == "Alice""#)?;
-        assert!(dsl.filter.is_some());
+        let input = r#"{"name": "Alice", "age": 30}
+{"name": "Alice", "age": 20}
+{"name": "Bob", "age": 30}"#;
+        let mut output = Vec::new();
+        process(
+            Cursor::new(input),
+            None,
+            Action::Evaluate(&dsl),
+            &mut output,
+        )?;
+        assert_eq!(
+            String::from_utf8(output)?,
+            "{\"name\": \"Alice\", \"age\": 30}\n"
+        );
         Ok(())
     }
 
@@ -599,14 +612,37 @@ mod integration_tests {
 
     #[test]
     fn test_utility_functions() -> Result<(), Box<dyn Error>> {
-        let dsl = parse_command("name")?;
-        assert!(dsl.field_selector.is_some());
+        let input = r#"{"name": "Alice", "age": 30}"#;
 
-        let dsl = parse_command(r#"age > 25"#)?;
-        assert!(dsl.filter.is_some());
+        let dsl = parse_command("name")?;
+        let mut output = Vec::new();
+        process(
+            Cursor::new(input),
+            None,
+            Action::Evaluate(&dsl),
+            &mut output,
+        )?;
+        assert_eq!(String::from_utf8(output)?, "Alice\n");
+
+        let dsl = parse_command("age > 25")?;
+        let mut output = Vec::new();
+        process(
+            Cursor::new(input),
+            None,
+            Action::Evaluate(&dsl),
+            &mut output,
+        )?;
+        assert_eq!(String::from_utf8(output)?, format!("{input}\n"));
 
         let dsl = parse_command("$name")?;
-        assert!(dsl.template.is_some());
+        let mut output = Vec::new();
+        process(
+            Cursor::new(input),
+            None,
+            Action::Evaluate(&dsl),
+            &mut output,
+        )?;
+        assert_eq!(String::from_utf8(output)?, "Alice\n");
 
         Ok(())
     }

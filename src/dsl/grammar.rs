@@ -276,10 +276,9 @@ mod tests {
 
     #[test]
     fn test_in_operator() {
-        // The 'in' operator has been removed from the grammar
-        // This test should now expect a parse error
+        // The grammar has no 'in' operator.
         let result = DSLParser::parse_dsl("status in [\"active\", \"pending\"]");
-        assert!(result.is_err(), "IN operator should no longer be supported");
+        assert!(result.is_err(), "IN operator should not be supported");
     }
 
     #[test]
@@ -307,12 +306,8 @@ mod tests {
             }
         }
 
-        // Test regex patterns if supported
-        if let Ok(result) = DSLParser::parse_dsl("name ~= /pattern/") {
-            assert!(result.filter.is_some());
-        } else {
-            println!("Regex literals not fully supported, skipping");
-        }
+        let result = DSLParser::parse_dsl("name ~= /pattern/").unwrap();
+        assert!(result.filter.is_some());
     }
 
     #[test]

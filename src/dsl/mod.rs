@@ -297,7 +297,7 @@ mod tests {
             _ => panic!("Expected field substitution"),
         }
 
-        // Test interpolated text in brackets (now required)
+        // Test interpolated text in brackets
         let result = parse_command("[Hello ${name}!]").unwrap();
         assert!(result.template.is_some());
         let template = result.template.unwrap();
@@ -364,21 +364,14 @@ mod tests {
 
     #[test]
     fn test_not_operator_without_truthy() {
-        // NOT operator should work without ? if supported
-        if let Ok(result) = parse_command("!active") {
-            assert!(result.filter.is_some());
-        } else {
-            // Test with explicit truthy instead
-            let result = parse_command("!active?").unwrap();
-            assert!(result.filter.is_some());
-        }
+        // Bare `!field` (no `?`) is rejected everywhere: negation requires
+        // the explicit truthy check.
+        assert!(parse_command("!active").is_err());
+        assert!(parse_command("!!verified").is_err());
 
-        // Double NOT if supported
-        if parse_command("!!verified").is_err() {
-            println!("Double NOT not supported in current implementation");
-        }
-
-        // NOT in boolean expressions should work with explicit syntax
+        // NOT with explicit truthy syntax works, standalone and chained.
+        let result = parse_command("!active?").unwrap();
+        assert!(result.filter.is_some());
         let result = parse_command("!active? && !suspended?").unwrap();
         assert!(result.filter.is_some());
     }
@@ -400,10 +393,9 @@ mod tests {
 
     #[test]
     fn test_in_operator() {
-        // The 'in' operator has been removed from the grammar
-        // This test should now expect a parse error
+        // The grammar has no 'in' operator.
         let result = parse_command("status in [\"active\", \"pending\"]");
-        assert!(result.is_err(), "IN operator should no longer be supported");
+        assert!(result.is_err(), "IN operator should not be supported");
     }
 
     #[test]
