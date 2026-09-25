@@ -861,3 +861,21 @@ fn csv_undecodable_later_line_warns_and_is_skipped() {
     );
     assert!(output.status.success());
 }
+
+#[test]
+fn csv_rows_after_the_header_sample_stream() {
+    let mut cmd = parsm_command();
+    cmd.arg("name");
+    let mut session = common::Session::start(cmd);
+    session.write_line("name,age");
+    for index in 1..=6 {
+        session.write_line(&format!("user{index},{}", 20 + index));
+    }
+    let expected: Vec<String> = (1..=6).map(|index| format!("user{index}")).collect();
+    assert_eq!(session.read_lines(6), expected);
+    session.write_line("user7,27");
+    assert_eq!(session.read_lines(1), vec!["user7"]);
+    let (rest, status) = session.finish();
+    assert!(rest.is_empty(), "rest: {rest:?}");
+    assert!(status.success());
+}
