@@ -73,8 +73,10 @@ fn test_json_nested_field_selection() {
     // Test nested field selection
     let input = r#"{"user": {"profile": {"name": "Bob", "settings": {"theme": "dark"}}}}"#;
 
+    // A bare selector is the nested-path form; quoting would read
+    // "user.profile.name" as one literal key instead.
     let mut child = parsm_command()
-        .arg("\"user.profile.name\"")
+        .arg("user.profile.name")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -575,26 +577,27 @@ fn test_json_forced_format() {
         // Valid JSON that should parse correctly
         (r#"{"name": "Alice", "age": 30}"#, r#""name""#, "Alice"),
         (r#"{"name": "Alice", "age": 30}"#, r#""age""#, "30"),
-        // JSON with nested objects
+        // JSON with nested objects - a bare selector is the nested-path form;
+        // quoting reads one literal key instead (dots included).
         (
             r#"{"user": {"name": "Bob", "role": "admin"}}"#,
-            r#""user.name""#,
+            "user.name",
             "Bob",
         ),
         (
             r#"{"user": {"name": "Bob", "role": "admin"}}"#,
-            r#""user.role""#,
+            "user.role",
             "admin",
         ),
         // JSON arrays
         (
             r#"{"items": ["apple", "banana", "cherry"]}"#,
-            r#""items.0""#,
+            "items.0",
             "apple",
         ),
         (
             r#"{"items": ["apple", "banana", "cherry"]}"#,
-            r#""items.2""#,
+            "items.2",
             "cherry",
         ),
         // Test template with forced JSON

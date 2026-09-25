@@ -278,8 +278,9 @@ fn test_quoted_string_literals() {
         field_selector.parts
     );
 
-    // Test 5: "field.with.dots" should handle dots correctly
-    println!("\nTest 5: \"field.with.dots\" as dotted field selector");
+    // Test 5: "field.with.dots" is one literal key - a quoted selector
+    // never splits on dots (that's what quoting is for).
+    println!("\nTest 5: \"field.with.dots\" as a single quoted key");
     let result = parse_command("\"field.with.dots\"").unwrap();
     assert!(
         result.field_selector.is_some(),
@@ -287,9 +288,9 @@ fn test_quoted_string_literals() {
     );
 
     let field_selector = result.field_selector.unwrap();
-    assert_eq!(field_selector.parts, vec!["field", "with", "dots"]);
+    assert_eq!(field_selector.parts, vec!["field.with.dots"]);
     println!(
-        "  ✓ \"field.with.dots\" correctly parsed as field selector: {:?}",
+        "  ✓ \"field.with.dots\" correctly parsed as one key: {:?}",
         field_selector.parts
     );
 
@@ -553,10 +554,11 @@ fn test_comprehensive_disambiguation() {
                 assert!(result.is_ok(), "Filter '{input}' should parse");
                 let parsed = result.unwrap();
                 assert!(parsed.filter.is_some(), "Input '{input}' should be filter");
-                // Templates are now added by default for filters
+                // No default template injection: the record pipeline prints
+                // the record's `$0` when a filter-only DSL has no template.
                 assert!(
-                    parsed.template.is_some(),
-                    "Input '{input}' should have a template (default templates are now added to filters)"
+                    parsed.template.is_none(),
+                    "Input '{input}' should have no template"
                 );
                 assert!(
                     parsed.field_selector.is_none(),
@@ -599,7 +601,7 @@ fn test_filter_expressions() {
     // Simple comparison
     let result = parse_command(r#"name == "Alice""#).unwrap();
     assert!(result.filter.is_some());
-    assert!(result.template.is_some());
+    assert!(result.template.is_none());
     assert!(result.field_selector.is_none());
 
     if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
@@ -613,7 +615,7 @@ fn test_filter_expressions() {
     // Numeric comparison
     let result = parse_command("age > 25").unwrap();
     assert!(result.filter.is_some());
-    assert!(result.template.is_some());
+    assert!(result.template.is_none());
     assert!(result.field_selector.is_none());
 }
 
@@ -1138,4 +1140,66 @@ fn proof_single_quote_escape_unescapes() {
     let (stdout, stderr, code) = run_parsm(&[r"'it\'s'"], r#"{"it's":"Y"}"#);
     assert_eq!(code, 0, "stderr: {stderr}");
     assert_eq!(stdout, "Y");
+}
+
+/// #8: the two-argument form's first argument must be a filter or empty; a
+/// field selector there is an error naming the argument.
+#[test]
+fn proof_two_argument_form_rejects_selector_in_filter_position() {
+    let (_, stderr, code) = run_parsm(&["name", "[${x}]"], r#"{"name":"x"}"#);
+    assert_eq!(code, 1);
+    assert!(
+        stderr.contains("argument 1"),
+        "stderr should name argument 1: {stderr}"
+    );
+}
+
+/// #9: the two-argument form's second argument must be a template; a filter
+/// there is an error naming the argument.
+#[test]
+fn proof_two_argument_form_rejects_filter_in_template_position() {
+    let (_, stderr, code) = run_parsm(&["a > 0", "a > 3"], r#"{"a":5}"#);
+    assert_eq!(code, 1);
+    assert!(
+        stderr.contains("argument 2"),
+        "stderr should name argument 2: {stderr}"
+    );
+}
+
+/// #10: a quoted selector is one literal key, dots included.
+#[test]
+fn proof_quoted_selector_is_one_literal_key() {
+    let input = r#"{"user.name":"L","user":{"name":"N"}}"#;
+    let (stdout, stderr, code) = run_parsm(&[r#""user.name""#], input);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "L");
+}
+
+/// #11: a bare selector stays the nested-path form.
+#[test]
+fn proof_bare_selector_is_a_nested_path() {
+    let input = r#"{"user.name":"L","user":{"name":"N"}}"#;
+    let (stdout, stderr, code) = run_parsm(&["user.name"], input);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "N");
+}
+
+/// #12: bare `!field` stays rejected, with an error naming the `!field?` fix.
+#[test]
+fn proof_bare_not_field_names_the_fix() {
+    let (_, stderr, code) = run_parsm(&["!active"], r#"{"active":true}"#);
+    assert_eq!(code, 1);
+    assert!(
+        stderr.contains("!active?"),
+        "stderr should name '!active?': {stderr}"
+    );
+}
+
+/// #13: no default template injection - a filter-only expression prints the
+/// record via the pipeline's own "no template" fallback.
+#[test]
+fn proof_filter_only_has_no_injected_template() {
+    let (stdout, stderr, code) = run_parsm(&["a > 3"], r#"{"a":5}"#);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, r#"{"a":5}"#);
 }

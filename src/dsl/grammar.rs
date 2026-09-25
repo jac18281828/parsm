@@ -8,7 +8,7 @@ use tracing::trace;
 use super::ast::ParsedDSL;
 use super::filter_parser::FilterParser;
 use super::template_parser::TemplateParser;
-use crate::filter::{FieldPath, FilterExpr, Template};
+use crate::filter::FieldPath;
 
 /// Main DSL parser using Pest grammar with conservative syntax.
 ///
@@ -28,6 +28,8 @@ pub struct DSLParser;
 impl DSLParser {
     /// Main parsing entry point - much more permissive
     pub fn parse_dsl(input: &str) -> Result<ParsedDSL, Box<pest::error::Error<Rule>>> {
+        // program = { SOI ~ expression? ~ EOI }: a successful parse always
+        // produces exactly one program pair.
         let mut pairs = Self::parse(Rule::program, input)?;
         let program = pairs.next().unwrap();
 
@@ -44,116 +46,6 @@ impl DSLParser {
         }
 
         Ok(result)
-    }
-
-    /// Parse separate filter and template expressions
-    pub fn parse_separate(
-        filter_input: Option<&str>,
-        template_input: Option<&str>,
-    ) -> Result<ParsedDSL, Box<pest::error::Error<Rule>>> {
-        let mut result = ParsedDSL::new();
-
-        if let Some(filter_str) = filter_input {
-            if let Ok(filter_result) = Self::parse_dsl(filter_str) {
-                if filter_result.filter.is_some() {
-                    result.filter = filter_result.filter;
-                } else if filter_result.field_selector.is_some() {
-                    result.field_selector = filter_result.field_selector;
-                } else {
-                    return Err(Box::new(pest::error::Error::new_from_pos(
-                        pest::error::ErrorVariant::CustomError {
-                            message: format!(
-                                "Could not parse '{filter_str}' as filter expression or field selector",
-                            ),
-                        },
-                        pest::Position::new(filter_str, 0).unwrap(),
-                    )));
-                }
-            } else {
-                return Err(Box::new(pest::error::Error::new_from_pos(
-                    pest::error::ErrorVariant::CustomError {
-                        message: format!(
-                            "Could not parse '{filter_str}' as filter expression or field selector",
-                        ),
-                    },
-                    pest::Position::new(filter_str, 0).unwrap(),
-                )));
-            }
-        }
-
-        if let Some(template_str) = template_input {
-            if let Ok(template_result) = Self::parse_dsl(template_str) {
-                result.template = template_result.template;
-            } else {
-                return Err(Box::new(pest::error::Error::new_from_pos(
-                    pest::error::ErrorVariant::CustomError {
-                        message: format!("Could not parse '{template_str}' as template"),
-                    },
-                    pest::Position::new(template_str, 0).unwrap(),
-                )));
-            }
-        }
-
-        Ok(result)
-    }
-
-    /// Parse only a filter expression
-    pub fn parse_filter_only(input: &str) -> Result<FilterExpr, Box<pest::error::Error<Rule>>> {
-        match Self::parse_dsl(input) {
-            Ok(result) => {
-                if let Some(filter) = result.filter {
-                    Ok(filter)
-                } else {
-                    Err(Box::new(pest::error::Error::new_from_pos(
-                        pest::error::ErrorVariant::CustomError {
-                            message: "Input is not a filter expression".to_string(),
-                        },
-                        pest::Position::new(input, 0).unwrap(),
-                    )))
-                }
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Parse only a template expression
-    pub fn parse_template_only(input: &str) -> Result<Template, Box<pest::error::Error<Rule>>> {
-        match Self::parse_dsl(input) {
-            Ok(result) => {
-                if let Some(template) = result.template {
-                    Ok(template)
-                } else {
-                    Err(Box::new(pest::error::Error::new_from_pos(
-                        pest::error::ErrorVariant::CustomError {
-                            message: "Input is not a template expression".to_string(),
-                        },
-                        pest::Position::new(input, 0).unwrap(),
-                    )))
-                }
-            }
-            Err(e) => Err(e),
-        }
-    }
-
-    /// Parse only a field selector
-    pub fn parse_field_selector_only(
-        input: &str,
-    ) -> Result<FieldPath, Box<pest::error::Error<Rule>>> {
-        match Self::parse_dsl(input) {
-            Ok(result) => {
-                if let Some(field_selector) = result.field_selector {
-                    Ok(field_selector)
-                } else {
-                    Err(Box::new(pest::error::Error::new_from_pos(
-                        pest::error::ErrorVariant::CustomError {
-                            message: "Input is not a field selector".to_string(),
-                        },
-                        pest::Position::new(input, 0).unwrap(),
-                    )))
-                }
-            }
-            Err(e) => Err(e),
-        }
     }
 
     fn parse_expression(
@@ -195,17 +87,22 @@ impl DSLParser {
     }
 
     fn parse_field_selector(pair: Pair<Rule>) -> FieldPath {
+        // field_selector = { quoted_field | bare_field }: always exactly
+        // one inner pair.
         let inner = pair.into_inner().next().unwrap();
 
         match inner.as_rule() {
             Rule::quoted_field => {
+                // A quoted selector is one literal key, dots included - it
+                // exists precisely so a key containing "." is reachable.
+                // Bare `user.name` is the nested-path form. quoted_field =
+                // { string_literal }: always exactly one inner pair.
                 let string_literal = inner.into_inner().next().unwrap();
                 let content = Self::parse_string_literal(string_literal);
-                let parts: Vec<String> = content.split('.').map(|s| s.to_string()).collect();
-                FieldPath::new(parts)
+                FieldPath::single(content)
             }
             Rule::bare_field => {
-                // bare_field contains field_path
+                // bare_field = { field_path }: always exactly one inner pair.
                 let field_path_pair = inner.into_inner().next().unwrap();
                 Self::parse_field_path(field_path_pair)
             }
@@ -214,6 +111,8 @@ impl DSLParser {
     }
 
     fn parse_string_literal(pair: Pair<Rule>) -> String {
+        // string_literal = { "\"" ~ string_content ~ "\"" | "'" ~
+        // string_content_single ~ "'" }: always exactly one inner pair.
         let string_content = pair.into_inner().next().unwrap();
         Self::unescape_string_content(string_content.as_str())
     }
@@ -287,8 +186,8 @@ mod tests {
 
     #[test]
     fn test_parse_filter_only() {
-        let result = DSLParser::parse_filter_only("age > 25").unwrap();
-        match result {
+        let result = DSLParser::parse_dsl("age > 25").unwrap();
+        match result.filter.unwrap() {
             FilterExpr::Comparison { field, op, value } => {
                 assert_eq!(field.parts, vec!["age"]);
                 assert!(matches!(op, ComparisonOp::GreaterThan));
@@ -300,9 +199,10 @@ mod tests {
 
     #[test]
     fn test_parse_template_only() {
-        let result = DSLParser::parse_template_only("$name").unwrap();
-        assert_eq!(result.items.len(), 1);
-        match &result.items[0] {
+        let result = DSLParser::parse_dsl("$name").unwrap();
+        let template = result.template.unwrap();
+        assert_eq!(template.items.len(), 1);
+        match &template.items[0] {
             TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
             _ => panic!("Expected field"),
         }
@@ -310,8 +210,8 @@ mod tests {
 
     #[test]
     fn test_parse_field_selector_only() {
-        let result = DSLParser::parse_field_selector_only("user.email").unwrap();
-        assert_eq!(result.parts, vec!["user", "email"]);
+        let result = DSLParser::parse_dsl("user.email").unwrap();
+        assert_eq!(result.field_selector.unwrap().parts, vec!["user", "email"]);
     }
 
     #[test]
@@ -421,6 +321,22 @@ mod tests {
         assert!(result.field_selector.is_some());
         let field = result.field_selector.unwrap();
         assert_eq!(field.parts, vec!["field with spaces"]);
+    }
+
+    /// A quoted selector is one literal key, dots included; only quoting
+    /// reaches a key that itself contains a ".".
+    #[test]
+    fn quoted_selector_with_dots_is_one_key() {
+        let result = DSLParser::parse_dsl("\"user.name\"").unwrap();
+        let field = result.field_selector.unwrap();
+        assert_eq!(field.parts, vec!["user.name"]);
+    }
+
+    #[test]
+    fn quoted_selector_unescapes_content() {
+        let result = DSLParser::parse_dsl(r#""say \"hi\"""#).unwrap();
+        let field = result.field_selector.unwrap();
+        assert_eq!(field.parts, vec![r#"say "hi""#]);
     }
 
     #[test]

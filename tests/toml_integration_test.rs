@@ -141,8 +141,10 @@ fn test_toml_nested_keys() {
 database.port = 5432
 server.host = "0.0.0.0""#;
 
+    // A bare selector is the nested-path form; quoting reads
+    // "database.host" as one literal key instead.
     let mut child = parsm_command()
-        .arg(r#""database.host""#)
+        .arg("database.host")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -776,26 +778,27 @@ fn test_toml_forced_format() {
         // Basic TOML parsing
         ("name = \"Alice\"\nage = 30", r#""name""#, "Alice"),
         ("name = \"Alice\"\nage = 30", r#""age""#, "30"),
-        // TOML sections
+        // TOML sections - a bare selector is the nested-path form; quoting
+        // reads one literal key instead (dots included).
         (
             "[user]\nname = \"Bob\"\nrole = \"admin\"",
-            r#""user.name""#,
+            "user.name",
             "Bob",
         ),
         (
             "[user]\nname = \"Bob\"\nrole = \"admin\"",
-            r#""user.role""#,
+            "user.role",
             "admin",
         ),
         // TOML arrays
         (
             "items = [\"apple\", \"banana\", \"cherry\"]",
-            r#""items.0""#,
+            "items.0",
             "apple",
         ),
         (
             "items = [\"apple\", \"banana\", \"cherry\"]",
-            r#""items.2""#,
+            "items.2",
             "cherry",
         ),
         // Test template with forced TOML

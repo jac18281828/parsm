@@ -20,79 +20,133 @@ mod template_parser;
 pub use ast::ParsedDSL;
 pub use grammar::{DSLParser, Rule};
 
-use tracing::trace;
+use crate::filter::{FilterExpr, Template};
 
-/// Main command parsing function - delegates to appropriate parsers
+/// Main command parsing function: one argument, any DSL kind (a filter, a
+/// template, a field selector, or a filter+template combination). Returns a
+/// filter-only `ParsedDSL` with no template when the input is a filter
+/// alone - the record pipeline prints the record's `$0` when a `ParsedDSL`
+/// carries no template and no field selector.
 pub fn parse_command(input: &str) -> Result<ParsedDSL, Box<dyn std::error::Error>> {
     let trimmed = input.trim();
-    trace!("parse_command called with: '{}'", trimmed);
-
-    // Try the main parser first
-    match DSLParser::parse_dsl(trimmed) {
-        Ok(mut result) => {
-            trace!("Main parser succeeded");
-            trace!(
-                "Parsed DSL result: filter={:?}, template={:?}, field_selector={:?}",
-                result.filter.is_some(),
-                result.template.is_some(),
-                result.field_selector.is_some()
-            );
-
-            // Add default template if we have a filter but no template
-            if result.filter.is_some()
-                && result.template.is_none()
-                && result.field_selector.is_none()
-            {
-                trace!("Adding default template for filter-only expression");
-                // Parse the default template "${0}" (original line content)
-                match DSLParser::parse_dsl("[${0}]") {
-                    Ok(default_template_dsl) => {
-                        result.template = default_template_dsl.template;
-                        trace!("Default template added successfully");
-                    }
-                    Err(e) => {
-                        trace!("Failed to add default template: {:?}", e);
-                    }
-                }
-            }
-
-            Ok(result)
-        }
-        Err(parse_error) => {
-            trace!("Main parser failed, propagating parse error");
-            Err(parse_error.into())
-        }
-    }
+    DSLParser::parse_dsl(trimmed).map_err(|parse_error| match bare_not_field_hint(trimmed) {
+        Some(hint) => hint.into(),
+        None => parse_error.into(),
+    })
 }
 
-/// Parse filter and template expressions separately
-///
-/// This is useful when filter and template are provided as separate arguments
+/// A bare `!field` (negation without the explicit truthy `?`) fails the
+/// grammar with a generic "expected comparison_op" error that doesn't name
+/// the fix - negation is `!field?`. Recognize that exact shape and say so.
+fn bare_not_field_hint(input: &str) -> Option<String> {
+    let field = input.strip_prefix('!')?.trim();
+    let is_field_path = !field.is_empty()
+        && !field.starts_with('.')
+        && !field.ends_with('.')
+        && field
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.');
+    is_field_path.then(|| {
+        format!(
+            "bare '!{field}' is not supported - negation requires the explicit truthy check '!{field}?'"
+        )
+    })
+}
+
+/// Parse the CLI's two-argument form: the first argument is a filter
+/// expression or empty, the second a template. Either argument parsing as
+/// any other DSL kind - a field selector, a template in the filter
+/// position, a filter in the template position, or a filter+template
+/// combination - is an error naming the argument and what it parsed as.
 pub fn parse_separate_expressions(
     filter: Option<&str>,
     template: Option<&str>,
 ) -> Result<ParsedDSL, Box<dyn std::error::Error>> {
     let mut result = ParsedDSL::new();
 
-    // Parse filter if provided
     if let Some(filter_str) = filter
         && !filter_str.trim().is_empty()
     {
-        let filter_dsl = parse_command(filter_str)?;
-        result.filter = filter_dsl.filter;
+        result.filter = Some(parse_argument_as_filter(1, filter_str)?);
     }
 
-    // Parse template if provided
     if let Some(template_str) = template
         && !template_str.trim().is_empty()
     {
-        let template_dsl = parse_command(template_str)?;
-        result.template = template_dsl.template;
+        result.template = Some(parse_argument_as_template(2, template_str)?);
     }
 
     Ok(result)
 }
 
+/// Parse CLI argument `arg_num` (`raw`) and require it to be a filter
+/// expression alone.
+fn parse_argument_as_filter(
+    arg_num: u8,
+    raw: &str,
+) -> Result<FilterExpr, Box<dyn std::error::Error>> {
+    let trimmed = raw.trim();
+    let parsed = DSLParser::parse_dsl(trimmed).map_err(|e| -> Box<dyn std::error::Error> {
+        match bare_not_field_hint(trimmed) {
+            Some(hint) => format!("argument {arg_num} ('{raw}'): {hint}").into(),
+            None => format!("argument {arg_num} ('{raw}'): {e}").into(),
+        }
+    })?;
+    match parsed {
+        ParsedDSL {
+            filter: Some(filter),
+            template: None,
+            field_selector: None,
+        } => Ok(filter),
+        other => Err(format!(
+            "argument {arg_num} ('{raw}') is not a filter expression - it parsed as {}",
+            describe_parsed(&other)
+        )
+        .into()),
+    }
+}
+
+/// Parse CLI argument `arg_num` (`raw`) and require it to be a template
+/// alone.
+fn parse_argument_as_template(
+    arg_num: u8,
+    raw: &str,
+) -> Result<Template, Box<dyn std::error::Error>> {
+    let trimmed = raw.trim();
+    let parsed =
+        DSLParser::parse_dsl(trimmed).map_err(|e| format!("argument {arg_num} ('{raw}'): {e}"))?;
+    match parsed {
+        ParsedDSL {
+            filter: None,
+            template: Some(template),
+            field_selector: None,
+        } => Ok(template),
+        other => Err(format!(
+            "argument {arg_num} ('{raw}') is not a template - it parsed as {}",
+            describe_parsed(&other)
+        )
+        .into()),
+    }
+}
+
+/// Name the DSL kind a `ParsedDSL` resolved to, for an argument-position
+/// mismatch error. `expression`'s grammar only ever sets more than one of
+/// `filter`/`template`/`field_selector` via `combined_expr`, so a filter and
+/// a field selector are never both set.
+fn describe_parsed(dsl: &ParsedDSL) -> &'static str {
+    match (
+        dsl.filter.is_some(),
+        dsl.template.is_some(),
+        dsl.field_selector.is_some(),
+    ) {
+        (true, true, _) => "a combined filter and template",
+        (true, false, false) => "a filter expression",
+        (false, true, false) => "a template",
+        (false, false, true) => "a field selector",
+        (false, false, false) => "nothing",
+        (true, false, true) | (false, true, true) => "an unexpected combination",
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,16 +168,9 @@ mod tests {
         let result = parse_command("age > 25").unwrap();
         assert!(result.filter.is_some());
         assert!(result.field_selector.is_none());
-        // A filter-only expression gets the default "[${0}]" (original-input)
-        // template injected in production, including under `cargo test` now
-        // that the cfg!(test)-gated divergence is gone.
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["$0"]),
-            _ => panic!("Expected default template to be the $0 field"),
-        }
+        // No default template injection: a filter-only expression carries no
+        // template; the record pipeline prints the record's `$0` for that case.
+        assert!(result.template.is_none());
     }
 
     #[test]
@@ -585,12 +632,12 @@ mod tests {
         assert!(result.filter.is_none());
         assert!(result.template.is_none());
 
-        // "name?" as filter (truthy check) - gets the default $0 template
-        // injected, same as any other filter-only expression in production.
+        // "name?" as filter (truthy check) - no template, same as any
+        // other filter-only expression.
         let result = parse_command("name?").unwrap();
         assert!(result.filter.is_some());
         assert!(result.field_selector.is_none());
-        assert!(result.template.is_some());
+        assert!(result.template.is_none());
 
         // "$name" as template
         let result = parse_command("$name").unwrap();
@@ -604,11 +651,11 @@ mod tests {
         assert!(result.filter.is_none());
         assert!(result.field_selector.is_none());
 
-        // "name == \"Alice\"" as filter - also gets the default $0 template.
+        // "name == \"Alice\"" as filter - no template.
         let result = parse_command("name == \"Alice\"").unwrap();
         assert!(result.filter.is_some());
         assert!(result.field_selector.is_none());
-        assert!(result.template.is_some());
+        assert!(result.template.is_none());
     }
 
     #[test]

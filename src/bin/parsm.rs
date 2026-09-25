@@ -390,7 +390,9 @@ mod tests {
     /// Test nested field selection (e.g., "State.Status").
     #[test]
     fn test_nested_field_selection() {
-        let dsl = parse_command("\"State.Status\"").unwrap();
+        // A quoted selector is one literal key ("."s included); a bare
+        // selector is the nested-path form.
+        let dsl = parse_command("State.Status").unwrap();
 
         assert!(dsl.field_selector.is_some());
         let field_selector = dsl.field_selector.unwrap();

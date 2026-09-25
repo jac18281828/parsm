@@ -405,12 +405,10 @@ fn test_yaml_boolean_logic() {
 #[test]
 fn test_yaml_flow_syntax() {
     let test_cases = vec![
-        (
-            "user:\n  name: Charlie\n  age: 25",
-            r#""user.name""#,
-            "Charlie",
-        ),
-        ("user:\n  name: Charlie\n  age: 25", r#""user.age""#, "25"),
+        // A bare selector is the nested-path form; quoting reads one
+        // literal key instead (dots included).
+        ("user:\n  name: Charlie\n  age: 25", "user.name", "Charlie"),
+        ("user:\n  name: Charlie\n  age: 25", "user.age", "25"),
     ];
 
     for (input, field_selector, expected) in test_cases {
@@ -492,9 +490,11 @@ fn test_yaml_array_handling() {
 fn test_yaml_nested_field_access() {
     let input = "config:\n  database:\n    host: localhost\n    port: 5432";
 
+    // A bare selector is the nested-path form; quoting reads one literal
+    // key instead (dots included).
     let test_cases = vec![
-        (r#""config.database.host""#, "localhost"),
-        (r#""config.database.port""#, "5432"),
+        ("config.database.host", "localhost"),
+        ("config.database.port", "5432"),
     ];
 
     for (field_selector, expected) in test_cases {
@@ -696,16 +696,14 @@ fn test_yaml_flow_format_forced() {
     let test_cases = vec![
         ("{name: Alice, age: 30}", r#""name""#, "Alice"),
         ("{name: Alice, age: 30}", r#""age""#, "30"),
-        ("{user: {name: Bob, role: admin}}", r#""user.name""#, "Bob"),
-        (
-            "{user: {name: Bob, role: admin}}",
-            r#""user.role""#,
-            "admin",
-        ),
+        // A bare selector is the nested-path form; quoting reads one
+        // literal key instead (dots included).
+        ("{user: {name: Bob, role: admin}}", "user.name", "Bob"),
+        ("{user: {name: Bob, role: admin}}", "user.role", "admin"),
         ("{price: 25.50, currency: USD}", r#""price""#, "25.5"),
         ("{price: 25.50, currency: USD}", r#""currency""#, "USD"),
-        ("{items: [apple, banana, cherry]}", r#""items.0""#, "apple"),
-        ("{items: [apple, banana, cherry]}", r#""items.2""#, "cherry"),
+        ("{items: [apple, banana, cherry]}", "items.0", "apple"),
+        ("{items: [apple, banana, cherry]}", "items.2", "cherry"),
     ];
 
     for (input, field_selector, expected) in test_cases {
@@ -880,24 +878,26 @@ fn test_yaml_flow_format_filtering_forced() {
 #[test]
 fn test_yaml_flow_format_complex_nested_forced() {
     let test_cases = vec![
+        // A bare selector is the nested-path form; quoting reads one
+        // literal key instead (dots included).
         (
             "{config: {db: {host: localhost, port: 5432}, app: {name: myapp}}}",
-            r#""config.db.host""#,
+            "config.db.host",
             "localhost",
         ),
         (
             "{config: {db: {host: localhost, port: 5432}, app: {name: myapp}}}",
-            r#""config.app.name""#,
+            "config.app.name",
             "myapp",
         ),
         (
             "{users: [{name: Alice, role: admin}, {name: Bob, role: user}]}",
-            r#""users.0.name""#,
+            "users.0.name",
             "Alice",
         ),
         (
             "{users: [{name: Alice, role: admin}, {name: Bob, role: user}]}",
-            r#""users.1.role""#,
+            "users.1.role",
             "user",
         ),
     ];
