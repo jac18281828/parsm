@@ -29,28 +29,105 @@ use crate::filter::{FilterExpr, Template};
 /// carries no template and no field selector.
 pub fn parse_command(input: &str) -> Result<ParsedDSL, Box<dyn std::error::Error>> {
     let trimmed = input.trim();
-    DSLParser::parse_dsl(trimmed).map_err(|parse_error| match bare_not_field_hint(trimmed) {
+    DSLParser::parse_dsl(trimmed).map_err(|parse_error| match parse_error_hint(trimmed) {
         Some(hint) => hint.into(),
         None => parse_error.into(),
     })
 }
 
+/// A raw pest parse failure sometimes has a specific, nameable fix; try
+/// each recognized shape before falling back to the parser's own message.
+fn parse_error_hint(input: &str) -> Option<String> {
+    bare_not_field_hint(input).or_else(|| unbalanced_bracket_hint(input))
+}
+
 /// A bare `!field` (negation without the explicit truthy `?`) fails the
 /// grammar with a generic "expected comparison_op" error that doesn't name
-/// the fix - negation is `!field?`. Recognize that exact shape and say so.
+/// the fix - negation is `!field?`. Recognize that exact shape and say so,
+/// but only when `field` is itself a valid field path: `!a..b` should not
+/// be told to become the equally-invalid `!a..b?`.
 fn bare_not_field_hint(input: &str) -> Option<String> {
     let field = input.strip_prefix('!')?.trim();
-    let is_field_path = !field.is_empty()
-        && !field.starts_with('.')
-        && !field.ends_with('.')
-        && field
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.');
-    is_field_path.then(|| {
+    is_valid_field_path(field).then(|| {
         format!(
             "bare '!{field}' is not supported - negation requires the explicit truthy check '!{field}?'"
         )
     })
+}
+
+/// Whether `field` matches the grammar's `field_path` rule: one or more
+/// "."-separated components, each either all ASCII digits or starting with
+/// a letter/underscore.
+fn is_valid_field_path(field: &str) -> bool {
+    !field.is_empty()
+        && field.split('.').all(|part| {
+            !part.is_empty()
+                && (part.chars().all(|c| c.is_ascii_digit())
+                    || part.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                        && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        })
+}
+
+/// A "[...]" template accepts a balanced "[...]" pair as literal (its
+/// variables still interpolating) or "\[" / "\]" as an escaped literal
+/// bracket; an unescaped, unbalanced bracket fails the grammar with a
+/// generic "expected ..." error. Recognize that shape - skipping quoted
+/// and regex-literal spans, where a bracket character has nothing to do
+/// with a template - and name the escape that fixes it.
+fn unbalanced_bracket_hint(input: &str) -> Option<String> {
+    enum Span {
+        None,
+        Double,
+        Single,
+        Regex,
+    }
+    let mut span = Span::None;
+    let mut depth: i32 = 0;
+    let mut chars = input.chars();
+    while let Some(c) = chars.next() {
+        match span {
+            Span::None => match c {
+                '"' => span = Span::Double,
+                '\'' => span = Span::Single,
+                '/' => span = Span::Regex,
+                '\\' => {
+                    chars.next();
+                }
+                '[' => depth += 1,
+                ']' => {
+                    depth -= 1;
+                    if depth < 0 {
+                        return Some(
+                            "unbalanced ']' in a bracketed template - use '\\]' for a literal ']'"
+                                .to_string(),
+                        );
+                    }
+                }
+                _ => {}
+            },
+            Span::Double => {
+                if c == '\\' {
+                    chars.next();
+                } else if c == '"' {
+                    span = Span::None;
+                }
+            }
+            Span::Single => {
+                if c == '\\' {
+                    chars.next();
+                } else if c == '\'' {
+                    span = Span::None;
+                }
+            }
+            Span::Regex => {
+                if c == '/' {
+                    span = Span::None;
+                }
+            }
+        }
+    }
+    (depth > 0)
+        .then(|| "unbalanced '[' in a bracketed template - use '\\[' for a literal '['".to_string())
 }
 
 /// Parse the CLI's two-argument form: the first argument is a filter
@@ -87,7 +164,7 @@ fn parse_argument_as_filter(
 ) -> Result<FilterExpr, Box<dyn std::error::Error>> {
     let trimmed = raw.trim();
     let parsed = DSLParser::parse_dsl(trimmed).map_err(|e| -> Box<dyn std::error::Error> {
-        match bare_not_field_hint(trimmed) {
+        match parse_error_hint(trimmed) {
             Some(hint) => format!("argument {arg_num} ('{raw}'): {hint}").into(),
             None => format!("argument {arg_num} ('{raw}'): {e}").into(),
         }
@@ -113,8 +190,12 @@ fn parse_argument_as_template(
     raw: &str,
 ) -> Result<Template, Box<dyn std::error::Error>> {
     let trimmed = raw.trim();
-    let parsed =
-        DSLParser::parse_dsl(trimmed).map_err(|e| format!("argument {arg_num} ('{raw}'): {e}"))?;
+    let parsed = DSLParser::parse_dsl(trimmed).map_err(|e| -> Box<dyn std::error::Error> {
+        match parse_error_hint(trimmed) {
+            Some(hint) => format!("argument {arg_num} ('{raw}'): {hint}").into(),
+            None => format!("argument {arg_num} ('{raw}'): {e}").into(),
+        }
+    })?;
     match parsed {
         ParsedDSL {
             filter: None,
@@ -147,6 +228,7 @@ fn describe_parsed(dsl: &ParsedDSL) -> &'static str {
         (true, false, true) | (false, true, true) => "an unexpected combination",
     }
 }
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -555,25 +637,7 @@ mod tests {
     #[test]
     fn test_complex_filters() {
         let result = parse_command("name == \"Alice\" && age > 25").unwrap();
-        assert!(result.filter.is_some());
-
-        // Verify some form of filter was parsed
-        match result.filter {
-            Some(FilterExpr::And(_left, _right)) => {
-                // Full boolean logic parsed correctly
-                println!("✓ Complex filter parsed as AND expression");
-            }
-            Some(FilterExpr::Comparison { field, .. }) => {
-                // Fallback parsed a simple comparison
-                println!(
-                    "Warning: Complex filter simplified to single comparison: {:?}",
-                    field.parts
-                );
-            }
-            _ => {
-                panic!("Expected some form of filter");
-            }
-        }
+        assert!(matches!(result.filter, Some(FilterExpr::And(_, _))));
     }
 
     #[test]

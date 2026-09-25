@@ -1082,6 +1082,18 @@ fn proof_bracket_escape_is_a_literal_bracket() {
     assert_eq!(stdout, "a [ b");
 }
 
+/// OWNER: an unescaped, unbalanced `[` inside a bracketed template is a
+/// parse error naming the `\[` escape as the fix.
+#[test]
+fn proof_unbalanced_bracket_is_a_parse_error() {
+    let (_, stderr, code) = run_parsm(&["[a [ b]"], "{}");
+    assert_eq!(code, 1);
+    assert!(
+        stderr.contains(r"\["),
+        "stderr should name the '\\[' escape: {stderr}"
+    );
+}
+
 /// #4: `~` is contains; a regex literal after it is a parse error naming `~=`.
 #[test]
 fn proof_tilde_contains_rejects_regex_literal() {
@@ -1192,6 +1204,18 @@ fn proof_bare_not_field_names_the_fix() {
     assert!(
         stderr.contains("!active?"),
         "stderr should name '!active?': {stderr}"
+    );
+}
+
+/// A6: `!a..b` has no valid field path after `!`, so the hint must not
+/// suggest the equally-invalid `!a..b?` - only the generic parse error.
+#[test]
+fn proof_bare_not_invalid_field_gets_no_bad_hint() {
+    let (_, stderr, code) = run_parsm(&["!a..b"], "{}");
+    assert_eq!(code, 1);
+    assert!(
+        !stderr.contains("?' is not supported"),
+        "stderr should not offer a '!a..b?' style hint: {stderr}"
     );
 }
 
