@@ -281,11 +281,7 @@ fn parse_logfmt(line: &str) -> Option<serde_json::Value> {
                 break;
             }
             key.push(current);
-            if let Some(next_ch) = chars.next() {
-                current = next_ch;
-            } else {
-                return None; // Invalid format
-            }
+            current = chars.next()?;
         }
 
         if key.is_empty() {
