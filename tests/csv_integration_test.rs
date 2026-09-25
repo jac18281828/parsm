@@ -948,3 +948,50 @@ fn ragged_rows_keep_every_field_in_convert_mode() {
     );
     assert!(output.status.success());
 }
+
+#[test]
+fn runaway_quote_fails_its_line_and_resumes_after_it() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${a}]");
+    let mut input = String::from("a,b\n\"bad,1\n");
+    for n in 1..=100 {
+        input.push_str(&format!("{n},{n}\n"));
+    }
+    let output = common::run(cmd, input);
+    let expected: String = (1..=100).map(|n| format!("{n}\n")).collect();
+    assert_eq!(common::stdout_of(&output), expected);
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "Warning: failed to parse line 2: quoted field spans more than 64 lines\n"
+    );
+    assert!(output.status.success());
+}
+
+#[test]
+fn runaway_quote_recovery_streams_before_stdin_closes() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${a}]");
+    let mut session = common::Session::start(cmd);
+    session.write_line("a,b");
+    session.write_line("\"bad,1");
+    // The 64-line bound trips on its own once these lines are fed, with no
+    // further input needed — proving recovery does not wait for EOF.
+    for n in 1..=63 {
+        session.write_line(&format!("{n},{n}"));
+    }
+    assert_eq!(session.read_lines(1), vec!["1"]);
+    session.write_line("64,64");
+    let (rest, status) = session.finish();
+    assert!(rest.contains(&"64".to_string()), "rest: {rest:?}");
+    assert!(status.success());
+}
+
+#[test]
+fn quoted_field_within_the_bound_stays_one_record() {
+    let output = common::run(parsm_command(), "a,b\n\"x\ny\",2");
+    assert_eq!(
+        common::stdout_of(&output),
+        "{\"a\":\"x\\ny\",\"b\":\"2\"}\n"
+    );
+    assert!(output.status.success());
+}

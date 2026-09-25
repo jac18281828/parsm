@@ -2,7 +2,8 @@
 //! row.
 //!
 //! One CSV reader parses the whole input through a line feed, so a row is
-//! emitted as soon as its line ends and a quoted field may span lines.
+//! emitted as soon as its line ends and a quoted field may span lines, up
+//! to [`MAX_QUOTED_FIELD_LINES`].
 
 use std::collections::VecDeque;
 use std::io::{self, BufRead, Read};
@@ -17,6 +18,10 @@ use crate::records::RecordError;
 /// Data rows sampled after the first row to decide whether it is a header.
 const HEADER_SAMPLE_ROWS: usize = 5;
 
+/// Lines a quoted field may span before its row is given up as an
+/// unterminated quote rather than held open until EOF.
+const MAX_QUOTED_FIELD_LINES: usize = 64;
+
 /// Serves content lines to the CSV reader one at a time, recording each;
 /// undecoded lines are held back for reporting.
 struct RowFeed<R> {
@@ -26,9 +31,24 @@ struct RowFeed<R> {
     fed: Vec<Line>,
     undecodable: Vec<usize>,
     io_error: Option<io::Error>,
+    /// Set when a record's line count passed [`MAX_QUOTED_FIELD_LINES`]
+    /// without closing, forcing the read to fail.
+    bound_exceeded: bool,
 }
 
 impl<R: BufRead> RowFeed<R> {
+    fn new(source: LineSource<R>) -> Self {
+        Self {
+            source,
+            current: Vec::new(),
+            position: 0,
+            fed: Vec::new(),
+            undecodable: Vec::new(),
+            io_error: None,
+            bound_exceeded: false,
+        }
+    }
+
     /// The next decoded content line, recording undecoded ones.
     fn next_decoded(&mut self) -> io::Result<Option<Line>> {
         while let Some(line) = self.source.next_content_line()? {
@@ -44,6 +64,12 @@ impl<R: BufRead> RowFeed<R> {
 impl<R: BufRead> Read for RowFeed<R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.position == self.current.len() {
+            if self.fed.len() >= MAX_QUOTED_FIELD_LINES {
+                self.bound_exceeded = true;
+                return Err(io::Error::other(format!(
+                    "quoted field spans more than {MAX_QUOTED_FIELD_LINES} lines"
+                )));
+            }
             let line = match self.next_decoded() {
                 Ok(Some(line)) => line,
                 Ok(None) => return Ok(0),
@@ -81,10 +107,18 @@ enum Event {
     Io(io::Error),
 }
 
+fn build_reader<R: BufRead>(feed: RowFeed<R>) -> csv::Reader<RowFeed<R>> {
+    csv::ReaderBuilder::new()
+        .has_headers(false)
+        .flexible(true)
+        .from_reader(feed)
+}
+
 /// Records from CSV input. The first row and up to [`HEADER_SAMPLE_ROWS`]
 /// data rows are buffered for header detection; later rows stream.
 pub(crate) struct CsvRecords<R: BufRead> {
-    reader: csv::Reader<RowFeed<R>>,
+    /// `None` only while [`Self::recover_from_runaway_quote`] rebuilds it.
+    reader: Option<csv::Reader<RowFeed<R>>>,
     events: VecDeque<Event>,
     header: Option<Arc<CsvHeader>>,
     primed: bool,
@@ -94,20 +128,8 @@ pub(crate) struct CsvRecords<R: BufRead> {
 
 impl<R: BufRead> CsvRecords<R> {
     pub(crate) fn new(source: LineSource<R>) -> Self {
-        let feed = RowFeed {
-            source,
-            current: Vec::new(),
-            position: 0,
-            fed: Vec::new(),
-            undecodable: Vec::new(),
-            io_error: None,
-        };
-        let reader = csv::ReaderBuilder::new()
-            .has_headers(false)
-            .flexible(true)
-            .from_reader(feed);
         Self {
-            reader,
+            reader: Some(build_reader(RowFeed::new(source))),
             events: VecDeque::new(),
             header: None,
             primed: false,
@@ -118,10 +140,13 @@ impl<R: BufRead> CsvRecords<R> {
 
     /// Read one CSV row, queueing it after any lines skipped before it.
     fn read_event(&mut self) {
+        // Only absent mid-call, inside recover_from_runaway_quote.
+        let reader = self.reader.as_mut().expect("reader present between calls");
         let mut fields = csv::StringRecord::new();
-        let result = self.reader.read_record(&mut fields);
-        let feed = self.reader.get_mut();
+        let result = reader.read_record(&mut fields);
+        let feed = reader.get_mut();
         let lines = std::mem::take(&mut feed.fed);
+        let bound_exceeded = std::mem::take(&mut feed.bound_exceeded);
         for line in feed.undecodable.drain(..) {
             self.events.push_back(Event::Failed {
                 line,
@@ -131,6 +156,10 @@ impl<R: BufRead> CsvRecords<R> {
         if let Some(error) = feed.io_error.take() {
             self.events.push_back(Event::Io(error));
             self.finished = true;
+            return;
+        }
+        if bound_exceeded {
+            self.recover_from_runaway_quote(lines);
             return;
         }
         match result {
@@ -147,6 +176,24 @@ impl<R: BufRead> CsvRecords<R> {
                 reason: error.to_string(),
             }),
         }
+    }
+
+    /// Report the row's opening line as failed and replay the lines read
+    /// past it, so they are read fresh as their own rows.
+    fn recover_from_runaway_quote(&mut self, mut lines: Vec<Line>) {
+        let opening_line = if lines.is_empty() {
+            0
+        } else {
+            lines.remove(0).number
+        };
+        self.events.push_back(Event::Failed {
+            line: opening_line,
+            reason: format!("quoted field spans more than {MAX_QUOTED_FIELD_LINES} lines"),
+        });
+        let feed = self.reader.take().expect("reader present").into_inner();
+        let mut source = feed.source;
+        source.replay(lines);
+        self.reader = Some(build_reader(RowFeed::new(source)));
     }
 
     /// Buffer the first rows and turn the first into the header when the
