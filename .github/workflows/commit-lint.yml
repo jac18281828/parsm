@@ -6,7 +6,7 @@ on:
       - main
   push:
     branches:
-      - "*"
+      - "**"
 jobs:
   run-commitlint-on-pull-request:
     runs-on: ubuntu-latest
@@ -29,7 +29,7 @@ jobs:
             FROM="${{ github.event.before }}"
             TO="${{ github.sha }}"
             if [ -z "$FROM" ] || [ "$FROM" = "0000000000000000000000000000000000000000" ]; then
-              FROM="HEAD~1"
+              FROM=$(git merge-base origin/main HEAD)
             fi
           fi
           npx commitlint --from "$FROM" --to "$TO" --verbose
