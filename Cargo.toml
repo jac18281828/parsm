@@ -23,7 +23,7 @@ name = "parsm"
 path = "src/bin/parsm.rs"
 
 [dependencies]
-serde_json = "1.0"
+serde_json = { version = "1.0", features = ["preserve_order"] }
 serde = { version = "1.0", features = ["derive"] }
 csv = "1.1"
 toml = "1.1.3"
