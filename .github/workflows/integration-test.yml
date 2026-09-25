@@ -1,23 +1,20 @@
 name: Python Integration Tests
 on:
   push:
-    branches: [main]
+    branches: [main, "agent/**"]
   pull_request:
     branches: [main]
 jobs:
   python-integration-test:
     name: Python Integration Tests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.12']
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.12
         uses: actions/setup-python@v7
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.12'
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Rust dependencies
@@ -32,17 +29,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
-      - name: Cache Python dependencies
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-${{ matrix.python-version }}-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r bin/requirements.txt
       - name: Build Rust project (release mode for integration tests)
         run: cargo build --release
       - name: Run quick tests
@@ -55,60 +41,3 @@ jobs:
           python bin/integration_test.py
         env:
           RUST_LOG: error
-      - name: Upload test artifacts (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: integration-test-logs-python-${{ matrix.python-version }}
-          path: |
-            target/debug/
-            target/release/
-          retention-days: 7
-  benchmark:
-    name: Performance Benchmarks
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.11'
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache dependencies
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r bin/requirements.txt
-      - name: Build project (release mode)
-        run: cargo build --release
-      - name: Run quick tests
-        run: |
-          cd ${{ github.workspace }}
-          bash bin/quick_test.sh
-      - name: Run microbenchmarks
-        run: |
-          cd ${{ github.workspace }}
-          python bin/microbenchmark.py
-        continue-on-error: true
-      - name: Upload benchmark results
-        uses: actions/upload-artifact@v7
-        with:
-          name: benchmark-results
-          path: |
-            *.benchmark.json
-            *.benchmark.txt
-          retention-days: 30
