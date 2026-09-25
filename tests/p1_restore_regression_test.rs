@@ -418,7 +418,11 @@ fn fuzz_sweep_parse_command_never_panics() {
     inputs.push("{".repeat(100));
     inputs.push("!".repeat(100));
     inputs.push("${".repeat(100));
+    inputs.push("[".repeat(100));
     inputs.push(format!("{}active?{}", "(".repeat(40), ")".repeat(40)));
+    // A depth-100 balanced bracket span, recursing bracket_literal_span
+    // rather than tripping the unbalanced-bracket case above.
+    inputs.push(format!("{}{}", "[".repeat(100), "]".repeat(100)));
 
     // Silence the default panic-hook noise for this sweep - a panic here is
     // data (a failing input), not an unhandled test-process crash.

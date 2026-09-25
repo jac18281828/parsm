@@ -4,8 +4,39 @@
 //! These tests ensure that critical parsing distinctions and edge cases are preserved
 //! across refactoring and modularization efforts.
 
+use std::io::Write;
+use std::process::{Command, Stdio};
+
 use parsm::dsl::parse_command;
 use parsm::filter::{ComparisonOp, FilterExpr, FilterValue, TemplateItem};
+
+/// Run the built binary with `args` as its DSL arguments and `stdin_data` on
+/// stdin. Stdout and stderr are captured verbatim (stdout's trailing
+/// newline trimmed) alongside the exit code.
+fn run_parsm(args: &[&str], stdin_data: &str) -> (String, String, i32) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
+        .args(args)
+        .env("RUST_LOG", "parsm=error")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn parsm");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(stdin_data.as_bytes())
+        .expect("write stdin");
+    let output = child.wait_with_output().expect("wait for parsm");
+    (
+        String::from_utf8_lossy(&output.stdout)
+            .trim_end_matches('\n')
+            .to_string(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+        output.status.code().expect("process exited with a code"),
+    )
+}
 
 /// Test the critical parsing distinctions required for unambiguous DSL behavior.
 ///
@@ -998,4 +1029,46 @@ fn test_operator_precedence_and_spacing() {
     } else {
         panic!("Expected > operator with spaces");
     }
+}
+
+// Proof cases (prompt section 8): each documents one fixed behavior and
+// goes red when its fix is reverted.
+
+/// #1: a template variable follows the grammar's identifier rule, so
+/// `$name.` is the field `name` followed by a literal ".", never a re-parse
+/// of the matched text that swallows the dot into the variable name.
+#[test]
+fn proof_dollar_variable_stops_before_trailing_dot() {
+    let (stdout, stderr, code) = run_parsm(&["[Hello $name.]"], r#"{"name":"Al"}"#);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "Hello Al.");
+}
+
+/// #2: a braced template accepts a conditional, the same as a bracketed one.
+#[test]
+fn proof_braced_template_accepts_conditional() {
+    let (stdout, stderr, code) = run_parsm(&["{${a?x:y}}"], r#"{"a":true}"#);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "x");
+}
+
+/// #3: a balanced "[...]" pair inside a bracketed template is literal, its
+/// variable still interpolating, mirroring a braced template's "[...]".
+#[test]
+fn proof_nested_brackets_in_bracketed_template() {
+    let (stdout, stderr, code) = run_parsm(
+        &[r#"level == "error" [[${level}] ${msg}]"#],
+        r#"level=error msg="DB error""#,
+    );
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "[error] DB error");
+}
+
+/// OWNER: `\[` and `\]` escape a lone bracket character inside a bracketed
+/// template, so it need not balance with a matching `[` or `]`.
+#[test]
+fn proof_bracket_escape_is_a_literal_bracket() {
+    let (stdout, stderr, code) = run_parsm(&[r"[a \[ b]"], "{}");
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, "a [ b");
 }

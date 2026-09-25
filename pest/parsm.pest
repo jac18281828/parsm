@@ -93,80 +93,43 @@ dollar_digits_literal = @{ "$" ~ ASCII_DIGIT+ }
 braced_template = { "{" ~ braced_template_content ~ "}" }
 bracketed_template = { "[" ~ bracketed_template_content ~ "]" }
 
-braced_template_content = {
-    braced_interpolated_content |
-    braced_template_item*
-}
+// Braced and bracketed templates accept the same items, conditionals
+// included; each item alternative is tried in order, so a variable or
+// conditional gets first claim on a position before literal text does.
+braced_template_content = { braced_template_item* }
 
 braced_template_item = {
     template_variable |
+    template_conditional |
     braced_template_literal
 }
 
-bracketed_template_content = { 
-    interpolated_content |
-    bracketed_template_item* 
-}
+bracketed_template_content = { bracketed_template_item* }
 
 bracketed_template_item = {
     template_variable |
     template_conditional |
+    bracket_escape |
+    bracket_literal_span |
     bracketed_template_literal
 }
 
-// Interpolated content can exist within braces or brackets
-interpolated_content = { 
-    (interpolated_literal ~ template_variable ~ interpolated_item*) |
-    (template_variable ~ interpolated_item+)
+// A balanced "[...]" span within a bracketed template is literal
+// characters, its own brackets included; a variable or conditional inside
+// it still interpolates. Only an unmatched "]" closes the enclosing
+// bracketed_template, mirroring how a brace template already treats "]"
+// as ordinary content since "}" is its only closing delimiter. "\[" and
+// "\]" escape a lone bracket character that would otherwise be unbalanced.
+bracket_literal_span = { "[" ~ bracketed_template_item* ~ "]" }
+
+bracket_escape = @{ "\\" ~ ("[" | "]") }
+
+braced_template_literal = @{
+    (!(template_variable | template_conditional | "}") ~ ANY)+
 }
 
-braced_template_literal = @{ 
-    (!(template_variable | "}") ~ ANY)+
-}
-
-bracketed_template_literal = @{ 
-    (!(template_variable | "]") ~ ANY)+
-}
-
-interpolated_text = { 
-    (interpolated_literal ~ template_variable ~ interpolated_item*) |
-    (template_variable ~ interpolated_item+)
-}
-
-interpolated_item = {
-    template_variable |
-    safe_interpolated_literal
-}
-
-safe_interpolated_literal = @{ 
-    (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "]" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
-}
-
-interpolated_literal = @{
-    (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "]" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
-}
-
-// Braced-only interpolated-content family: unlike the shared interpolated_*
-// rules above (which also serve bracketed_template_content and must exclude
-// "]" so it can close a bracket), a "}" is a brace template's only closing
-// delimiter, so a literal "]" is ordinary content here and must not be
-// excluded.
-braced_interpolated_content = {
-    (braced_interpolated_literal ~ template_variable ~ braced_interpolated_item*) |
-    (template_variable ~ braced_interpolated_item+)
-}
-
-braced_interpolated_item = {
-    template_variable |
-    safe_braced_interpolated_literal
-}
-
-safe_braced_interpolated_literal = @{
-    (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
-}
-
-braced_interpolated_literal = @{
-    (!(("$" ~ ("{" | (LETTER | "_"))) | "{" | "}" | "&&" | "||" | "==" | "!=" | "<=" | ">=" | " < " | " > ") ~ ANY)+
+bracketed_template_literal = @{
+    (!(template_variable | template_conditional | bracket_escape | "[" | "]") ~ ANY)+
 }
 
 template_content = { template_item* }

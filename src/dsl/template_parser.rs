@@ -24,50 +24,42 @@ impl TemplateParser {
             Rule::braced_template => Self::parse_braced_template(inner),
             Rule::bracketed_template => Self::parse_bracketed_template(inner),
             Rule::simple_variable => {
-                // $name -> check if this should be a field template or literal
+                // simple_variable = @{ "$" ~ non_numeric_field_path }: always
+                // starts with "$".
                 let var_str = inner.as_str();
+                let field_name = var_str.strip_prefix('$').unwrap();
                 trace!("Parsing simple_variable: '{}'", var_str);
 
-                if let Some(field_name) = var_str.strip_prefix('$') {
-                    // Remove the '$' prefix
-
-                    // Check if this is a numeric dollar amount (like $20, $0, $1)
-                    if field_name.chars().all(|c| c.is_ascii_digit()) && !field_name.is_empty() {
-                        trace!(
-                            "Simple variable '{}' is numeric dollar amount, treating as literal",
-                            var_str
-                        );
-                        // Treat numeric dollar amounts as literals
-                        Ok(Template {
-                            items: vec![TemplateItem::Literal(var_str.to_string())],
-                        })
-                    } else {
-                        trace!(
-                            "Simple variable '{}' is field reference, treating as field",
-                            var_str
-                        );
-                        // Treat non-numeric as field substitution
-                        let field_path = Self::parse_field_path_from_simple_var(inner);
-                        Ok(Template {
-                            items: vec![TemplateItem::Field(field_path)],
-                        })
-                    }
+                // Check if this is a numeric dollar amount (like $20, $0, $1)
+                if field_name.chars().all(|c| c.is_ascii_digit()) && !field_name.is_empty() {
+                    trace!(
+                        "Simple variable '{}' is numeric dollar amount, treating as literal",
+                        var_str
+                    );
+                    // Treat numeric dollar amounts as literals
+                    Ok(Template {
+                        items: vec![TemplateItem::Literal(var_str.to_string())],
+                    })
                 } else {
-                    // Fallback - shouldn't happen
+                    trace!(
+                        "Simple variable '{}' is field reference, treating as field",
+                        var_str
+                    );
+                    // Treat non-numeric as field substitution
                     let field_path = Self::parse_field_path_from_simple_var(inner);
                     Ok(Template {
                         items: vec![TemplateItem::Field(field_path)],
                     })
                 }
             }
-            Rule::interpolated_text => Self::parse_interpolated_text(inner),
             Rule::template_conditional => Ok(Template {
                 items: vec![Self::parse_template_conditional(inner)],
             }),
             Rule::braced_variable => {
                 // Bare "${field}" at the top level - e.g. "${0}" (mapped to
                 // the $0 original-input field, same special-case as when
-                // embedded inside "{...}"/"[...]") or "${name}".
+                // embedded inside "{...}"/"[...]") or "${name}". braced_variable
+                // = { "${" ~ field_path ~ "}" }: always exactly one inner pair.
                 let field_path_pair = inner.into_inner().next().unwrap();
                 let field_path = DSLParser::parse_field_path(field_path_pair);
                 let field_path = if field_path.parts.len() == 1 && field_path.parts[0] == "0" {
@@ -93,6 +85,9 @@ impl TemplateParser {
     /// Build a `TemplateItem::Conditional` from a `template_conditional` pair:
     /// `"${" ~ field_path ~ "?" ~ template_content ~ ":" ~ template_content ~ "}"`.
     fn parse_template_conditional(pair: Pair<Rule>) -> TemplateItem {
+        // template_conditional = { "${" ~ field_path ~ "?" ~ template_content
+        // ~ ":" ~ template_content ~ "}" }: always these three inner pairs,
+        // in this order.
         let mut inner = pair.into_inner();
         let field_path_pair = inner.next().unwrap();
         let field = DSLParser::parse_field_path(field_path_pair);
@@ -135,294 +130,88 @@ impl TemplateParser {
     }
 
     fn parse_braced_template(pair: Pair<Rule>) -> Result<Template, Box<pest::error::Error<Rule>>> {
-        let template_content = match pair.into_inner().next() {
-            Some(content) => content,
-            None => {
-                trace!("parse_braced_template: no content found, returning empty template");
-                return Ok(Template { items: Vec::new() });
-            }
-        };
-
-        match template_content.as_rule() {
-            Rule::braced_template_content => {
-                // Parse the template content using the grammar
-                Self::parse_template_content_from_pairs(template_content)
-            }
-            _ => {
-                // Fallback - manually parse the content string
-                Self::parse_template_content_manually(template_content.as_str())
-            }
-        }
+        // braced_template = "{" ~ braced_template_content ~ "}": braced_template_content
+        // is the only rule inside, so this pair is always present, even when empty.
+        let template_content = pair.into_inner().next().unwrap();
+        Self::parse_template_content_from_pairs(template_content)
     }
 
     fn parse_bracketed_template(
         pair: Pair<Rule>,
     ) -> Result<Template, Box<pest::error::Error<Rule>>> {
-        let template_content = match pair.into_inner().next() {
-            Some(content) => content,
-            None => {
-                trace!("parse_bracketed_template: no content found, returning empty template");
-                return Ok(Template { items: Vec::new() });
-            }
-        };
-
-        match template_content.as_rule() {
-            Rule::bracketed_template_content => {
-                // Parse the template content using the grammar
-                Self::parse_template_content_from_pairs(template_content)
-            }
-            _ => {
-                // Fallback - manually parse the content string
-                Self::parse_template_content_manually(template_content.as_str())
-            }
-        }
+        // bracketed_template = "[" ~ bracketed_template_content ~ "]": same guarantee
+        // as parse_braced_template above.
+        let template_content = pair.into_inner().next().unwrap();
+        Self::parse_template_content_from_pairs(template_content)
     }
 
+    /// Parse a `braced_template_content` or `bracketed_template_content` pair
+    /// (each a `*_item*` sequence) into a flat `Template`.
     fn parse_template_content_from_pairs(
         pair: Pair<Rule>,
     ) -> Result<Template, Box<pest::error::Error<Rule>>> {
-        trace!("parse_template_content_from_pairs called");
         let mut items = Vec::new();
-
         for item in pair.into_inner() {
-            trace!(
-                "Processing template content item: {:?} with text: '{}'",
-                item.as_rule(),
-                item.as_str()
-            );
-            match item.as_rule() {
-                Rule::braced_template_item | Rule::bracketed_template_item => {
-                    // Parse the inner content of the template item
-                    for inner_item in item.into_inner() {
-                        trace!(
-                            "Processing inner template item: {:?} with text: '{}'",
-                            inner_item.as_rule(),
-                            inner_item.as_str()
-                        );
-                        match inner_item.as_rule() {
-                            Rule::template_variable => {
-                                trace!("Found template_variable: '{}'", inner_item.as_str());
-                                let field_path = Self::parse_template_variable(inner_item);
-                                trace!(
-                                    "Parsed template variable to field path: {:?}",
-                                    field_path.parts
-                                );
-                                items.push(TemplateItem::Field(field_path));
-                            }
-                            Rule::braced_template_literal => {
-                                let text = inner_item.as_str().to_string();
-                                trace!("Found braced_template_literal: '{}'", text);
-                                if !text.is_empty() {
-                                    items.push(TemplateItem::Literal(text));
-                                }
-                            }
-                            Rule::bracketed_template_literal => {
-                                let text = inner_item.as_str().to_string();
-                                trace!("Found bracketed_template_literal: '{}'", text);
-                                if !text.is_empty() {
-                                    items.push(TemplateItem::Literal(text));
-                                }
-                            }
-                            Rule::template_conditional => {
-                                trace!("Found template_conditional: '{}'", inner_item.as_str());
-                                items.push(Self::parse_template_conditional(inner_item));
-                            }
-                            _ => {
-                                trace!(
-                                    "Unexpected inner rule in template item: {:?}",
-                                    inner_item.as_rule()
-                                );
-                            }
-                        }
-                    }
-                }
-                Rule::template_variable => {
-                    trace!("Found direct template_variable: '{}'", item.as_str());
-                    let field_path = Self::parse_template_variable(item);
-                    trace!(
-                        "Parsed direct template variable to field path: {:?}",
-                        field_path.parts
-                    );
-                    items.push(TemplateItem::Field(field_path));
-                }
-                Rule::braced_template_literal => {
-                    let text = item.as_str().to_string();
-                    trace!("Found direct braced_template_literal: '{}'", text);
-                    if !text.is_empty() {
-                        items.push(TemplateItem::Literal(text));
-                    }
-                }
-                Rule::bracketed_template_literal => {
-                    let text = item.as_str().to_string();
-                    trace!("Found direct bracketed_template_literal: '{}'", text);
-                    if !text.is_empty() {
-                        items.push(TemplateItem::Literal(text));
-                    }
-                }
-                Rule::interpolated_content => {
-                    // Handle interpolated content like "Hello ${name}!"
-                    trace!("Found interpolated_content: '{}'", item.as_str());
-                    let parsed_template = Self::parse_template_content_manually(item.as_str())?;
-                    items.extend(parsed_template.items);
-                }
-                Rule::braced_interpolated_content => {
-                    // Handle brace-only interpolated content, e.g. "[${level}] ${msg}",
-                    // where a literal "]" is ordinary content (see grammar comment).
-                    trace!("Found braced_interpolated_content: '{}'", item.as_str());
-                    let parsed_template = Self::parse_template_content_manually(item.as_str())?;
-                    items.extend(parsed_template.items);
-                }
-                _ => {
-                    trace!("Unexpected rule in template content: {:?}", item.as_rule());
-                }
-            }
+            Self::push_template_content_item(&mut items, item)?;
         }
-
         Ok(Template { items })
     }
 
-    pub fn parse_template_content_manually(
-        content: &str,
-    ) -> Result<Template, Box<pest::error::Error<Rule>>> {
-        trace!("parse_template_content_manually called with: '{}'", content);
-        let mut items = Vec::new();
-        let mut chars = content.chars().peekable();
-        let mut current_text = String::new();
-
-        while let Some(ch) = chars.next() {
-            if ch == '$' {
-                if chars.peek() == Some(&'{') {
-                    chars.next(); // consume '{'
-                    trace!("Found ${{variable}} pattern");
-
-                    // We found a ${variable}, add any accumulated text first
-                    if !current_text.is_empty() {
-                        items.push(TemplateItem::Literal(current_text.clone()));
-                        current_text.clear();
-                    }
-
-                    // Parse the variable name, handling nested braces
-                    let mut var_name = String::new();
-                    let mut brace_depth = 1;
-                    while chars.peek().is_some() {
-                        let ch = chars.next().unwrap();
-                        if ch == '{' {
-                            brace_depth += 1;
-                            var_name.push(ch);
-                        } else if ch == '}' {
-                            brace_depth -= 1;
-                            if brace_depth == 0 {
-                                break;
-                            } else {
-                                var_name.push(ch);
-                            }
-                        } else {
-                            var_name.push(ch);
-                        }
-                    }
-
-                    if !var_name.is_empty() {
-                        trace!("Parsed braced variable: '{}'", var_name);
-                        // Special case: ${0} should map to the $0 field (original input)
-                        let field_path = if var_name == "0" {
-                            FieldPath::new(vec!["$0".to_string()])
-                        } else {
-                            Self::parse_field_name(&var_name)
-                        };
-                        items.push(TemplateItem::Field(field_path));
-                    }
-                } else {
-                    trace!("Found simple $variable pattern");
-                    // We found a $variable (simple form), add any accumulated text first
-                    if !current_text.is_empty() {
-                        items.push(TemplateItem::Literal(current_text.clone()));
-                        current_text.clear();
-                    }
-
-                    // Parse simple variable name (must start with letter or underscore, then can have letters, numbers, underscore, dots)
-                    let mut var_name = String::new();
-
-                    // First character must be a letter or underscore
-                    if let Some(&first_ch) = chars.peek()
-                        && (first_ch.is_alphabetic() || first_ch == '_')
-                    {
-                        var_name.push(chars.next().unwrap());
-
-                        // Subsequent characters can be alphanumeric, underscore, or dots
-                        while let Some(&next_ch) = chars.peek() {
-                            if next_ch.is_alphanumeric() || next_ch == '_' || next_ch == '.' {
-                                var_name.push(chars.next().unwrap());
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-
-                    if !var_name.is_empty() {
-                        trace!("Parsed simple variable: '{}'", var_name);
-                        let field_path = Self::parse_field_name(&var_name);
-                        items.push(TemplateItem::Field(field_path));
-                    } else {
-                        // Not a valid variable name (e.g., $12), treat as literal
-                        trace!(
-                            "Dollar sign followed by non-alphabetic character, treating as literal"
-                        );
-                        current_text.push(ch); // Push the '$'
-
-                        // If it's followed by digits, consume them as part of the literal
-                        while let Some(&next_ch) = chars.peek() {
-                            if next_ch.is_ascii_digit() {
-                                current_text.push(chars.next().unwrap());
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-                }
-            } else {
-                current_text.push(ch);
+    /// Resolve one `*_template_item` (or, recursively, `bracket_literal_span`)
+    /// pair and append it to `items`: a field, a conditional, a literal run,
+    /// or a balanced `[...]` span whose brackets are literal but whose
+    /// content still interpolates.
+    fn push_template_content_item(
+        items: &mut Vec<TemplateItem>,
+        item: Pair<Rule>,
+    ) -> Result<(), Box<pest::error::Error<Rule>>> {
+        match item.as_rule() {
+            Rule::braced_template_item | Rule::bracketed_template_item => {
+                // template_variable | template_conditional | bracket_literal_span |
+                // *_template_literal: the grammar guarantees exactly one inner pair.
+                let inner_item = item.into_inner().next().unwrap();
+                Self::push_template_content_item(items, inner_item)
             }
-        }
-
-        // Add any remaining text
-        if !current_text.is_empty() {
-            items.push(TemplateItem::Literal(current_text));
-        }
-
-        // If no items, create an empty template (don't treat bare content as field)
-        if items.is_empty() {
-            // Empty template is valid
-        }
-
-        Ok(Template { items })
-    }
-
-    fn parse_interpolated_text(
-        pair: Pair<Rule>,
-    ) -> Result<Template, Box<pest::error::Error<Rule>>> {
-        let mut items = Vec::new();
-
-        for part in pair.into_inner() {
-            match part.as_rule() {
-                Rule::template_variable => {
-                    let field_path = Self::parse_template_variable(part);
-                    items.push(TemplateItem::Field(field_path));
-                }
-                Rule::interpolated_literal => {
-                    let text = part.as_str().to_string();
-                    if !text.is_empty() {
-                        items.push(TemplateItem::Literal(text));
-                    }
-                }
-                _ => {}
+            Rule::template_variable => {
+                items.push(TemplateItem::Field(Self::parse_template_variable(item)));
+                Ok(())
             }
+            Rule::template_conditional => {
+                items.push(Self::parse_template_conditional(item));
+                Ok(())
+            }
+            Rule::braced_template_literal | Rule::bracketed_template_literal => {
+                let text = item.as_str().to_string();
+                if !text.is_empty() {
+                    items.push(TemplateItem::Literal(text));
+                }
+                Ok(())
+            }
+            Rule::bracket_literal_span => {
+                // "[" ~ bracketed_template_item* ~ "]": the brackets are literal,
+                // content between them still interpolates.
+                items.push(TemplateItem::Literal("[".to_string()));
+                for inner_item in item.into_inner() {
+                    Self::push_template_content_item(items, inner_item)?;
+                }
+                items.push(TemplateItem::Literal("]".to_string()));
+                Ok(())
+            }
+            Rule::bracket_escape => {
+                // bracket_escape = @{ "\\" ~ ("[" | "]") }: the character
+                // after the backslash is the literal bracket it escapes.
+                let escaped = item.as_str().chars().nth(1).unwrap();
+                items.push(TemplateItem::Literal(escaped.to_string()));
+                Ok(())
+            }
+            other => unreachable!("Unexpected template content item: {other:?}"),
         }
-
-        Ok(Template { items })
     }
 
     fn parse_template_variable(pair: Pair<Rule>) -> FieldPath {
         trace!("parse_template_variable called with: '{}'", pair.as_str());
+        // template_variable = { braced_variable | plain_variable }: always
+        // exactly one inner pair.
         let inner = pair.into_inner().next().unwrap();
         trace!(
             "parse_template_variable inner rule: {:?} with text: '{}'",
@@ -432,7 +221,8 @@ impl TemplateParser {
 
         match inner.as_rule() {
             Rule::braced_variable => {
-                // ${field_path} - extract the field_path
+                // ${field_path} - extract the field_path. braced_variable =
+                // { "${" ~ field_path ~ "}" }: always one inner pair.
                 trace!("Processing braced_variable: '{}'", inner.as_str());
                 let field_path_pair = inner.into_inner().next().unwrap();
                 let field_path = DSLParser::parse_field_path(field_path_pair);
@@ -447,7 +237,9 @@ impl TemplateParser {
                 field_path
             }
             Rule::plain_variable => {
-                // $field_path - extract the field_path (no special handling for $0)
+                // $field_path - extract the field_path (no special handling
+                // for $0). plain_variable = { "$" ~ non_numeric_field_path }:
+                // always one inner pair.
                 trace!("Processing plain_variable: '{}'", inner.as_str());
                 let field_path_pair = inner.into_inner().next().unwrap();
                 let field_path = DSLParser::parse_field_path(field_path_pair);
@@ -466,41 +258,15 @@ impl TemplateParser {
     }
 
     fn parse_field_path_from_simple_var(pair: Pair<Rule>) -> FieldPath {
-        // simple_variable is atomic: "$field_path"
+        // simple_variable = @{ "$" ~ non_numeric_field_path }: always
+        // starts with "$".
         let var_str = pair.as_str();
         trace!(
             "parse_field_path_from_simple_var called with atomic rule: '{}'",
             var_str
         );
-
-        if let Some(field_name) = var_str.strip_prefix('$') {
-            // Remove the '$' prefix
-            let parts: Vec<String> = field_name.split('.').map(|s| s.to_string()).collect();
-            FieldPath::new(parts)
-        } else {
-            // Fallback - parse as is
-            let parts: Vec<String> = var_str.split('.').map(|s| s.to_string()).collect();
-            FieldPath::new(parts)
-        }
-    }
-
-    fn parse_field_name(field_name: &str) -> FieldPath {
-        trace!("parse_field_name called with: '{}'", field_name);
-
-        // Handle numeric field references (1, 2, 3, etc. stay as "1", "2", "3")
-        if let Ok(index) = field_name.parse::<usize>()
-            && index > 0
-        {
-            trace!("Numeric field {} stays as is", index);
-            return FieldPath::new(vec![field_name.to_string()]);
-        }
-
-        // Regular field name with dot notation
-        let parts: Vec<String> = field_name
-            .split('.')
-            .map(|s| s.trim().to_string())
-            .collect();
-        trace!("Parsed field path: {:?}", parts);
+        let field_name = var_str.strip_prefix('$').unwrap();
+        let parts: Vec<String> = field_name.split('.').map(|s| s.to_string()).collect();
         FieldPath::new(parts)
     }
 }
@@ -510,178 +276,113 @@ mod tests {
     use super::*;
     use crate::filter::TemplateItem;
 
-    #[test]
-    fn test_parse_template_content_manually() {
-        let result =
-            TemplateParser::parse_template_content_manually("Hello ${name}, you have $5").unwrap();
-
-        // Adjust expectations based on actual parser behavior
-        assert!(result.items.len() >= 3);
-
-        match &result.items[0] {
-            TemplateItem::Literal(text) => assert_eq!(text, "Hello "),
-            _ => panic!("Expected literal"),
-        }
-
-        match &result.items[1] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
-            _ => panic!("Expected field"),
-        }
-
-        // Check that the rest contains the expected literal content
-        let remaining_content = result.items[2..]
-            .iter()
-            .map(|item| match item {
-                TemplateItem::Literal(text) => text.as_str(),
-                TemplateItem::Field(_) => "",
-                TemplateItem::Conditional { .. } => "",
-            })
-            .collect::<String>();
-
-        assert!(remaining_content.contains(", you have $5"));
+    /// Parse `input` as a template through the grammar's own entry point -
+    /// templates are built from pest pairs only, never a raw-string reparse.
+    fn template_of(input: &str) -> Template {
+        DSLParser::parse_dsl(input)
+            .unwrap_or_else(|e| panic!("'{input}' failed to parse: {e}"))
+            .template
+            .unwrap_or_else(|| panic!("'{input}' did not parse as a template"))
     }
 
     #[test]
-    fn test_braced_variable_special_cases() {
-        // Test ${0} -> $0 field mapping
-        let result = TemplateParser::parse_template_content_manually("${0}").unwrap();
-        assert_eq!(result.items.len(), 1);
-        match &result.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["$0"]),
-            _ => panic!("Expected ${{0}} to map to $0 field"),
-        }
-
-        // Test ${1} -> "1" field mapping
-        let result = TemplateParser::parse_template_content_manually("${1}").unwrap();
-        assert_eq!(result.items.len(), 1);
-        match &result.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["1"]),
-            _ => panic!("Expected ${{1}} to map to '1' field"),
-        }
+    fn interpolated_literal_stops_at_the_variable_boundary() {
+        // "$name." is the field "name" followed by a literal ".", never
+        // "name." as one variable name.
+        let template = template_of("[Hello $name.]");
+        assert_eq!(
+            template.items,
+            vec![
+                TemplateItem::Literal("Hello ".to_string()),
+                TemplateItem::Field(FieldPath::new(vec!["name".to_string()])),
+                TemplateItem::Literal(".".to_string()),
+            ]
+        );
     }
 
     #[test]
-    fn test_mixed_template_content() {
-        let result = TemplateParser::parse_template_content_manually(
-            "ID: ${user_id}, Amount: $20, Name: ${name}",
-        )
-        .unwrap();
-
-        // Adjust expectations based on actual parser behavior
-        // The manual parser might parse this differently than expected
-        assert!(result.items.len() >= 3); // At least the basic structure
-
-        match &result.items[0] {
-            TemplateItem::Literal(text) => assert_eq!(text, "ID: "),
-            _ => panic!("Expected literal"),
-        }
-
-        match &result.items[1] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["user_id"]),
-            _ => panic!("Expected field"),
-        }
-
-        // Check that we have the expected content somewhere, but don't be strict about segmentation
-        let all_content = result
-            .items
-            .iter()
-            .map(|item| match item {
-                TemplateItem::Literal(text) => text.as_str(),
-                TemplateItem::Field(_) => "", // Fields don't contribute to literal content check
-                TemplateItem::Conditional { .. } => "", // Conditionals don't contribute to literal content
-            })
-            .collect::<String>();
-
-        assert!(all_content.contains(", Amount: $20, Name: "));
+    fn braced_variable_zero_maps_to_source() {
+        let template = template_of("{${0}}");
+        assert_eq!(
+            template.items,
+            vec![TemplateItem::Field(FieldPath::new(vec!["$0".to_string()]))]
+        );
     }
 
     #[test]
-    fn test_nested_field_paths() {
-        let result =
-            TemplateParser::parse_template_content_manually("${user.profile.name}").unwrap();
-        assert_eq!(result.items.len(), 1);
-        match &result.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["user", "profile", "name"]),
-            _ => panic!("Expected nested field path"),
-        }
+    fn braced_variable_numeric_field_stays_as_is() {
+        let template = template_of("{${1}}");
+        assert_eq!(
+            template.items,
+            vec![TemplateItem::Field(FieldPath::new(vec!["1".to_string()]))]
+        );
     }
 
     #[test]
-    fn test_template_edge_cases() {
-        // Empty template
-        let result = TemplateParser::parse_template_content_manually("").unwrap();
-        assert_eq!(result.items.len(), 0);
-
-        // Template with only literals
-        let result = TemplateParser::parse_template_content_manually("Hello World").unwrap();
-        assert_eq!(result.items.len(), 1);
-        match &result.items[0] {
-            TemplateItem::Literal(text) => assert_eq!(text, "Hello World"),
-            _ => panic!("Expected literal"),
-        }
-
-        // Template with only variables
-        let result = TemplateParser::parse_template_content_manually("${name}").unwrap();
-        assert_eq!(result.items.len(), 1);
-        match &result.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
-            _ => panic!("Expected field"),
-        }
+    fn mixed_literal_and_field_content() {
+        let template = template_of("[ID: ${user_id}, Amount: $20, Name: ${name}]");
+        assert_eq!(
+            template.items,
+            vec![
+                TemplateItem::Literal("ID: ".to_string()),
+                TemplateItem::Field(FieldPath::new(vec!["user_id".to_string()])),
+                TemplateItem::Literal(", Amount: $20, Name: ".to_string()),
+                TemplateItem::Field(FieldPath::new(vec!["name".to_string()])),
+            ]
+        );
     }
 
     #[test]
-    fn test_dollar_amounts_vs_variables() {
-        // Test $20 patterns (should be literal)
-        let result = TemplateParser::parse_template_content_manually("$20").unwrap();
-        assert_eq!(result.items.len(), 1);
-        match &result.items[0] {
-            TemplateItem::Literal(text) => assert_eq!(text, "$20"),
-            _ => panic!("Expected $20 to be literal"),
-        }
-
-        // Test $name patterns (should be field)
-        let result = TemplateParser::parse_template_content_manually("$name").unwrap();
-        assert_eq!(result.items.len(), 1);
-        match &result.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
-            _ => panic!("Expected $name to be field"),
-        }
-
-        // Test mixed
-        let result = TemplateParser::parse_template_content_manually("$name has $50").unwrap();
-        assert_eq!(result.items.len(), 3);
-
-        match &result.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
-            _ => panic!("Expected field"),
-        }
-
-        match &result.items[1] {
-            TemplateItem::Literal(text) => assert_eq!(text, " has "),
-            _ => panic!("Expected literal"),
-        }
-
-        match &result.items[2] {
-            TemplateItem::Literal(text) => assert_eq!(text, "$50"),
-            _ => panic!("Expected literal"),
-        }
+    fn nested_field_path_variable() {
+        let template = template_of("{${user.profile.name}}");
+        assert_eq!(
+            template.items,
+            vec![TemplateItem::Field(FieldPath::new(vec![
+                "user".to_string(),
+                "profile".to_string(),
+                "name".to_string(),
+            ]))]
+        );
     }
 
     #[test]
-    fn test_parse_field_name() {
-        // Regular field name
-        let field = TemplateParser::parse_field_name("name");
-        assert_eq!(field.parts, vec!["name"]);
+    fn empty_braces_and_brackets_are_empty_templates() {
+        assert_eq!(template_of("{}").items, Vec::new());
+        assert_eq!(template_of("[]").items, Vec::new());
+    }
 
-        // Nested field name
-        let field = TemplateParser::parse_field_name("user.email");
-        assert_eq!(field.parts, vec!["user", "email"]);
+    #[test]
+    fn literal_only_content() {
+        let template = template_of("{Hello World}");
+        assert_eq!(
+            template.items,
+            vec![TemplateItem::Literal("Hello World".to_string())]
+        );
+    }
 
-        // Numeric field references stay as is
-        let field = TemplateParser::parse_field_name("1");
-        assert_eq!(field.parts, vec!["1"]);
+    #[test]
+    fn balanced_bracket_span_is_literal_but_still_interpolates() {
+        // A nested "[...]" pair inside a bracketed template is literal text;
+        // the variable inside it still interpolates.
+        let template = template_of("[[${level}] ${msg}]");
+        assert_eq!(
+            template.items,
+            vec![
+                TemplateItem::Literal("[".to_string()),
+                TemplateItem::Field(FieldPath::new(vec!["level".to_string()])),
+                TemplateItem::Literal("]".to_string()),
+                TemplateItem::Literal(" ".to_string()),
+                TemplateItem::Field(FieldPath::new(vec!["msg".to_string()])),
+            ]
+        );
+    }
 
-        let field = TemplateParser::parse_field_name("5");
-        assert_eq!(field.parts, vec!["5"]);
+    #[test]
+    fn braced_template_accepts_conditionals() {
+        let template = template_of("{${a?x:y}}");
+        assert!(matches!(
+            template.items[0],
+            TemplateItem::Conditional { .. }
+        ));
     }
 }

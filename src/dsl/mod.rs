@@ -428,17 +428,33 @@ mod tests {
 
     #[test]
     fn test_mixed_numeric_template_patterns() {
-        // Test braced template with dollar amounts and variables
+        // Test braced template with dollar amounts and variables: a run of
+        // literal text containing a "$digits" amount stays one literal, not
+        // split at the dollar sign.
         let result = parse_command("{I have $20 and ${name} has $100}").unwrap();
         assert!(result.template.is_some());
         let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 5);
+        assert_eq!(
+            template.items,
+            vec![
+                TemplateItem::Literal("I have $20 and ".to_string()),
+                TemplateItem::Field(crate::filter::FieldPath::new(vec!["name".to_string()])),
+                TemplateItem::Literal(" has $100".to_string()),
+            ]
+        );
 
         // Test interpolated text with variables and dollar amounts in brackets
         let result = parse_command("[Hello ${name}, you owe $25]").unwrap();
         assert!(result.template.is_some());
         let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 4);
+        assert_eq!(
+            template.items,
+            vec![
+                TemplateItem::Literal("Hello ".to_string()),
+                TemplateItem::Field(crate::filter::FieldPath::new(vec!["name".to_string()])),
+                TemplateItem::Literal(", you owe $25".to_string()),
+            ]
+        );
     }
 
     #[test]
