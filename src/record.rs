@@ -9,18 +9,16 @@ use std::sync::Arc;
 /// Key under which every view exposes the record's source text.
 pub const SOURCE_KEY: &str = "$0";
 
-/// A CSV header row: names as written and the keys the DSL matches.
+/// A CSV header row: names as written, the keys the DSL matches.
 #[derive(Debug)]
 pub(crate) struct CsvHeader {
     names: Vec<String>,
-    keys: Vec<String>,
 }
 
 impl CsvHeader {
     pub(crate) fn new(fields: &csv::StringRecord) -> Self {
         let names: Vec<String> = fields.iter().map(|f| f.trim().to_string()).collect();
-        let keys = names.iter().map(|name| name.to_lowercase()).collect();
-        Self { names, keys }
+        Self { names }
     }
 }
 
@@ -90,14 +88,18 @@ impl Record {
             Content::Row {
                 fields,
                 header: Some(header),
-            } => Value::Object(
-                header
+            } => {
+                let mut object: Map<String, Value> = header
                     .names
                     .iter()
                     .zip(fields)
                     .map(|(name, field)| (name.clone(), Value::String(field.clone())))
-                    .collect(),
-            ),
+                    .collect();
+                for (index, field) in fields.iter().enumerate().skip(header.names.len()) {
+                    object.insert(format!("field_{index}"), Value::String(field.clone()));
+                }
+                Value::Object(object)
+            }
             Content::Row { fields, .. } | Content::Words(fields) => strings(fields),
         }
     }
@@ -106,7 +108,7 @@ impl Record {
     pub fn view(&self) -> Value {
         let mut view = match &self.content {
             Content::Value(value) => value_view(value),
-            Content::Row { fields, header } => row_view(fields, header.as_deref(), &self.source),
+            Content::Row { fields, header } => row_view(fields, header.as_deref()),
             Content::Words(words) => words_view(words),
         };
         view.insert(SOURCE_KEY.to_string(), Value::String(self.source.clone()));
@@ -128,24 +130,26 @@ fn value_view(value: &Value) -> Map<String, Value> {
     }
 }
 
-/// `0` and `${0}` hold the line, `1`… and `field_0`… the fields, header
-/// names (lower-cased, bare, `$name` and `${name}`) the fields under a
-/// header, and `_array` every field.
-fn row_view(fields: &[String], header: Option<&CsvHeader>, source: &str) -> Map<String, Value> {
+/// `1`… and `field_0`… hold the fields, header names (as written, plus
+/// lower-case when that differs) the fields under a header, and `_array`
+/// every field. `$0`, added by [`Record::view`], carries the source line.
+fn row_view(fields: &[String], header: Option<&CsvHeader>) -> Map<String, Value> {
     let mut view = Map::new();
-    view.insert("0".to_string(), Value::String(source.to_string()));
-    view.insert("${0}".to_string(), Value::String(source.to_string()));
     for (index, field) in fields.iter().enumerate() {
         let field = Value::String(field.clone());
         view.insert((index + 1).to_string(), field.clone());
         view.insert(format!("field_{index}"), field);
     }
     if let Some(header) = header {
-        for (key, field) in header.keys.iter().zip(fields) {
-            let field = Value::String(field.clone());
-            view.insert(key.clone(), field.clone());
-            view.insert(format!("${key}"), field.clone());
-            view.insert(format!("${{{key}}}"), field);
+        for (name, field) in header.names.iter().zip(fields) {
+            let value = Value::String(field.clone());
+            let lower = name.to_lowercase();
+            if lower == *name {
+                view.insert(name.clone(), value);
+            } else {
+                view.insert(name.clone(), value.clone());
+                view.insert(lower, value);
+            }
         }
     }
     view.insert("_array".to_string(), strings(fields));
@@ -196,7 +200,7 @@ mod tests {
         assert_eq!(
             record.view(),
             json!({
-                "0": "Alice,30", "${0}": "Alice,30", "$0": "Alice,30",
+                "$0": "Alice,30",
                 "1": "Alice", "field_0": "Alice", "2": "30", "field_1": "30",
                 "_array": ["Alice", "30"]
             })
@@ -209,12 +213,39 @@ mod tests {
         let header = Arc::new(CsvHeader::new(&csv_fields("Name,age")));
         let record = Record::row(&csv_fields("Tom,45"), Some(header), "Tom,45");
         let view = record.view();
+        assert_eq!(view["Name"], "Tom");
         assert_eq!(view["name"], "Tom");
-        assert_eq!(view["$name"], "Tom");
-        assert_eq!(view["${age}"], "45");
+        assert_eq!(view["age"], "45");
         assert_eq!(view["field_1"], "45");
         let converted = serde_json::to_string(&record.to_json()).unwrap();
         assert_eq!(converted, r#"{"Name":"Tom","age":"45"}"#);
+    }
+
+    #[test]
+    fn csv_row_view_drops_template_syntax_keys() {
+        let header = Arc::new(CsvHeader::new(&csv_fields("name,age")));
+        let record = Record::row(&csv_fields("Tom,45"), Some(header), "Tom,45");
+        let view = record.view();
+        for junk in ["0", "${0}", "$name", "${name}"] {
+            assert!(!view.as_object().unwrap().contains_key(junk), "{junk}");
+        }
+        assert_eq!(view["$0"], "Tom,45");
+    }
+
+    #[test]
+    fn ragged_row_keeps_fields_past_the_header() {
+        let header = Arc::new(CsvHeader::new(&csv_fields("name,age")));
+        let record = Record::row(&csv_fields("Bob,40,extra"), Some(header), "Bob,40,extra");
+        let converted = serde_json::to_string(&record.to_json()).unwrap();
+        assert_eq!(converted, r#"{"name":"Bob","age":"40","field_2":"extra"}"#);
+    }
+
+    #[test]
+    fn short_row_omits_missing_header_names() {
+        let header = Arc::new(CsvHeader::new(&csv_fields("name,age")));
+        let record = Record::row(&csv_fields("Carol"), Some(header), "Carol");
+        let converted = serde_json::to_string(&record.to_json()).unwrap();
+        assert_eq!(converted, r#"{"name":"Carol"}"#);
     }
 
     #[test]

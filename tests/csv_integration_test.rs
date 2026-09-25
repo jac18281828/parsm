@@ -922,3 +922,29 @@ fn loose_comma_with_a_matching_next_line_is_csv() {
     assert_eq!(common::stdout_of(&output), "1\n");
     assert!(output.status.success());
 }
+
+#[test]
+fn header_keys_keep_case_and_a_lower_case_alias() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${Name}/${name}]");
+    let output = common::run(cmd, "Name,Age\nAlice,30");
+    assert_eq!(common::stdout_of(&output), "Alice/Alice\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn ragged_rows_keep_every_field_in_convert_mode() {
+    let output = common::run(parsm_command(), "name,age\nAlice,30\nBob,40,extra\nCarol");
+    assert_eq!(
+        common::stdout_of(&output),
+        concat!(
+            r#"{"name":"Alice","age":"30"}"#,
+            "\n",
+            r#"{"name":"Bob","age":"40","field_2":"extra"}"#,
+            "\n",
+            r#"{"name":"Carol"}"#,
+            "\n",
+        )
+    );
+    assert!(output.status.success());
+}
