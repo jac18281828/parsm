@@ -28,9 +28,20 @@ pub fn run(mut cmd: Command, stdin: impl AsRef<[u8]>) -> Output {
         .spawn()
         .expect("spawn parsm");
     let mut input = child.stdin.take().expect("child stdin");
-    input.write_all(stdin.as_ref()).expect("write stdin");
+    write_stdin_best_effort(&mut input, stdin.as_ref());
     drop(input);
     child.wait_with_output().expect("wait for parsm")
+}
+
+/// Write `data` to `stdin`, tolerating a child that exits (and closes its
+/// end of the pipe) before consuming all of it — expected when the child
+/// rejects its arguments before ever reading input.
+fn write_stdin_best_effort(stdin: &mut ChildStdin, data: &[u8]) {
+    match stdin.write_all(data) {
+        Ok(()) => {}
+        Err(err) if err.kind() == std::io::ErrorKind::BrokenPipe => {}
+        Err(err) => panic!("write stdin: {err}"),
+    }
 }
 
 /// Run `cmd` with stdout and stderr on one pipe; the interleaved output.
@@ -46,7 +57,7 @@ pub fn run_merged(mut cmd: Command, stdin: impl AsRef<[u8]>) -> String {
     // closes when the child exits.
     drop(cmd);
     let mut input = child.stdin.take().expect("child stdin");
-    input.write_all(stdin.as_ref()).expect("write stdin");
+    write_stdin_best_effort(&mut input, stdin.as_ref());
     drop(input);
     let mut output = String::new();
     merged
