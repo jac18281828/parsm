@@ -14,14 +14,14 @@ use parsm::{
 /// It can parse JSON, CSV, TOML, YAML, logfmt, and plain text, applying filters and templates
 /// to transform and extract data.
 fn main() {
-    // Initialize tracing subscriber
+    // Initialize tracing subscriber. RUST_LOG is read once; a value that
+    // fails to parse falls back to the default filter rather than aborting.
     let rust_log = std::env::var("RUST_LOG").unwrap_or_else(|_| "parsm=warn".to_string());
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(rust_log.parse().unwrap()),
-        )
-        .init();
+    let env_filter = tracing_subscriber::EnvFilter::try_new(&rust_log).unwrap_or_else(|_| {
+        eprintln!("Warning: ignoring invalid RUST_LOG value '{rust_log}', using parsm=warn");
+        tracing_subscriber::EnvFilter::new("parsm=warn")
+    });
+    tracing_subscriber::fmt().with_env_filter(env_filter).init();
 
     debug!("Starting parsm");
 

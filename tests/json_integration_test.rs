@@ -769,6 +769,34 @@ fn test_json_multibyte_detection_prefix() {
 }
 
 #[test]
+fn test_invalid_rust_log_falls_back_to_warn() {
+    // A malformed RUST_LOG must not abort the process; parsm falls back to
+    // its default filter and continues processing.
+    let mut child = parsm_command()
+        .env("RUST_LOG", "parsm=bogus[")
+        .arg("a == 1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn parsm");
+
+    let stdin = child.stdin.as_mut().expect("get stdin");
+    stdin.write_all(b"{\"a\": 1}\n").expect("write to stdin");
+    drop(child.stdin.take());
+
+    let output = child.wait_with_output().expect("wait for parsm");
+    assert!(
+        output.status.success(),
+        "parsm failed: stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.trim(), "{\"a\": 1}");
+}
+
+#[test]
 fn test_json_lines_field_selector() {
     // Multi-document JSON (JSON Lines) input through a field selector must
     // extract from each document in order, not be dropped by CSV misdetection.
