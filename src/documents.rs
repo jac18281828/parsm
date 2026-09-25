@@ -10,15 +10,21 @@ use crate::records::RecordError;
 /// Records parsed from a whole input.
 pub(crate) type Parsed = Vec<Result<Record, RecordError>>;
 
-/// A document's text and the input line its text starts on.
+/// A document's text and the input lines its text spans.
 struct Document {
     first_line: usize,
+    last_line: usize,
     text: String,
 }
 
 impl Document {
     fn new(first_line: usize, text: String) -> Self {
-        Self { first_line, text }
+        let last_line = first_line + text.lines().count().saturating_sub(1);
+        Self {
+            first_line,
+            last_line,
+            text,
+        }
     }
 }
 
@@ -138,13 +144,24 @@ fn join<'a>(lines: impl Iterator<Item = &'a str>) -> String {
 
 /// YAML is read as `serde_yaml_ng::Value`, which rejects duplicate keys.
 fn yaml_value(document: &Document) -> Result<Value, Failure> {
-    let yaml: serde_yaml_ng::Value = serde_yaml_ng::from_str(&document.text).map_err(|error| {
-        let offset = error
-            .location()
-            .map_or(0, |location| location.line().saturating_sub(1));
-        (document.first_line + offset, error.to_string())
-    })?;
+    let yaml: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&document.text).map_err(|error| yaml_failure(document, &error))?;
     serde_json::to_value(yaml).map_err(|error| (document.first_line, error.to_string()))
+}
+
+/// The input line of a YAML error, kept within its document, and the
+/// message without serde_yaml_ng's document-relative position.
+fn yaml_failure(document: &Document, error: &serde_yaml_ng::Error) -> Failure {
+    let message = error.to_string();
+    match error.location() {
+        Some(location) => {
+            let offset = location.line().saturating_sub(1);
+            let line = (document.first_line + offset).min(document.last_line);
+            let position = format!(" at line {} column {}", location.line(), location.column());
+            (line, message.replace(&position, ""))
+        }
+        None => (document.first_line, message),
+    }
 }
 
 fn toml_value(document: &Document) -> Result<Value, Failure> {
@@ -215,7 +232,8 @@ mod tests {
         let sources = sources(&parsed);
         assert_eq!(sources.len(), 3);
         let warning = sources[1].clone().unwrap_err();
-        assert!(warning.starts_with("failed to parse line"), "{warning}");
+        assert!(warning.starts_with("failed to parse line 3: "), "{warning}");
+        assert!(!warning.contains(" at line "), "{warning}");
         assert_eq!(sources[2], Ok("a: 3".to_string()));
     }
 

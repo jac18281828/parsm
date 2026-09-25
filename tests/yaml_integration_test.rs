@@ -1136,3 +1136,18 @@ fn yaml_flow_map_is_yaml() {
     assert_eq!(common::stdout_of(&output), "1\n");
     assert!(output.status.success());
 }
+
+#[test]
+fn yaml_later_document_failure_names_its_line() {
+    let mut cmd = parsm_command();
+    cmd.arg("a");
+    let output = common::run(cmd, "a: 1\n---\na: [\n---\na: 3");
+    assert_eq!(common::stdout_of(&output), "1\n3\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.starts_with("Warning: failed to parse line 3: "),
+        "stderr: {stderr}"
+    );
+    assert!(!stderr.contains(" at line "), "stderr: {stderr}");
+    assert!(output.status.success());
+}
