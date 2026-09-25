@@ -40,7 +40,11 @@ pub fn process<R: BufRead, W: Write>(
     for item in Records::open(input, format)? {
         match item {
             Ok(record) => write_record(&record, action, &mut *output.borrow_mut())?,
-            Err(warning @ RecordError::Skipped { .. }) => eprintln!("Warning: {warning}"),
+            Err(warning @ RecordError::Skipped { .. }) => {
+                // Records before the warning reach stdout first.
+                output.borrow_mut().flush()?;
+                eprintln!("Warning: {warning}");
+            }
             Err(error) => return Err(error.into()),
         }
     }

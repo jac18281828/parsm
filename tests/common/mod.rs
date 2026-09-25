@@ -3,7 +3,7 @@
 //! Each test crate compiles this module on its own and uses a subset of it.
 #![allow(dead_code)]
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, ExitStatus, Output, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
@@ -24,6 +24,29 @@ pub fn run(mut cmd: Command, stdin: impl AsRef<[u8]>) -> Output {
     input.write_all(stdin.as_ref()).expect("write stdin");
     drop(input);
     child.wait_with_output().expect("wait for parsm")
+}
+
+/// Run `cmd` with stdout and stderr on one pipe; the interleaved output.
+pub fn run_merged(mut cmd: Command, stdin: impl AsRef<[u8]>) -> String {
+    let (mut merged, writer) = std::io::pipe().expect("create pipe");
+    let mut child = cmd
+        .stdin(Stdio::piped())
+        .stdout(writer.try_clone().expect("clone pipe writer"))
+        .stderr(writer)
+        .spawn()
+        .expect("spawn parsm");
+    // The parent's copies of the writer end go with `cmd`, so the pipe
+    // closes when the child exits.
+    drop(cmd);
+    let mut input = child.stdin.take().expect("child stdin");
+    input.write_all(stdin.as_ref()).expect("write stdin");
+    drop(input);
+    let mut output = String::new();
+    merged
+        .read_to_string(&mut output)
+        .expect("read merged output");
+    child.wait().expect("wait for parsm");
+    output
 }
 
 /// A run's stdout as text.

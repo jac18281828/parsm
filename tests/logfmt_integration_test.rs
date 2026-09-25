@@ -623,3 +623,14 @@ fn debug_log_names_detected_format_on_stderr() {
     assert!(stderr.contains("logfmt"), "stderr: {stderr}");
     assert!(output.status.success());
 }
+
+#[test]
+fn warning_follows_the_records_before_it() {
+    let mut cmd = parsm_command();
+    cmd.arg("a");
+    let output = common::run_merged(cmd, "a=1\nbad line\na=2\n");
+    assert_eq!(
+        output,
+        "1\nWarning: failed to parse line 2: expected key=value pairs\n2\n"
+    );
+}
