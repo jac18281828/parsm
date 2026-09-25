@@ -56,8 +56,9 @@ impl StreamingParser {
             return Ok(Format::Toml);
         }
 
-        // Try logfmt (common for structured logs)
-        if self.looks_like_logfmt(line) {
+        // Try logfmt (common for structured logs); require an actual parse so
+        // plain text containing a stray `=` isn't misclassified as logfmt.
+        if self.looks_like_logfmt(line) && parse_logfmt(line).is_some() {
             return Ok(Format::Logfmt);
         }
 

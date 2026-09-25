@@ -556,3 +556,44 @@ fn test_logfmt_forced_format_filtering() {
         }
     }
 }
+
+#[test]
+fn test_logfmt_detection_requires_successful_parse() {
+    // A stray '=' must not be enough to classify a line as logfmt: only a
+    // line that parse_logfmt actually accepts stays logfmt. Text like
+    // "x = 5 is the answer" falls through to plain text instead of failing.
+    let test_cases = vec![
+        ("x = 5 is the answer", "[${word_0}]", "x"),
+        ("level=info started server", "[${word_1}]", "started"),
+    ];
+
+    for (input, expression, expected) in test_cases {
+        let mut child = parsm_command()
+            .arg(expression)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn parsm");
+
+        {
+            let stdin = child.stdin.as_mut().expect("get stdin");
+            stdin.write_all(input.as_bytes()).expect("write to stdin");
+        }
+
+        let output = child.wait_with_output().expect("wait for parsm");
+        assert!(
+            output.status.success(),
+            "parsm failed for input '{}': stderr={}",
+            input,
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert_eq!(
+            stdout.trim(),
+            expected,
+            "Failed for input '{input}' with expression '{expression}'",
+        );
+    }
+}
