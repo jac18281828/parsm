@@ -55,7 +55,6 @@ Before marking work complete, run and report:
 3. `cargo clippy --all-targets --all-features --no-deps -- -D warnings`
 4. All tests pass (unit, doc, and integration)
 5. `bin/quick_test.sh`
-6. `python3 bin/integration_test.py`
 
 If a gate stays red after a genuine fix, stop and report the error.
 

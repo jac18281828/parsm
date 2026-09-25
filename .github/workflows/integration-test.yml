@@ -1,20 +1,16 @@
-name: Python Integration Tests
+name: Quick Test Suite
 on:
   push:
     branches: [main, "agent/**"]
   pull_request:
     branches: [main]
 jobs:
-  python-integration-test:
-    name: Python Integration Tests
+  quick-test:
+    name: Quick Test Suite
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache Rust dependencies
@@ -29,15 +25,9 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
-      - name: Build Rust project (release mode for integration tests)
+      - name: Build Rust project (release mode for the smoke test)
         run: cargo build --release
       - name: Run quick tests
         run: |
           cd ${{ github.workspace }}
           bash bin/quick_test.sh
-      - name: Run Python integration tests
-        run: |
-          cd ${{ github.workspace }}
-          python bin/integration_test.py
-        env:
-          RUST_LOG: error

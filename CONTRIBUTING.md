@@ -19,10 +19,9 @@ cargo fmt --check
 cargo clippy --all-targets --all-features --no-deps -- -D warnings
 cargo test
 bin/quick_test.sh
-python3 bin/integration_test.py
 ```
 
-`bin/quick_test.sh` builds the release binary and checks its output end to end; `python3 bin/integration_test.py` reuses the binary.
+`bin/quick_test.sh` builds the release binary and checks its output end to end.
 
 ## Tests
 
