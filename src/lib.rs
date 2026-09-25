@@ -512,11 +512,9 @@ pub mod detect;
 mod documents;
 pub mod dsl;
 pub mod filter;
-pub mod format_detector;
 mod json_stream;
 mod lines;
 pub mod parse;
-pub mod parser_registry;
 pub mod pipeline;
 pub mod record;
 pub mod records;
@@ -526,8 +524,6 @@ pub use dsl::{ParsedDSL, parse_command, parse_separate_expressions};
 pub use filter::{
     ComparisonOp, FieldPath, FilterEngine, FilterExpr, FilterValue, Template, TemplateItem,
 };
-pub use format_detector::{DetectedFormat, FormatDetector};
-pub use parser_registry::{DocumentParser, ParserRegistry};
 pub use pipeline::{Action, process};
 pub use record::Record;
 pub use records::{RecordError, Records};
