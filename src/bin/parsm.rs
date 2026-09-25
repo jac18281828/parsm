@@ -21,7 +21,10 @@ fn main() {
         eprintln!("Warning: ignoring invalid RUST_LOG value '{rust_log}', using parsm=warn");
         tracing_subscriber::EnvFilter::new("parsm=warn")
     });
-    tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .with_writer(io::stderr)
+        .init();
 
     debug!("Starting parsm");
 
