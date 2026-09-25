@@ -4,805 +4,26 @@
 //! These tests ensure that critical parsing distinctions and edge cases are preserved
 //! across refactoring and modularization efforts.
 
-use std::io::Write;
-use std::process::{Command, Stdio};
+mod common;
 
+use common::command;
 use parsm::dsl::parse_command;
-use parsm::filter::{ComparisonOp, FilterExpr, FilterValue, TemplateItem};
+use parsm::filter::{ComparisonOp, FilterExpr, FilterValue};
 
 /// Run the built binary with `args` as its DSL arguments and `stdin_data` on
 /// stdin. Stdout and stderr are captured verbatim (stdout's trailing
 /// newline trimmed) alongside the exit code.
 fn run_parsm(args: &[&str], stdin_data: &str) -> (String, String, i32) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_parsm"))
-        .args(args)
-        .env("RUST_LOG", "parsm=error")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-    child
-        .stdin
-        .take()
-        .expect("stdin")
-        .write_all(stdin_data.as_bytes())
-        .expect("write stdin");
-    let output = child.wait_with_output().expect("wait for parsm");
+    let mut cmd = command();
+    cmd.args(args);
+    let output = common::run(cmd, stdin_data);
     (
-        String::from_utf8_lossy(&output.stdout)
+        common::stdout_of(&output)
             .trim_end_matches('\n')
             .to_string(),
         String::from_utf8_lossy(&output.stderr).into_owned(),
         output.status.code().expect("process exited with a code"),
     )
-}
-
-/// Test the critical parsing distinctions required for unambiguous DSL behavior.
-///
-/// This test ensures that:
-/// - `$name` and `${name}` are always parsed as field substitutions (variables)
-/// - `"name"` and `{name}` are always parsed as literals
-/// - Dollar amounts like `$20`, `$0`, `$1` are always treated as numeric literals (not variables)
-/// - Only `${0}`, `${1}`, `${20}` are treated as field substitutions for numeric fields
-#[test]
-fn test_critical_parsing_distinctions() {
-    println!("\n=== Testing Critical Parsing Distinctions ===");
-
-    // Test 1: $name should be parsed as field substitution (variable)
-    println!("\nTest 1: $name as field substitution");
-    let result = parse_command("$name").unwrap();
-    assert!(result.template.is_some(), "$name should be template");
-    assert!(result.filter.is_none(), "$name should not be filter");
-    assert!(
-        result.field_selector.is_none(),
-        "$name should not be field selector"
-    );
-
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Field(field) => {
-            assert_eq!(field.parts, vec!["name"]);
-            println!(
-                "  ✓ $name correctly parsed as field substitution: {:?}",
-                field.parts
-            );
-        }
-        TemplateItem::Literal(text) => {
-            panic!("$name should be field substitution, not literal: {text}");
-        }
-        TemplateItem::Conditional { .. } => {
-            panic!("$name should not be conditional template");
-        }
-    }
-
-    // Test 2: ${name} as a bare top-level field substitution is covered by
-    // `bare_braced_named_variable_requires_p1_3` below (restore-in-P1.3, Set
-    // B: cov-tmpl-dollar-zero's branch generalizes to named fields too).
-
-    // Test 3: "name" should be parsed as literal (quoted field selector)
-    println!("\nTest 3: \"name\" as literal field selector");
-    let result = parse_command("\"name\"").unwrap();
-    assert!(
-        result.field_selector.is_some(),
-        "\"name\" should be field selector"
-    );
-    assert!(result.filter.is_none(), "\"name\" should not be filter");
-    assert!(result.template.is_none(), "\"name\" should not be template");
-
-    let field_selector = result.field_selector.unwrap();
-    assert_eq!(field_selector.parts, vec!["name"]);
-    println!(
-        "  ✓ \"name\" correctly parsed as field selector: {:?}",
-        field_selector.parts
-    );
-
-    // Test 4: {name} should be parsed as literal template
-    println!("\nTest 4: {{name}} as literal template");
-    let result = parse_command("{name}").unwrap();
-    assert!(result.template.is_some(), "{{name}} should be template");
-    assert!(result.filter.is_none(), "{{name}} should not be filter");
-    assert!(
-        result.field_selector.is_none(),
-        "{{name}} should not be field selector"
-    );
-
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Literal(text) => assert_eq!(text, "name"),
-        _ => panic!("{{name}} should be literal template, not field substitution"),
-    }
-
-    // Test 5 ($20) and Test 6 ($0) - bare top-level all-digit dollar-amount
-    // literals - are covered by `bare_dollar_amount_literal_requires_p1_3`
-    // below (restore-in-P1.3, Set B: cov-tmpl-dollar-digits).
-
-    // Test 7: ${0} should be parsed as field substitution (numeric field reference)
-    println!("\nTest 7: ${{0}} as field substitution");
-    let result = parse_command("${0}");
-    match result {
-        Ok(parsed) => {
-            if let Some(template) = parsed.template {
-                if template.items.len() == 1 {
-                    match &template.items[0] {
-                        TemplateItem::Field(field) => {
-                            // ${0} maps to "$0" field reference
-                            assert_eq!(field.parts, vec!["$0"]);
-                            println!("  ✓ ${{0}} correctly parsed as field substitution to $0");
-                        }
-                        _ => panic!("${{0}} should be field substitution"),
-                    }
-                }
-            } else {
-                panic!("${{0}} should parse as template");
-            }
-        }
-        Err(e) => {
-            println!("  ⚠ ${{0}} failed to parse: {e}");
-            // This might be acceptable depending on implementation
-        }
-    }
-
-    println!("\n=== All Critical Parsing Distinction Tests Completed ===");
-}
-
-/// `${name}` (a bare, top-level braced variable for a non-numeric field) has
-/// no `template_expr` alternative in the pest grammar without the fallback -
-/// `braced_variable` only exists embedded inside `{...}`/`[...]` content
-/// rules, not as a standalone top-level form. Split out of
-/// `test_critical_parsing_distinctions` (formerly "Test 2") because the rest
-/// of that test's assertions still hold.
-#[test]
-fn bare_braced_named_variable_requires_p1_3() {
-    let result = parse_command("${name}").unwrap();
-    assert!(result.template.is_some(), "${{name}} should be template");
-    assert!(result.filter.is_none(), "${{name}} should not be filter");
-    assert!(
-        result.field_selector.is_none(),
-        "${{name}} should not be field selector"
-    );
-
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Field(field) => {
-            assert_eq!(field.parts, vec!["name"]);
-        }
-        TemplateItem::Literal(text) => {
-            panic!("${{name}} should be field substitution, not literal: {text}");
-        }
-        TemplateItem::Conditional { .. } => {
-            panic!("${{name}} should not be conditional template");
-        }
-    }
-}
-
-/// Bare top-level all-digit dollar amounts (`$20`, `$0`) have no
-/// `template_expr` alternative in the pest grammar without the fallback.
-/// Split out of `test_critical_parsing_distinctions` (formerly "Test 5" and
-/// "Test 6") because the rest of that test's assertions still hold.
-#[test]
-fn bare_dollar_amount_literal_requires_p1_3() {
-    let result = parse_command("$20").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Literal(text) => assert_eq!(text, "$20"),
-        _ => panic!("Expected $20 to be literal"),
-    }
-
-    let result = parse_command("$0").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Literal(text) => assert_eq!(text, "$0"),
-        _ => panic!("Expected $0 to be literal"),
-    }
-}
-
-/// Test quoted string literals parsing correctly as field selectors.
-#[test]
-fn test_quoted_string_literals() {
-    println!("\n=== Testing Quoted String Literals ===");
-
-    // Test 1: "Alice" should be parsed as field selector with value "Alice"
-    println!("\nTest 1: \"Alice\" as quoted field selector");
-    let result = parse_command("\"Alice\"").unwrap();
-    assert!(
-        result.field_selector.is_some(),
-        "\"Alice\" should be field selector"
-    );
-    assert!(result.filter.is_none(), "\"Alice\" should not be filter");
-    assert!(
-        result.template.is_none(),
-        "\"Alice\" should not be template"
-    );
-
-    let field_selector = result.field_selector.unwrap();
-    assert_eq!(field_selector.parts, vec!["Alice"]);
-    println!(
-        "  ✓ \"Alice\" correctly parsed as field selector: {:?}",
-        field_selector.parts
-    );
-
-    // Test 2: "25" should be parsed as field selector with value "25" (string)
-    println!("\nTest 2: \"25\" as quoted field selector");
-    let result = parse_command("\"25\"").unwrap();
-    assert!(
-        result.field_selector.is_some(),
-        "\"25\" should be field selector"
-    );
-    assert!(result.filter.is_none(), "\"25\" should not be filter");
-    assert!(result.template.is_none(), "\"25\" should not be template");
-
-    let field_selector = result.field_selector.unwrap();
-    assert_eq!(field_selector.parts, vec!["25"]);
-    println!(
-        "  ✓ \"25\" correctly parsed as field selector: {:?}",
-        field_selector.parts
-    );
-
-    // Test 3: Single-quoted strings should work the same way
-    println!("\nTest 3: 'Alice' as single-quoted field selector");
-    let result = parse_command("'Alice'").unwrap();
-    assert!(
-        result.field_selector.is_some(),
-        "'Alice' should be field selector"
-    );
-    assert!(result.filter.is_none(), "'Alice' should not be filter");
-    assert!(result.template.is_none(), "'Alice' should not be template");
-
-    let field_selector = result.field_selector.unwrap();
-    assert_eq!(field_selector.parts, vec!["Alice"]);
-    println!(
-        "  ✓ 'Alice' correctly parsed as field selector: {:?}",
-        field_selector.parts
-    );
-
-    // Test 4: 'name with spaces' should work
-    println!("\nTest 4: 'field name' as quoted field selector with spaces");
-    let result = parse_command("'field name'").unwrap();
-    assert!(
-        result.field_selector.is_some(),
-        "'field name' should be field selector"
-    );
-
-    let field_selector = result.field_selector.unwrap();
-    assert_eq!(field_selector.parts, vec!["field name"]);
-    println!(
-        "  ✓ 'field name' correctly parsed as field selector: {:?}",
-        field_selector.parts
-    );
-
-    // Test 5: "field.with.dots" is one literal key - a quoted selector
-    // never splits on dots (that's what quoting is for).
-    println!("\nTest 5: \"field.with.dots\" as a single quoted key");
-    let result = parse_command("\"field.with.dots\"").unwrap();
-    assert!(
-        result.field_selector.is_some(),
-        "\"field.with.dots\" should be field selector"
-    );
-
-    let field_selector = result.field_selector.unwrap();
-    assert_eq!(field_selector.parts, vec!["field.with.dots"]);
-    println!(
-        "  ✓ \"field.with.dots\" correctly parsed as one key: {:?}",
-        field_selector.parts
-    );
-
-    println!("\n=== Quoted String Literal Tests Completed ===");
-}
-
-/// Test template variable edge cases with numeric and literal patterns.
-#[test]
-fn test_template_variable_edge_cases() {
-    // Test ${0} - should be special variable for original input
-    let result = parse_command("${0}").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Field(field) => {
-            // ${0} should map to "$0" field reference
-            assert_eq!(field.parts, vec!["$0"]);
-        }
-        _ => panic!("Expected ${{0}} to be field substitution"),
-    }
-
-    // Test $0 - should be literal (not special)
-    let result = parse_command("$0").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Literal(text) => assert_eq!(text, "$0"),
-        _ => panic!("Expected $0 to be literal"),
-    }
-
-    // Test $20 - should be literal dollar amount
-    let result = parse_command("$20").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Literal(text) => assert_eq!(text, "$20"),
-        _ => panic!("Expected $20 to be literal"),
-    }
-
-    // Test $1 - should be literal dollar amount
-    let result = parse_command("$1").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Literal(text) => assert_eq!(text, "$1"),
-        _ => panic!("Expected $1 to be literal"),
-    }
-
-    // Test ${1} - should be field variable (maps to "1")
-    let result = parse_command("${1}").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Field(field) => assert_eq!(field.parts, vec!["1"]),
-        _ => panic!("Expected ${{1}} to be field substitution"),
-    }
-
-    // Test ${2} - should be field variable (maps to "2")
-    let result = parse_command("${2}").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Field(field) => assert_eq!(field.parts, vec!["2"]),
-        _ => panic!("Expected ${{2}} to be field substitution"),
-    }
-
-    // Test ${20} - should be field variable (maps to "20")
-    let result = parse_command("${20}").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Field(field) => assert_eq!(field.parts, vec!["20"]),
-        _ => panic!("Expected ${{20}} to be field substitution"),
-    }
-}
-
-/// Test templates with mixed numeric literals and variables.
-#[test]
-fn test_mixed_numeric_template_patterns() {
-    // Test braced template with dollar amounts and variables: {I have $20 and ${name} has $100}
-    let result = parse_command("{I have $20 and ${name} has $100}").unwrap();
-    assert!(result.template.is_some());
-    let template = result.template.unwrap();
-
-    // Should have 3 items: literal "I have $20 and ", field "name", literal " has $100"
-    assert!(template.items.len() >= 2); // At least literal and field
-
-    // Check that we have both literal text with dollar amounts and field substitutions
-    let mut found_literal_with_dollar = false;
-    let mut found_field = false;
-
-    for item in &template.items {
-        match item {
-            TemplateItem::Literal(text) => {
-                if text.contains("$20") || text.contains("$100") {
-                    found_literal_with_dollar = true;
-                }
-            }
-            TemplateItem::Field(field) if field.parts == vec!["name"] => {
-                found_field = true;
-            }
-            _ => {}
-        }
-    }
-
-    assert!(
-        found_literal_with_dollar,
-        "Should contain literal dollar amounts"
-    );
-    assert!(found_field, "Should contain field substitution");
-}
-
-/// Test edge cases and boundary conditions for parsing distinctions.
-#[test]
-fn test_parsing_edge_cases() {
-    println!("\n=== Testing Edge Cases ===");
-
-    let test_cases = vec![
-        // Edge cases for dollar amounts vs variables
-        ("$1", "literal dollar amount"),
-        ("$999", "literal dollar amount"),
-        ("$00", "literal dollar amount"),
-        ("$01", "literal dollar amount"),
-        // Edge cases for braced expressions
-        ("${1}", "field substitution"),
-        ("${999}", "field substitution"),
-        ("${00}", "field substitution"),
-        ("${01}", "field substitution"),
-        // Edge cases for variable names
-        ("$a", "field substitution - single letter"),
-        ("$_", "field substitution - underscore"),
-        ("$name_123", "field substitution - alphanumeric"),
-        // Edge cases for literals
-        ("{$20}", "literal template with dollar amount"),
-        ("{${name}}", "template with field substitution"),
-        ("\"$20\"", "quoted literal"),
-        // Boundary cases
-        ("$", "bare dollar sign"),
-        ("${}", "empty braced expression"),
-        ("{}", "empty braces"),
-    ];
-
-    for (input, description) in test_cases {
-        println!("\nTesting edge case: {input} ({description})");
-        match parse_command(input) {
-            Ok(result) => {
-                println!("  ✓ Parsed successfully:");
-                println!("    Filter: {:?}", result.filter.is_some());
-                println!("    Template: {:?}", result.template.is_some());
-                println!("    Field selector: {:?}", result.field_selector.is_some());
-
-                // Verify specific expectations for key cases
-                match input {
-                    "$1" | "$999" | "$00" | "$01" => {
-                        assert!(result.template.is_some(), "{input} should be template");
-                        if let Some(template) = result.template
-                            && !template.items.is_empty()
-                        {
-                            match &template.items[0] {
-                                TemplateItem::Literal(text) => assert_eq!(text, input),
-                                _ => panic!("{input} should be literal"),
-                            }
-                        }
-                    }
-                    "${1}" | "${999}" | "${00}" | "${01}" => {
-                        assert!(result.template.is_some(), "{input} should be template");
-                        if let Some(template) = result.template
-                            && !template.items.is_empty()
-                        {
-                            match &template.items[0] {
-                                TemplateItem::Field(_) => {} // Expected
-                                _ => panic!("{input} should be field substitution"),
-                            }
-                        }
-                    }
-                    "\"$20\"" => {
-                        assert!(
-                            result.field_selector.is_some(),
-                            "{input} should be field selector"
-                        );
-                    }
-                    _ => {} // Other cases just need to not crash
-                }
-            }
-            Err(e) => {
-                println!("  ⚠ Failed to parse: {e}");
-                // Some edge cases may legitimately fail to parse
-            }
-        }
-    }
-
-    println!("\n=== Edge Case Tests Completed ===");
-}
-
-/// Test comprehensive syntax disambiguation across all DSL forms.
-#[test]
-fn test_comprehensive_disambiguation() {
-    let test_cases = vec![
-        // Templates with new syntax
-        ("{${name}}", "template"),
-        ("{State of ${name}}", "template"),
-        ("$name", "template"),
-        ("{name}", "literal_template"),
-        // Field selectors
-        ("name", "field_selector"),
-        ("user.email", "field_selector"),
-        ("\"field name\"", "field_selector"),
-        // Filters
-        ("name == \"Alice\"", "filter"),
-        ("age > 25", "filter"),
-        ("user.active == true", "filter"),
-        // Note: bare top-level "${name}" is NOT included here - it has no
-        // top-level template_expr alternative without the fallback; see
-        // `bare_braced_named_variable_requires_p1_3` above.
-    ];
-
-    for (input, expected_type) in test_cases {
-        let result = parse_command(input);
-
-        match expected_type {
-            "template" => {
-                assert!(result.is_ok(), "Template '{input}' should parse");
-                let parsed = result.unwrap();
-                assert!(
-                    parsed.template.is_some(),
-                    "Input '{input}' should be template"
-                );
-                assert!(
-                    parsed.filter.is_none(),
-                    "Input '{input}' should not be filter"
-                );
-                assert!(
-                    parsed.field_selector.is_none(),
-                    "Input '{input}' should not be field selector"
-                );
-            }
-            "field_selector" => {
-                assert!(result.is_ok(), "Field selector '{input}' should parse");
-                let parsed = result.unwrap();
-                assert!(
-                    parsed.field_selector.is_some(),
-                    "Input '{input}' should be field selector"
-                );
-                assert!(
-                    parsed.filter.is_none(),
-                    "Input '{input}' should not be filter"
-                );
-                assert!(
-                    parsed.template.is_none(),
-                    "Input '{input}' should not be template"
-                );
-            }
-            "filter" => {
-                assert!(result.is_ok(), "Filter '{input}' should parse");
-                let parsed = result.unwrap();
-                assert!(parsed.filter.is_some(), "Input '{input}' should be filter");
-                // No default template injection: the record pipeline prints
-                // the record's `$0` when a filter-only DSL has no template.
-                assert!(
-                    parsed.template.is_none(),
-                    "Input '{input}' should have no template"
-                );
-                assert!(
-                    parsed.field_selector.is_none(),
-                    "Input '{input}' should not be field selector"
-                );
-            }
-            "literal_template" => {
-                assert!(result.is_ok(), "Literal template '{input}' should parse");
-                let parsed = result.unwrap();
-                assert!(
-                    parsed.template.is_some(),
-                    "Input '{input}' should be template"
-                );
-                assert!(
-                    parsed.filter.is_none(),
-                    "Input '{input}' should not be filter"
-                );
-                assert!(
-                    parsed.field_selector.is_none(),
-                    "Input '{input}' should not be field selector"
-                );
-                // Check that it's a literal, not a field
-                let template = parsed.template.unwrap();
-                if template.items.len() == 1 {
-                    if let TemplateItem::Literal(_) = &template.items[0] {
-                        // ok
-                    } else {
-                        panic!("Input '{input}' should be literal template, not field");
-                    }
-                }
-            }
-            _ => panic!("Unknown expected type: {expected_type}"),
-        }
-    }
-}
-
-/// Test that filter expressions work correctly.
-#[test]
-fn test_filter_expressions() {
-    // Simple comparison
-    let result = parse_command(r#"name == "Alice""#).unwrap();
-    assert!(result.filter.is_some());
-    assert!(result.template.is_none());
-    assert!(result.field_selector.is_none());
-
-    if let Some(FilterExpr::Comparison { field, op, value }) = result.filter {
-        assert_eq!(field.parts, vec!["name"]);
-        assert_eq!(op, ComparisonOp::Equal);
-        assert_eq!(value, FilterValue::String("Alice".to_string()));
-    } else {
-        panic!("Expected simple comparison");
-    }
-
-    // Numeric comparison
-    let result = parse_command("age > 25").unwrap();
-    assert!(result.filter.is_some());
-    assert!(result.template.is_none());
-    assert!(result.field_selector.is_none());
-}
-
-/// Test complex boolean expressions.
-#[test]
-fn test_complex_boolean_expressions() {
-    // Test field truthy parsing
-    let result = parse_command("active?").unwrap();
-    assert!(result.filter.is_some());
-
-    if let Some(FilterExpr::FieldTruthy(field)) = result.filter {
-        assert_eq!(field.parts, vec!["active"]);
-    } else {
-        panic!("Expected field truthy");
-    }
-
-    // Test NOT expressions
-    let result = parse_command("!active?").unwrap();
-    assert!(result.filter.is_some());
-
-    if let Some(FilterExpr::Not(inner)) = result.filter {
-        if let FilterExpr::FieldTruthy(field) = inner.as_ref() {
-            assert_eq!(field.parts, vec!["active"]);
-        } else {
-            panic!("Expected NOT of field truthy");
-        }
-    } else {
-        panic!("Expected NOT expression");
-    }
-}
-
-/// Test nested field access in various contexts.
-#[test]
-fn test_nested_field_access() {
-    // In filters
-    let result = parse_command("user.email == \"alice@example.com\"").unwrap();
-    if let Some(FilterExpr::Comparison { field, .. }) = result.filter {
-        assert_eq!(field.parts, vec!["user", "email"]);
-    } else {
-        panic!("Expected comparison with nested field");
-    }
-
-    // In templates
-    let result = parse_command("{${user.name}}").unwrap();
-    let template = result.template.unwrap();
-    match &template.items[0] {
-        TemplateItem::Field(field) => assert_eq!(field.parts, vec!["user", "name"]),
-        _ => panic!("Expected nested field"),
-    }
-
-    // In field selectors
-    let result = parse_command("user.profile.name").unwrap();
-    let field = result.field_selector.unwrap();
-    assert_eq!(field.parts, vec!["user", "profile", "name"]);
-}
-
-/// Test bracketed template syntax.
-#[test]
-fn test_bracketed_template_syntax() {
-    // Test simple bracketed template
-    let result = parse_command("[${name}]").unwrap();
-    assert!(result.template.is_some());
-    assert!(result.filter.is_none());
-    assert!(result.field_selector.is_none());
-
-    let template = result.template.unwrap();
-    assert_eq!(template.items.len(), 1);
-    match &template.items[0] {
-        TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
-        _ => panic!("Expected field"),
-    }
-
-    // Test mixed bracketed template
-    let result = parse_command("[Name: ${name}, Age: ${age}]").unwrap();
-    assert!(result.template.is_some());
-
-    let template = result.template.unwrap();
-    assert!(template.items.len() >= 3); // At least: literal, field, literal
-
-    // Check that we have the expected content structure
-    let mut found_name_field = false;
-    let mut found_age_field = false;
-    let mut found_literal_content = false;
-
-    for item in &template.items {
-        match item {
-            TemplateItem::Field(field) => {
-                if field.parts == vec!["name"] {
-                    found_name_field = true;
-                } else if field.parts == vec!["age"] {
-                    found_age_field = true;
-                }
-            }
-            TemplateItem::Literal(text) if (text.contains("Name:") || text.contains("Age:")) => {
-                found_literal_content = true;
-            }
-            _ => {}
-        }
-    }
-
-    assert!(found_name_field, "Should contain name field");
-    assert!(found_age_field, "Should contain age field");
-    assert!(found_literal_content, "Should contain literal content");
-}
-
-/// Test array element selection like users.0.name
-#[test]
-fn test_array_element_selection() {
-    use parsm::filter::FieldPath;
-    use serde_json::json;
-
-    // Test array element selection like users.0.name
-    let data = json!({
-        "users": [
-            {"name": "Alice", "age": 30},
-            {"name": "Bob", "age": 25}
-        ],
-        "items": ["apple", "banana", "cherry"]
-    });
-
-    // Test users.0.name (nested array access)
-    let field_path = FieldPath::new(vec![
-        "users".to_string(),
-        "0".to_string(),
-        "name".to_string(),
-    ]);
-    let result = field_path.get_value(&data);
-    assert_eq!(result, Some(&json!("Alice")));
-
-    // Test users.1.name (second element)
-    let field_path = FieldPath::new(vec![
-        "users".to_string(),
-        "1".to_string(),
-        "name".to_string(),
-    ]);
-    let result = field_path.get_value(&data);
-    assert_eq!(result, Some(&json!("Bob")));
-
-    // Test items.0 (simple array access)
-    let field_path = FieldPath::new(vec!["items".to_string(), "0".to_string()]);
-    let result = field_path.get_value(&data);
-    assert_eq!(result, Some(&json!("apple")));
-
-    // Test parsing users.0.name as field selector
-    let result = parse_command("users.0.name").unwrap();
-    assert!(result.field_selector.is_some());
-    assert!(result.filter.is_none());
-    assert!(result.template.is_none());
-
-    if let Some(field_selector) = result.field_selector {
-        assert_eq!(field_selector.parts, vec!["users", "0", "name"]);
-    }
-}
-
-/// Test regex matching with ~= operator
-#[test]
-fn test_regex_matching() {
-    // Test regex literal with ~= operator
-    let result = parse_command("name ~= /^[A-Z]/");
-
-    match result {
-        Ok(parsed) => {
-            assert!(parsed.filter.is_some(), "Regex pattern should be filter");
-
-            if let Some(FilterExpr::Comparison { field, op, value }) = parsed.filter {
-                assert_eq!(field.parts, vec!["name"]);
-                assert!(
-                    matches!(op, ComparisonOp::Regex),
-                    "Should be regex operator"
-                );
-                if let FilterValue::Regex(compiled) = value {
-                    assert!(
-                        compiled.pattern.contains("^[A-Z]"),
-                        "Should contain regex pattern"
-                    );
-                } else {
-                    panic!("Expected regex value for regex pattern");
-                }
-            } else {
-                panic!("Expected comparison expression with regex operator");
-            }
-        }
-        Err(e) => {
-            println!("Note: Regex parsing may not be fully implemented: {e}");
-            // This test documents the expected behavior even if not fully implemented
-        }
-    }
 }
 
 /// Test all comparison operators in DSL
@@ -1281,4 +502,578 @@ fn proof_filter_only_has_no_injected_template() {
     let (stdout, stderr, code) = run_parsm(&["a > 3"], r#"{"a":5}"#);
     assert_eq!(code, 0, "stderr: {stderr}");
     assert_eq!(stdout, r#"{"a":5}"#);
+}
+
+// Grammar regression cases: pest grammar corners that must keep parsing (or
+// keep rejecting) a specific shape. `render` exercises the full pipeline
+// in-process; `run_parsm` shells the real binary for escaping-heavy cases
+// where an in-process Rust string literal would mask the bug under test.
+
+const CANONICAL: &str = r#"{"name":"Alice","age":30,"active":true,"premium":true,"admin":false,"moderator":true,"banned":false,"email":"alice@example.com","a":5,"b":5,"c":5,"role":"admin","score":98.5,"threshold":95.0,"limit":25,"version":"2.0","target":"2.0","user":{"verified":true,"email":"alice@example.com","name":"Alice"},"count":0,"text":"say hi"}"#;
+
+/// Render `expr` against `raw_input` exactly the way the CLI does: read it as
+/// JSON through the record pipeline (which exposes the raw source text as the
+/// `$0` pseudo-field that the default `${0}` template and "no template"
+/// output resolve to), then filter and render. Returns stdout with the
+/// trailing newline stripped, or `""` if the record was filtered out.
+fn render(expr: &str, raw_input: &str) -> String {
+    let parsed =
+        parsm::parse_command(expr).unwrap_or_else(|e| panic!("'{expr}' should parse: {e}"));
+    let mut buf = Vec::new();
+    parsm::process(
+        std::io::Cursor::new(raw_input),
+        Some(parsm::Format::Json),
+        parsm::Action::Evaluate(&parsed),
+        &mut buf,
+    )
+    .expect("processing should succeed");
+    String::from_utf8(buf)
+        .expect("output must be utf8")
+        .trim_end_matches('\n')
+        .to_string()
+}
+
+/// Sanity-checks the `render` harness itself against an input that already
+/// works correctly. If this ever fails, the tests below are not
+/// trustworthy either.
+#[test]
+fn render_harness_sanity_check() {
+    assert_eq!(render(r#"name == "Alice""#, CANONICAL), CANONICAL);
+}
+
+/// Bare `~` (contains) evaluates as a substring `Contains` check.
+#[test]
+fn bare_tilde_parses_as_contains() {
+    assert_eq!(render(r#"email ~ "@example.com""#, CANONICAL), CANONICAL);
+}
+
+/// `!active` (bare NOT, no `?`, as the *entire* expression) is a correct,
+/// intentional rejection per the DSL's conservative-parsing design
+/// (`src/dsl/mod.rs` module docs).
+#[test]
+fn stays_rejected_bare_not_top_level() {
+    assert!(parsm::parse_command("!active").is_err());
+}
+
+/// `!active && age >` (dangling operator) is a correct, intentional
+/// rejection.
+#[test]
+fn stays_rejected_dangling_operator() {
+    assert!(parsm::parse_command("!active && age >").is_err());
+}
+
+/// `${}` (empty braced template variable) is a correct, intentional
+/// rejection.
+#[test]
+fn stays_rejected_empty_braced_variable() {
+    assert!(parsm::parse_command("${}").is_err());
+}
+
+#[test]
+fn field_vs_field_equal_renders_unchanged() {
+    assert_eq!(render("a == b", CANONICAL), CANONICAL);
+}
+
+#[test]
+fn field_vs_field_greater_than_renders_unchanged() {
+    assert_eq!(render("age > limit", CANONICAL), CANONICAL);
+}
+
+#[test]
+fn field_vs_field_greater_equal_renders_unchanged() {
+    assert_eq!(render("score >= threshold", CANONICAL), CANONICAL);
+}
+
+#[test]
+fn field_vs_field_string_equal_renders_unchanged() {
+    assert_eq!(render("version == target", CANONICAL), CANONICAL);
+}
+
+#[test]
+fn regex_case_insensitive_flag_is_accepted() {
+    assert_eq!(render("email ~= /ALICE/i", CANONICAL), CANONICAL);
+}
+
+#[test]
+fn regex_multiline_flag_is_accepted() {
+    assert_eq!(render("text ~= /^say/m", CANONICAL), CANONICAL);
+}
+
+#[test]
+fn tilde_contains_combined_with_and() {
+    assert_eq!(
+        render(r#"email ~ "@example.com" && age > 25"#, CANONICAL),
+        CANONICAL
+    );
+}
+
+#[test]
+fn tilde_contains_combined_with_or() {
+    assert_eq!(
+        render(r#"email ~ "@x" || role == "admin""#, CANONICAL),
+        CANONICAL
+    );
+}
+
+#[test]
+fn template_conditional_in_braces() {
+    assert_eq!(render("${active?yes:no}", CANONICAL), "yes");
+}
+
+#[test]
+fn template_conditional_in_brackets() {
+    assert_eq!(render("[${active?yes:no}]", CANONICAL), "yes");
+}
+
+#[test]
+fn comparison_then_bracket_template_conditional() {
+    assert_eq!(render("age > 25 [${active?on:off}]", CANONICAL), "on");
+}
+
+/// Escaping-heavy: shell the real binary with raw-string argv so the
+/// shell/DSL escaping under test isn't masked by an in-process Rust string
+/// literal.
+#[test]
+fn escaped_quotes_in_string_literal() {
+    let expr = r#"text == "say \"hi\"""#;
+    let input = r#"{"text":"say \"hi\""}"#;
+    let (stdout, stderr, code) = run_parsm(&[expr], input);
+    assert_eq!(code, 0, "stderr: {stderr}");
+    assert_eq!(stdout, input);
+}
+
+#[test]
+fn tilde_contains_with_bracket_template() {
+    assert_eq!(
+        render(r#"email ~ "@example" [${name}]"#, CANONICAL),
+        "Alice"
+    );
+}
+
+/// A template nesting a `[...]` bracket span inside a `{...}` brace
+/// template renders correctly regardless of input format (this pins the
+/// JSON-input case; logfmt input is covered separately).
+#[test]
+fn nested_bracket_template_inside_brace_template() {
+    assert_eq!(render("{[${name}] ${role}}", CANONICAL), "[Alice] admin");
+}
+
+/// `!field` (no `?`) as one term of a chain is rejected, the same as the
+/// bare shape as the entire expression: bare identifiers are ambiguous, so
+/// every position requires the explicit `?`.
+#[test]
+fn stays_rejected_bare_not_in_and_chain_cmp() {
+    assert!(parsm::parse_command("!active && age > 25").is_err());
+}
+
+/// Same bare-`!field`-in-chain rejection, `&&` with a truthy term.
+#[test]
+fn stays_rejected_bare_not_in_and_chain_truthy() {
+    assert!(parsm::parse_command("!active && premium?").is_err());
+}
+
+/// Same bare-`!field`-in-chain rejection, `||`.
+#[test]
+fn stays_rejected_bare_not_in_or_chain() {
+    assert!(parsm::parse_command("!active || age > 25").is_err());
+}
+
+/// A bare, unescaped `{nested}` span inside a `{...}` template alongside a
+/// `$var` is rejected: no grammar rule documents nested unescaped braces as
+/// intended syntax.
+#[test]
+fn stays_rejected_nested_unescaped_brace_with_var() {
+    assert!(parsm::parse_command("{a {nested} $name}").is_err());
+}
+
+/// Same rejection, a bare nested `{literal}` span with no `$var` at all.
+#[test]
+fn stays_rejected_nested_unescaped_brace_literal() {
+    assert!(parsm::parse_command("{a{nested}b}").is_err());
+}
+
+#[test]
+fn dollar_digits_are_a_literal_template() {
+    assert_eq!(render("$20", CANONICAL), "$20");
+}
+
+/// A digit-leading `$1abc` bare variable is rejected: digit-leading names
+/// collide with number-literal parsing.
+#[test]
+fn stays_rejected_digit_prefixed_variable() {
+    assert!(parsm::parse_command("$1abc").is_err());
+}
+
+#[test]
+fn braced_zero_renders_original_input() {
+    assert_eq!(render("${0}", CANONICAL), CANONICAL);
+}
+
+/// A digit-leading bare field selector (`123abc`) is rejected: digit-leading
+/// names collide with number-literal parsing.
+#[test]
+fn stays_rejected_digit_leading_field_selector() {
+    assert!(parsm::parse_command("123abc").is_err());
+}
+
+/// A digit-leading field name on the LHS of a comparison (`1field == 5`) is
+/// the same identifier gap, in comparison position.
+#[test]
+fn stays_rejected_digit_leading_field_comparison() {
+    assert!(parsm::parse_command("1field == 5").is_err());
+}
+
+/// `age>25[name]extra]` is a malformed, unbalanced-bracket template
+/// combined with a filter; pest rejects it directly (`expected EOI` at the
+/// second `]`). Not a bug: it must keep rejecting.
+#[test]
+fn stays_rejected_malformed_bracket_template_with_filter() {
+    assert!(parsm::parse_command("age>25[name]extra]").is_err());
+}
+
+/// Adversarial inputs covering unbalanced brackets/braces/parens, lone
+/// operators, dangling `${`/`$`/`~`/`:` fragments, malformed template
+/// conditionals, unterminated strings/regexes, deep nesting, empty string,
+/// and mixed template+filter shapes. Each must return a `Result` (`Ok` or
+/// `Err`) without panicking - this guards against a grammar edit turning a
+/// graceful parse error into an `unwrap`/`unreachable!` panic. Hermetic: no
+/// network, no files.
+#[test]
+fn fuzz_sweep_parse_command_never_panics() {
+    let mut inputs: Vec<String> = [
+        "",
+        "{",
+        "}",
+        "[",
+        "]",
+        "{{{{{{{{{{",
+        "}}}}}}}}}}",
+        "((((((((((",
+        ")))))))))",
+        "&&",
+        "||",
+        "!",
+        "!!",
+        "!!!",
+        "==",
+        "~",
+        "~=",
+        "$",
+        "${",
+        "${}",
+        "${0",
+        "${0}",
+        "${?}",
+        "${a?b}",
+        "${a?b:}",
+        "${a?:b}",
+        "${a?:}",
+        ":",
+        "a:b",
+        "a ~ ",
+        "a ==",
+        "a == ",
+        "a && ",
+        "a &&",
+        " && b",
+        "!a &&",
+        "!a && ",
+        "{[}]",
+        "[{]}",
+        "{a [b}",
+        "[a {b]",
+        "\"",
+        "\"unterminated",
+        "'unterminated",
+        "\"a\\\"",
+        "/unterminated",
+        "a ~= /",
+        "a ~= //",
+        "a ~= /x",
+        "age > 25 [",
+        "age > 25 {",
+        "age > 25 [${}]",
+        "age>25[name]extra]",
+        "a == b == c",
+        "a && b || c &&",
+        "((a))",
+        "!(",
+        "!()",
+        "()",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+
+    // Deep-but-bounded nesting: deep enough to be a meaningful adversarial
+    // case, shallow enough not to blow the test harness's (smaller) worker
+    // thread stack - recursive-descent stack depth on pathologically deep
+    // input is a pre-existing architectural characteristic of the
+    // recursive parser and is out of scope here.
+    inputs.push("(".repeat(100));
+    inputs.push(")".repeat(100));
+    inputs.push("{".repeat(100));
+    inputs.push("!".repeat(100));
+    inputs.push("${".repeat(100));
+    inputs.push("[".repeat(100));
+    inputs.push(format!("{}active?{}", "(".repeat(40), ")".repeat(40)));
+    // A depth-100 balanced bracket span, recursing bracket_literal_span
+    // rather than tripping the unbalanced-bracket case above.
+    inputs.push(format!("{}{}", "[".repeat(100), "]".repeat(100)));
+
+    let first_panic = inputs.iter().find_map(|input| {
+        let owned = input.clone();
+        std::panic::catch_unwind(|| {
+            let _ = parsm::parse_command(&owned);
+        })
+        .err()
+        .map(|_| input.clone())
+    });
+
+    assert!(
+        first_panic.is_none(),
+        "parse_command panicked on input: {:?}",
+        first_panic.unwrap_or_default()
+    );
+}
+
+/// One row of the ambiguity sweep: a DSL argument list, its stdin input, and
+/// the output it must produce.
+enum Expect {
+    Stdout(&'static str),
+    ExitCode(i32),
+}
+
+struct SweepCase {
+    args: &'static [&'static str],
+    input: &'static str,
+    expect: Expect,
+}
+
+/// Table-driven sweep of the grammar's disambiguating hazards, across every
+/// top-level DSL form: field selector, filter, `[...]` template, `{...}`
+/// template, filter followed by template, and the two-argument form. Each
+/// row asserts the CLI's actual stdout or exit code, replacing
+/// `tests/ambiguous_regression_test.rs`'s parse-only assertions.
+const AMBIGUITY_SWEEP: &[SweepCase] = &[
+    // Field selector: bare word vs dotted path vs quoted key.
+    SweepCase {
+        args: &["name"],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::Stdout("Alice"),
+    },
+    SweepCase {
+        args: &["user.name"],
+        input: r#"{"user.name":"Literal","user":{"name":"Nested"}}"#,
+        expect: Expect::Stdout("Nested"),
+    },
+    SweepCase {
+        args: &[r#""user.name""#],
+        input: r#"{"user.name":"Literal","user":{"name":"Nested"}}"#,
+        expect: Expect::Stdout("Literal"),
+    },
+    SweepCase {
+        args: &[r#""full name""#],
+        input: r#"{"full name":"Alice Smith"}"#,
+        expect: Expect::Stdout("Alice Smith"),
+    },
+    SweepCase {
+        args: &["a.b.c"],
+        input: r#"{"a":{"b":{"c":"deep"}}}"#,
+        expect: Expect::Stdout("deep"),
+    },
+    // Filter: comparison operators with and without spaces.
+    SweepCase {
+        args: &["age > 25"],
+        input: r#"{"age":30}"#,
+        expect: Expect::Stdout(r#"{"age":30}"#),
+    },
+    SweepCase {
+        args: &["age>25"],
+        input: r#"{"age":30}"#,
+        expect: Expect::Stdout(r#"{"age":30}"#),
+    },
+    SweepCase {
+        args: &["age > 25"],
+        input: r#"{"age":10}"#,
+        expect: Expect::Stdout(""),
+    },
+    SweepCase {
+        args: &[r#"name == "Alice""#],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::Stdout(r#"{"name":"Alice"}"#),
+    },
+    SweepCase {
+        args: &[r#"name!="Bob""#],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::Stdout(r#"{"name":"Alice"}"#),
+    },
+    SweepCase {
+        args: &["age>=25"],
+        input: r#"{"age":30}"#,
+        expect: Expect::Stdout(r#"{"age":30}"#),
+    },
+    SweepCase {
+        args: &[r#"name^="Al""#],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::Stdout(r#"{"name":"Alice"}"#),
+    },
+    // Filter: explicit truthy and negated truthy, standalone and chained.
+    SweepCase {
+        args: &["active?"],
+        input: r#"{"active":true}"#,
+        expect: Expect::Stdout(r#"{"active":true}"#),
+    },
+    SweepCase {
+        args: &["!active?"],
+        input: r#"{"active":false}"#,
+        expect: Expect::Stdout(r#"{"active":false}"#),
+    },
+    SweepCase {
+        args: &["active? && premium?"],
+        input: r#"{"active":true,"premium":true}"#,
+        expect: Expect::Stdout(r#"{"active":true,"premium":true}"#),
+    },
+    // `[...]` and `{...}` templates, field substitution.
+    SweepCase {
+        args: &["[${name}]"],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::Stdout("Alice"),
+    },
+    SweepCase {
+        args: &["{${name}}"],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::Stdout("Alice"),
+    },
+    // Filter followed by a template, both template kinds.
+    SweepCase {
+        args: &["age > 25 {${name}}"],
+        input: r#"{"name":"Alice","age":30}"#,
+        expect: Expect::Stdout("Alice"),
+    },
+    SweepCase {
+        args: &["age > 25 [${name}]"],
+        input: r#"{"name":"Alice","age":30}"#,
+        expect: Expect::Stdout("Alice"),
+    },
+    // The two-argument form, both template kinds.
+    SweepCase {
+        args: &["age > 25", "{${name}}"],
+        input: r#"{"name":"Alice","age":30}"#,
+        expect: Expect::Stdout("Alice"),
+    },
+    SweepCase {
+        args: &["age > 25", "[${name}]"],
+        input: r#"{"name":"Alice","age":30}"#,
+        expect: Expect::Stdout("Alice"),
+    },
+    // `$` amounts vs `$name`/`${name}`/`${0}`.
+    SweepCase {
+        args: &["$20"],
+        input: "{}",
+        expect: Expect::Stdout("$20"),
+    },
+    SweepCase {
+        args: &["$0"],
+        input: "{}",
+        expect: Expect::Stdout("$0"),
+    },
+    SweepCase {
+        args: &["$name"],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::Stdout("Alice"),
+    },
+    SweepCase {
+        args: &["${0}"],
+        input: r#"{"a":1}"#,
+        expect: Expect::Stdout(r#"{"a":1}"#),
+    },
+    // Brackets and braces inside templates.
+    SweepCase {
+        args: &["{[${level}] ${msg}}"],
+        input: r#"{"level":"error","msg":"timeout"}"#,
+        expect: Expect::Stdout("[error] timeout"),
+    },
+    SweepCase {
+        args: &[r"[a \[ b]"],
+        input: "{}",
+        expect: Expect::Stdout("a [ b"),
+    },
+    SweepCase {
+        args: &["[{$name}]"],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::Stdout("{Alice}"),
+    },
+    // `!field?` and the bare-field ambiguity the `?` resolves.
+    SweepCase {
+        args: &["name && age"],
+        input: r#"{"name":"Alice","age":30}"#,
+        expect: Expect::ExitCode(1),
+    },
+    SweepCase {
+        args: &["user || admin"],
+        input: r#"{"user":true,"admin":true}"#,
+        expect: Expect::ExitCode(1),
+    },
+    SweepCase {
+        args: &["name && age [${name}]"],
+        input: r#"{"name":"Alice","age":30}"#,
+        expect: Expect::ExitCode(1),
+    },
+    SweepCase {
+        args: &["name? && age? [${name}]"],
+        input: r#"{"name":"Alice","age":30}"#,
+        expect: Expect::Stdout("Alice"),
+    },
+    // Bare interpolated text is rejected; bracketed interpolated text works.
+    SweepCase {
+        args: &["Hello ${name}"],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::ExitCode(1),
+    },
+    SweepCase {
+        args: &["[Hello ${name}]"],
+        input: r#"{"name":"Alice"}"#,
+        expect: Expect::Stdout("Hello Alice"),
+    },
+];
+
+/// Runs every [`AMBIGUITY_SWEEP`] row against the release binary and checks
+/// its stdout or exit code.
+#[test]
+fn ambiguity_sweep() {
+    assert!(
+        AMBIGUITY_SWEEP.len() >= 30,
+        "sweep should cover at least 30 hazards"
+    );
+    for (index, case) in AMBIGUITY_SWEEP.iter().enumerate() {
+        let mut cmd = command();
+        cmd.args(case.args);
+        let output = common::run(cmd, case.input);
+        match case.expect {
+            Expect::Stdout(expected) => {
+                assert!(
+                    output.status.success(),
+                    "row {index} {:?}: expected success, stderr={}",
+                    case.args,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert_eq!(
+                    common::stdout_of(&output).trim(),
+                    expected,
+                    "row {index} {:?}",
+                    case.args
+                );
+            }
+            Expect::ExitCode(code) => {
+                assert_eq!(
+                    output.status.code(),
+                    Some(code),
+                    "row {index} {:?}: stdout={}",
+                    case.args,
+                    common::stdout_of(&output)
+                );
+            }
+        }
+    }
 }
