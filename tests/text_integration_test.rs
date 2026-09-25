@@ -637,10 +637,6 @@ fn test_text_forced_format_filtering() {
     }
 }
 
-fn stdout_of(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
-
 #[test]
 fn text_template_streams_first_record_before_eof() {
     let mut cmd = parsm_command();
@@ -656,14 +652,14 @@ fn forced_text_reads_json_as_words() {
     let mut cmd = parsm_command();
     cmd.args(["--text", "[${word_0}]"]);
     let output = common::run(cmd, r#"{"a":1}"#);
-    assert_eq!(stdout_of(&output), "{\"a\":1}\n");
+    assert_eq!(common::stdout_of(&output), "{\"a\":1}\n");
     assert!(output.status.success());
 }
 
 #[test]
 fn text_convert_writes_word_arrays() {
     let output = common::run(parsm_command(), "hello world");
-    assert_eq!(stdout_of(&output), "[\"hello\",\"world\"]\n");
+    assert_eq!(common::stdout_of(&output), "[\"hello\",\"world\"]\n");
     assert!(output.status.success());
 }
 
@@ -672,7 +668,7 @@ fn missing_field_prints_nothing() {
     let mut cmd = parsm_command();
     cmd.arg("nope");
     let output = common::run(cmd, "x y");
-    assert_eq!(stdout_of(&output), "");
+    assert_eq!(common::stdout_of(&output), "");
     assert_eq!(String::from_utf8_lossy(&output.stderr), "");
     assert_eq!(output.status.code(), Some(0));
 }
@@ -682,11 +678,11 @@ fn bracketed_word_is_text() {
     let mut cmd = parsm_command();
     cmd.arg("[${0}]");
     let output = common::run(cmd, "[a]");
-    assert_eq!(stdout_of(&output), "[a]\n");
+    assert_eq!(common::stdout_of(&output), "[a]\n");
     assert!(output.status.success());
 
     let output = common::run(parsm_command(), "[a]");
-    assert_eq!(stdout_of(&output), "[\"[a]\"]\n");
+    assert_eq!(common::stdout_of(&output), "[\"[a]\"]\n");
 }
 
 #[test]
@@ -694,6 +690,42 @@ fn leading_number_with_trailing_words_is_text() {
     let mut cmd = parsm_command();
     cmd.arg("[${word_1}]");
     let output = common::run(cmd, "200 OK");
-    assert_eq!(stdout_of(&output), "OK\n");
+    assert_eq!(common::stdout_of(&output), "OK\n");
     assert!(output.status.success());
+}
+
+#[test]
+fn text_first_line_with_unmatched_opener_streams() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${word_1}]");
+    let mut session = common::Session::start(cmd);
+    session.write_line("2024 ERROR [worker {id=3");
+    assert_eq!(session.read_lines(1), vec!["ERROR"]);
+    session.write_line("2024 INFO done");
+    assert_eq!(session.read_lines(1), vec!["INFO"]);
+    let (rest, status) = session.finish();
+    assert!(rest.is_empty(), "rest: {rest:?}");
+    assert!(status.success());
+}
+
+#[test]
+fn text_undecodable_later_line_warns_and_is_skipped() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${word_0}]");
+    let output = common::run(cmd, b"hello world\n\xff\xfe\nbye now\n");
+    assert_eq!(common::stdout_of(&output), "hello\nbye\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "Warning: failed to parse line 2: invalid UTF-8\n"
+    );
+    assert!(output.status.success());
+}
+
+#[test]
+fn text_undecodable_first_line_is_fatal() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${word_0}]");
+    let output = common::run(cmd, b"\xff\xfe\nhello world\n");
+    assert_eq!(common::stdout_of(&output), "");
+    assert_eq!(output.status.code(), Some(1));
 }

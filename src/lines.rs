@@ -4,11 +4,18 @@
 use std::collections::VecDeque;
 use std::io::{self, BufRead};
 
+/// Reason reported for a line that is not valid UTF-8.
+pub(crate) const UNDECODABLE: &str = "invalid UTF-8";
+
 /// One input line without its terminator, numbered from 1.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Line {
     pub(crate) number: usize,
+    /// The line's text; lossily decoded when `decoded` is false.
     pub(crate) text: String,
+    /// Whether the line was valid UTF-8. Readers report an undecoded line as
+    /// a failed record rather than parse its lossy text.
+    pub(crate) decoded: bool,
 }
 
 impl Line {
@@ -26,6 +33,8 @@ pub(crate) struct LineSource<R> {
     reader: R,
     read: usize,
     replay: VecDeque<Line>,
+    buffer: Vec<u8>,
+    content_started: bool,
 }
 
 impl<R: BufRead> LineSource<R> {
@@ -34,6 +43,8 @@ impl<R: BufRead> LineSource<R> {
             reader,
             read: 0,
             replay: VecDeque::new(),
+            buffer: Vec::new(),
+            content_started: false,
         }
     }
 
@@ -42,16 +53,39 @@ impl<R: BufRead> LineSource<R> {
         if let Some(line) = self.replay.pop_front() {
             return Ok(Some(line));
         }
-        let mut text = String::new();
-        if self.reader.read_line(&mut text)? == 0 {
+        self.buffer.clear();
+        if self.reader.read_until(b'\n', &mut self.buffer)? == 0 {
             return Ok(None);
         }
-        strip_terminator(&mut text);
+        strip_terminator(&mut self.buffer);
         self.read += 1;
+        let (text, decoded) = match std::str::from_utf8(&self.buffer) {
+            Ok(text) => (text.to_string(), true),
+            Err(_) => (String::from_utf8_lossy(&self.buffer).into_owned(), false),
+        };
         Ok(Some(Line {
             number: self.read,
             text,
+            decoded,
         }))
+    }
+
+    /// The next line that holds content: blank lines are skipped, and so are
+    /// `#` lines until the first content line.
+    pub(crate) fn next_content_line(&mut self) -> io::Result<Option<Line>> {
+        while let Some(line) = self.next_line()? {
+            if line.is_blank() || (!self.content_started && line.is_comment()) {
+                continue;
+            }
+            self.content_started = true;
+            return Ok(Some(line));
+        }
+        Ok(None)
+    }
+
+    /// Treat later `#` lines as content, as after a first content line.
+    pub(crate) fn mark_content_started(&mut self) {
+        self.content_started = true;
     }
 
     /// Serve `lines`, in order, before anything not yet replayed.
@@ -71,11 +105,11 @@ impl<R: BufRead> LineSource<R> {
     }
 }
 
-fn strip_terminator(text: &mut String) {
-    if text.ends_with('\n') {
-        text.pop();
-        if text.ends_with('\r') {
-            text.pop();
+fn strip_terminator(bytes: &mut Vec<u8>) {
+    if bytes.last() == Some(&b'\n') {
+        bytes.pop();
+        if bytes.last() == Some(&b'\r') {
+            bytes.pop();
         }
     }
 }
@@ -104,5 +138,24 @@ mod tests {
         source.replay(vec![first, second]);
         let lines = source.read_to_end().unwrap();
         assert_eq!(texts(&lines), vec![(1, "a"), (2, "b"), (3, "c")]);
+    }
+
+    #[test]
+    fn invalid_utf8_line_is_marked_not_decoded() {
+        let mut source = LineSource::new(Cursor::new(b"ok\n\xff\xfe\nok\n".to_vec()));
+        let lines = source.read_to_end().unwrap();
+        let decoded: Vec<bool> = lines.iter().map(|l| l.decoded).collect();
+        assert_eq!(decoded, vec![true, false, true]);
+        assert_eq!(lines[1].number, 2);
+    }
+
+    #[test]
+    fn content_lines_skip_blanks_and_leading_comments() {
+        let mut source = LineSource::new(Cursor::new("# a\n\nx\n# b\n\ny\n"));
+        let mut lines = Vec::new();
+        while let Some(line) = source.next_content_line().unwrap() {
+            lines.push(line);
+        }
+        assert_eq!(texts(&lines), vec![(3, "x"), (4, "# b"), (6, "y")]);
     }
 }

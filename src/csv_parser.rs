@@ -1,12 +1,15 @@
 //! CSV rows as records, keyed by header names when the input has a header
 //! row.
+//!
+//! One CSV reader parses the whole input through a line feed, so a row is
+//! emitted as soon as its line ends and a quoted field may span lines.
 
 use std::collections::VecDeque;
-use std::io::{self, BufRead};
+use std::io::{self, BufRead, Read};
 use std::sync::Arc;
 
 use crate::detect::Format;
-use crate::lines::{Line, LineSource};
+use crate::lines::{Line, LineSource, UNDECODABLE};
 use crate::parse::parse_csv_line;
 use crate::record::{CsvHeader, Record};
 use crate::records::RecordError;
@@ -14,86 +17,170 @@ use crate::records::RecordError;
 /// Data rows sampled after the first row to decide whether it is a header.
 const HEADER_SAMPLE_ROWS: usize = 5;
 
+/// Serves content lines to the CSV reader one at a time, recording each;
+/// undecoded lines are held back for reporting.
+struct RowFeed<R> {
+    source: LineSource<R>,
+    current: Vec<u8>,
+    position: usize,
+    fed: Vec<Line>,
+    undecodable: Vec<usize>,
+    io_error: Option<io::Error>,
+}
+
+impl<R: BufRead> RowFeed<R> {
+    /// The next decoded content line, recording undecoded ones.
+    fn next_decoded(&mut self) -> io::Result<Option<Line>> {
+        while let Some(line) = self.source.next_content_line()? {
+            if line.decoded {
+                return Ok(Some(line));
+            }
+            self.undecodable.push(line.number);
+        }
+        Ok(None)
+    }
+}
+
+impl<R: BufRead> Read for RowFeed<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        if self.position == self.current.len() {
+            let line = match self.next_decoded() {
+                Ok(Some(line)) => line,
+                Ok(None) => return Ok(0),
+                Err(error) => {
+                    let kind = error.kind();
+                    self.io_error = Some(error);
+                    return Err(io::Error::new(kind, "read failed"));
+                }
+            };
+            self.current.clear();
+            self.current.extend_from_slice(line.text.as_bytes());
+            self.current.push(b'\n');
+            self.position = 0;
+            self.fed.push(line);
+        }
+        let count = buf.len().min(self.current.len() - self.position);
+        buf[..count].copy_from_slice(&self.current[self.position..self.position + count]);
+        self.position += count;
+        Ok(count)
+    }
+}
+
+/// What reading the CSV input produced, in input order.
+enum Event {
+    Row {
+        fields: csv::StringRecord,
+        source: String,
+    },
+    /// The row chosen as the header.
+    Header(Arc<CsvHeader>),
+    Failed {
+        line: usize,
+        reason: String,
+    },
+    Io(io::Error),
+}
+
 /// Records from CSV input. The first row and up to [`HEADER_SAMPLE_ROWS`]
 /// data rows are buffered for header detection; later rows stream.
-pub(crate) struct CsvRecords<R> {
-    source: LineSource<R>,
-    buffered: VecDeque<Line>,
+pub(crate) struct CsvRecords<R: BufRead> {
+    reader: csv::Reader<RowFeed<R>>,
+    events: VecDeque<Event>,
     header: Option<Arc<CsvHeader>>,
     primed: bool,
-    started: bool,
+    finished: bool,
     parsed_any: bool,
 }
 
 impl<R: BufRead> CsvRecords<R> {
     pub(crate) fn new(source: LineSource<R>) -> Self {
-        Self {
+        let feed = RowFeed {
             source,
-            buffered: VecDeque::new(),
+            current: Vec::new(),
+            position: 0,
+            fed: Vec::new(),
+            undecodable: Vec::new(),
+            io_error: None,
+        };
+        let reader = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .flexible(true)
+            .from_reader(feed);
+        Self {
+            reader,
+            events: VecDeque::new(),
             header: None,
             primed: false,
-            started: false,
+            finished: false,
             parsed_any: false,
         }
     }
 
-    /// The next row line; blank lines and leading `#` lines are skipped.
-    fn next_row_line(&mut self) -> io::Result<Option<Line>> {
-        while let Some(line) = self.source.next_line()? {
-            if line.is_blank() || (!self.started && line.is_comment()) {
-                continue;
-            }
-            self.started = true;
-            return Ok(Some(line));
+    /// Read one CSV row, queueing it after any lines skipped before it.
+    fn read_event(&mut self) {
+        let mut fields = csv::StringRecord::new();
+        let result = self.reader.read_record(&mut fields);
+        let feed = self.reader.get_mut();
+        let lines = std::mem::take(&mut feed.fed);
+        for line in feed.undecodable.drain(..) {
+            self.events.push_back(Event::Failed {
+                line,
+                reason: UNDECODABLE.to_string(),
+            });
         }
-        Ok(None)
+        if let Some(error) = feed.io_error.take() {
+            self.events.push_back(Event::Io(error));
+            self.finished = true;
+            return;
+        }
+        match result {
+            Ok(true) => {
+                let texts: Vec<&str> = lines.iter().map(|line| line.text.as_str()).collect();
+                self.events.push_back(Event::Row {
+                    fields,
+                    source: texts.join("\n"),
+                });
+            }
+            Ok(false) => self.finished = true,
+            Err(error) => self.events.push_back(Event::Failed {
+                line: lines.first().map_or(0, |line| line.number),
+                reason: error.to_string(),
+            }),
+        }
     }
 
-    fn prime(&mut self) -> io::Result<()> {
+    /// Buffer the first rows and turn the first into the header when the
+    /// sample says it is one.
+    fn prime(&mut self) {
         self.primed = true;
-        while self.buffered.len() <= HEADER_SAMPLE_ROWS {
-            let Some(line) = self.next_row_line()? else {
-                break;
-            };
-            self.buffered.push_back(line);
+        let rows = |events: &VecDeque<Event>| {
+            events
+                .iter()
+                .filter(|event| matches!(event, Event::Row { .. }))
+                .count()
+        };
+        while !self.finished && rows(&self.events) <= HEADER_SAMPLE_ROWS {
+            self.read_event();
         }
-        let sample: Vec<&str> = self.buffered.iter().map(|l| l.text.as_str()).collect();
+        let sample: Vec<&str> = self
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                Event::Row { source, .. } => Some(source.as_str()),
+                _ => None,
+            })
+            .collect();
         if !detect_header_row(&sample) {
-            return Ok(());
+            return;
         }
-        let header = self
-            .buffered
-            .pop_front()
-            .and_then(|line| parse_csv_line(&line.text));
-        if let Some(fields) = header {
-            self.header = Some(Arc::new(CsvHeader::new(&fields)));
-            self.parsed_any = true;
-        }
-        Ok(())
-    }
-
-    fn next_line(&mut self) -> io::Result<Option<Line>> {
-        if !self.primed {
-            self.prime()?;
-        }
-        match self.buffered.pop_front() {
-            Some(line) => Ok(Some(line)),
-            None => self.next_row_line(),
-        }
-    }
-
-    fn record(&mut self, line: Line) -> Result<Record, RecordError> {
-        match parse_csv_line(&line.text) {
-            Some(fields) => {
-                self.parsed_any = true;
-                Ok(Record::row(&fields, self.header.clone(), line.text))
-            }
-            None => Err(RecordError::parse(
-                self.parsed_any,
-                Format::Csv,
-                line.number,
-                "not a CSV row",
-            )),
+        let first_row = self
+            .events
+            .iter()
+            .position(|event| matches!(event, Event::Row { .. }));
+        if let Some(index) = first_row
+            && let Some(Event::Row { fields, .. }) = self.events.get(index)
+        {
+            self.events[index] = Event::Header(Arc::new(CsvHeader::new(fields)));
         }
     }
 }
@@ -102,10 +189,35 @@ impl<R: BufRead> Iterator for CsvRecords<R> {
     type Item = Result<Record, RecordError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.next_line() {
-            Ok(Some(line)) => Some(self.record(line)),
-            Ok(None) => None,
-            Err(error) => Some(Err(RecordError::Io(error))),
+        if !self.primed {
+            self.prime();
+        }
+        loop {
+            let Some(event) = self.events.pop_front() else {
+                if self.finished {
+                    return None;
+                }
+                self.read_event();
+                continue;
+            };
+            return Some(match event {
+                Event::Header(header) => {
+                    self.header = Some(header);
+                    self.parsed_any = true;
+                    continue;
+                }
+                Event::Row { fields, source } => {
+                    self.parsed_any = true;
+                    Ok(Record::row(&fields, self.header.clone(), source))
+                }
+                Event::Failed { line, reason } => Err(RecordError::parse(
+                    self.parsed_any,
+                    Format::Csv,
+                    line,
+                    reason,
+                )),
+                Event::Io(error) => Err(RecordError::Io(error)),
+            });
         }
     }
 }

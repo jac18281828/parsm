@@ -11,13 +11,13 @@ pub const SOURCE_KEY: &str = "$0";
 
 /// A CSV header row: names as written and the keys the DSL matches.
 #[derive(Debug)]
-pub struct CsvHeader {
+pub(crate) struct CsvHeader {
     names: Vec<String>,
     keys: Vec<String>,
 }
 
 impl CsvHeader {
-    pub fn new(fields: &csv::StringRecord) -> Self {
+    pub(crate) fn new(fields: &csv::StringRecord) -> Self {
         let names: Vec<String> = fields.iter().map(|f| f.trim().to_string()).collect();
         let keys = names.iter().map(|name| name.to_lowercase()).collect();
         Self { names, keys }
@@ -54,7 +54,7 @@ impl Record {
     }
 
     /// A CSV row, keyed by `header` when the input has one.
-    pub fn row(
+    pub(crate) fn row(
         fields: &csv::StringRecord,
         header: Option<Arc<CsvHeader>>,
         source: impl Into<String>,

@@ -1085,14 +1085,10 @@ fn test_yaml_implicit_timestamp_scalar_stays_string() {
     );
 }
 
-fn stdout_of(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
-
 #[test]
 fn yaml_converts_to_json() {
     let output = common::run(parsm_command(), "name: Alice");
-    assert_eq!(stdout_of(&output), "{\"name\":\"Alice\"}\n");
+    assert_eq!(common::stdout_of(&output), "{\"name\":\"Alice\"}\n");
     assert!(output.status.success());
 }
 
@@ -1101,7 +1097,7 @@ fn yaml_documents_are_separate_records() {
     let mut cmd = parsm_command();
     cmd.arg("age > 35");
     let output = common::run(cmd, "age: 30\n---\nage: 40");
-    assert_eq!(stdout_of(&output), "age: 40\n");
+    assert_eq!(common::stdout_of(&output), "age: 40\n");
     assert!(output.status.success());
 }
 
@@ -1110,7 +1106,7 @@ fn yaml_sequence_exposes_original_input() {
     let mut cmd = parsm_command();
     cmd.arg("[${0}]");
     let output = common::run(cmd, "- a");
-    assert_eq!(stdout_of(&output), "- a\n");
+    assert_eq!(common::stdout_of(&output), "- a\n");
     assert!(output.status.success());
 }
 
@@ -1119,7 +1115,7 @@ fn yaml_leading_comment_is_a_comment() {
     let mut cmd = parsm_command();
     cmd.arg("name");
     let output = common::run(cmd, "# cfg\nname: Alice");
-    assert_eq!(stdout_of(&output), "Alice\n");
+    assert_eq!(common::stdout_of(&output), "Alice\n");
     assert!(output.status.success());
 }
 
@@ -1128,7 +1124,7 @@ fn yaml_with_duplicate_keys_is_read_as_text() {
     let mut cmd = parsm_command();
     cmd.arg("[${word_1}]");
     let output = common::run(cmd, "INFO: started\nINFO: done");
-    assert_eq!(stdout_of(&output), "started\ndone\n");
+    assert_eq!(common::stdout_of(&output), "started\ndone\n");
     assert!(output.status.success());
 }
 
@@ -1137,6 +1133,6 @@ fn yaml_flow_map_is_yaml() {
     let mut cmd = parsm_command();
     cmd.arg("a");
     let output = common::run(cmd, "{a: 1}");
-    assert_eq!(stdout_of(&output), "1\n");
+    assert_eq!(common::stdout_of(&output), "1\n");
     assert!(output.status.success());
 }

@@ -528,7 +528,7 @@ pub use filter::{
 };
 pub use format_detector::{DetectedFormat, FormatDetector};
 pub use parser_registry::{DocumentParser, ParserRegistry};
-pub use pipeline::{Action, process, write_record};
+pub use pipeline::{Action, process};
 pub use record::Record;
 pub use records::{RecordError, Records};
 

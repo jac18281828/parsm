@@ -1,7 +1,8 @@
 //! Records to output: convert to JSON lines, or filter and render.
 
+use std::cell::RefCell;
 use std::error::Error;
-use std::io::{BufRead, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 
 use crate::detect::Format;
 use crate::dsl::ParsedDSL;
@@ -21,41 +22,56 @@ pub enum Action<'a> {
 
 /// Read every record of `reader` and write each as `action` directs.
 ///
-/// Each record is written and flushed as it completes, so the first record
-/// never waits for the end of input. A record that fails after others have
-/// parsed is reported on stderr as a warning and skipped; a failure before
-/// anything parses is returned.
+/// Output is buffered and flushed before every read that may block, so the
+/// first record never waits for the end of input. A record that fails after
+/// others have parsed is reported on stderr as a warning and skipped; a
+/// failure before anything parses is returned.
 pub fn process<R: BufRead, W: Write>(
     reader: R,
     format: Option<Format>,
     action: Action<'_>,
     writer: &mut W,
 ) -> Result<(), Box<dyn Error>> {
-    for item in Records::open(reader, format)? {
+    let output = RefCell::new(BufWriter::new(writer));
+    let input = BufReader::new(FlushingInput {
+        input: reader,
+        output: &output,
+    });
+    for item in Records::open(input, format)? {
         match item {
-            Ok(record) => write_record(&record, action, writer)?,
+            Ok(record) => write_record(&record, action, &mut *output.borrow_mut())?,
             Err(warning @ RecordError::Skipped { .. }) => eprintln!("Warning: {warning}"),
             Err(error) => return Err(error.into()),
         }
     }
+    output.borrow_mut().flush()?;
     Ok(())
 }
 
-/// Write one record as `action` directs, then flush.
-pub fn write_record<W: Write>(
-    record: &Record,
-    action: Action<'_>,
-    writer: &mut W,
-) -> std::io::Result<()> {
-    match action {
-        Action::Convert => writeln!(writer, "{}", record.to_json())?,
-        Action::Evaluate(dsl) => {
-            if let Some(output) = evaluate(record, dsl) {
-                writeln!(writer, "{output}")?;
-            }
-        }
+/// Input that flushes the output before each read of the underlying reader.
+/// Wrapped in a buffer, it is read only when every buffered line is used,
+/// which is the only time reading may block.
+struct FlushingInput<'a, R, W: Write> {
+    input: R,
+    output: &'a RefCell<BufWriter<W>>,
+}
+
+impl<R: Read, W: Write> Read for FlushingInput<'_, R, W> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.output.borrow_mut().flush()?;
+        self.input.read(buf)
     }
-    writer.flush()
+}
+
+/// Write one record as `action` directs.
+fn write_record<W: Write>(record: &Record, action: Action<'_>, writer: &mut W) -> io::Result<()> {
+    match action {
+        Action::Convert => writeln!(writer, "{}", record.to_json()),
+        Action::Evaluate(dsl) => match evaluate(record, dsl) {
+            Some(output) => writeln!(writer, "{output}"),
+            None => Ok(()),
+        },
+    }
 }
 
 /// The output line for `record`, or `None` when it is filtered out or lacks

@@ -1,6 +1,8 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+mod common;
+
 /// Helper function to create a Command with proper environment setup
 fn parsm_command() -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
@@ -914,4 +916,14 @@ fn test_toml_forced_format_filtering() {
             );
         }
     }
+}
+
+#[test]
+fn toml_convert_keeps_key_order() {
+    let output = common::run(parsm_command(), "name = \"Alice\"\nage = 30");
+    assert_eq!(
+        common::stdout_of(&output),
+        "{\"name\":\"Alice\",\"age\":30}\n"
+    );
+    assert!(output.status.success());
 }

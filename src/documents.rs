@@ -3,7 +3,7 @@
 use serde_json::Value;
 
 use crate::detect::Format;
-use crate::lines::Line;
+use crate::lines::{Line, UNDECODABLE};
 use crate::record::Record;
 use crate::records::RecordError;
 
@@ -16,24 +16,44 @@ struct Document {
     text: String,
 }
 
+impl Document {
+    fn new(first_line: usize, text: String) -> Self {
+        Self { first_line, text }
+    }
+}
+
 /// A document failure: the input line and the reason.
 type Failure = (usize, String);
 
 /// Parse `lines` as YAML or TOML. `None` when the first document fails and
 /// the format was guessed; a forced format reports the failure instead.
+///
+/// Lines that are not valid UTF-8 are reported and left out; one before the
+/// first content line fails the input.
 pub(crate) fn read(format: Format, lines: &[Line], forced: bool) -> Option<Parsed> {
+    let (decoded, undecodable): (Vec<Line>, Vec<Line>) =
+        lines.iter().cloned().partition(|line| line.decoded);
+    let first_content = decoded
+        .iter()
+        .find(|line| !line.is_blank() && !line.is_comment())
+        .map_or(usize::MAX, |line| line.number);
+    if let Some(line) = undecodable.first()
+        && line.number < first_content
+    {
+        let failure = RecordError::parse(false, format, line.number, UNDECODABLE);
+        return Some(vec![Err(failure)]);
+    }
     let documents = match format {
-        Format::Toml => vec![whole_input(lines)],
-        _ => yaml_documents(lines),
+        Format::Toml => vec![whole_input(&decoded)],
+        _ => yaml_documents(&decoded),
     };
-    let mut parsed = Vec::with_capacity(documents.len());
+    let mut parsed: Parsed = undecodable
+        .iter()
+        .map(|line| Err(RecordError::parse(true, format, line.number, UNDECODABLE)))
+        .collect();
     for (index, document) in documents.iter().enumerate() {
-        let value = match format {
-            Format::Toml => toml_value(document),
-            _ => yaml_value(document),
-        };
-        match value {
-            Ok(value) => parsed.push(Ok(Record::value(value, document.text.trim()))),
+        match document_records(format, document) {
+            Ok(records) => parsed.extend(records.into_iter().map(Ok)),
             Err(_) if index == 0 && !forced => return None,
             Err((line, reason)) => {
                 parsed.push(Err(RecordError::parse(index > 0, format, line, reason)));
@@ -46,11 +66,29 @@ pub(crate) fn read(format: Format, lines: &[Line], forced: bool) -> Option<Parse
     Some(parsed)
 }
 
-fn whole_input(lines: &[Line]) -> Document {
-    Document {
-        first_line: lines.first().map_or(1, |line| line.number),
-        text: join(lines.iter().map(|line| line.text.as_str())),
+fn document_records(format: Format, document: &Document) -> Result<Vec<Record>, Failure> {
+    match format {
+        Format::Toml => {
+            let value = toml_value(document)?;
+            Ok(vec![Record::value(value, document.text.trim())])
+        }
+        _ => yaml_records(document),
     }
+}
+
+fn yaml_records(document: &Document) -> Result<Vec<Record>, Failure> {
+    Ok(vec![Record::value(
+        yaml_value(document)?,
+        document.text.trim(),
+    )])
+}
+
+fn whole_input(lines: &[Line]) -> Document {
+    let first_line = lines.first().map_or(1, |line| line.number);
+    Document::new(
+        first_line,
+        join(lines.iter().map(|line| line.text.as_str())),
+    )
 }
 
 /// Split on `---` lines; a document's text excludes its `---` line.
@@ -64,10 +102,7 @@ fn yaml_documents(lines: &[Line]) -> Vec<Document> {
             current.push(&line.text);
             continue;
         };
-        documents.push(Document {
-            first_line,
-            text: join(current.drain(..)),
-        });
+        documents.push(Document::new(first_line, join(current.drain(..))));
         if rest.is_empty() {
             first_line = line.number + 1;
         } else {
@@ -75,10 +110,7 @@ fn yaml_documents(lines: &[Line]) -> Vec<Document> {
             current.push(rest);
         }
     }
-    documents.push(Document {
-        first_line,
-        text: join(current.drain(..)),
-    });
+    documents.push(Document::new(first_line, join(current.drain(..))));
     documents.retain(has_content);
     documents
 }
@@ -136,6 +168,7 @@ mod tests {
             .map(|(index, text)| Line {
                 number: index + 1,
                 text: text.to_string(),
+                decoded: true,
             })
             .collect()
     }
@@ -181,13 +214,28 @@ mod tests {
         let parsed = read(Format::Yaml, &lines("a: 1\n---\na: [\n---\na: 3"), false).unwrap();
         let sources = sources(&parsed);
         assert_eq!(sources.len(), 3);
-        assert!(
-            sources[1]
-                .clone()
-                .unwrap_err()
-                .starts_with("failed to parse line")
-        );
+        let warning = sources[1].clone().unwrap_err();
+        assert!(warning.starts_with("failed to parse line"), "{warning}");
         assert_eq!(sources[2], Ok("a: 3".to_string()));
+    }
+
+    #[test]
+    fn undecodable_lines_warn_after_content_and_fail_before_it() {
+        let mut input = lines("a: 1\nb: 2\nc: 3");
+        input[1].decoded = false;
+        let parsed = read(Format::Yaml, &input, false).unwrap();
+        assert!(matches!(
+            parsed[..],
+            [Err(RecordError::Skipped { line: 2, .. }), Ok(_)]
+        ));
+
+        let mut input = lines("a: 1\nb: 2");
+        input[0].decoded = false;
+        let parsed = read(Format::Yaml, &input, false).unwrap();
+        assert!(matches!(
+            parsed[..],
+            [Err(RecordError::First { line: 1, .. })]
+        ));
     }
 
     #[test]

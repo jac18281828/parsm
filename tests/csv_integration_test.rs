@@ -833,22 +833,31 @@ fn test_csv_output_regression() {
     );
 }
 
-fn stdout_of(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
-
 #[test]
 fn forced_csv_converts_a_line_without_commas() {
     let mut cmd = parsm_command();
     cmd.arg("--csv");
     let output = common::run(cmd, "a b");
-    assert_eq!(stdout_of(&output), "[\"a b\"]\n");
+    assert_eq!(common::stdout_of(&output), "[\"a b\"]\n");
     assert!(output.status.success());
 }
 
 #[test]
 fn csv_without_header_converts_to_field_arrays() {
     let output = common::run(parsm_command(), "1,2,3");
-    assert_eq!(stdout_of(&output), "[\"1\",\"2\",\"3\"]\n");
+    assert_eq!(common::stdout_of(&output), "[\"1\",\"2\",\"3\"]\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn csv_undecodable_later_line_warns_and_is_skipped() {
+    let mut cmd = parsm_command();
+    cmd.arg("name");
+    let output = common::run(cmd, b"name,age\nTom,45\n\xff,1\nAnn,30\n");
+    assert_eq!(common::stdout_of(&output), "Tom\nAnn\n");
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "Warning: failed to parse line 3: invalid UTF-8\n"
+    );
     assert!(output.status.success());
 }

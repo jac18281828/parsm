@@ -603,10 +603,6 @@ fn test_logfmt_detection_requires_successful_parse() {
     }
 }
 
-fn stdout_of(output: &std::process::Output) -> String {
-    String::from_utf8_lossy(&output.stdout).into_owned()
-}
-
 #[test]
 fn logfmt_filter_streams_first_record_before_eof() {
     let mut cmd = parsm_command();
@@ -622,7 +618,7 @@ fn debug_log_names_detected_format_on_stderr() {
     let mut cmd = parsm_command();
     cmd.env("RUST_LOG", "parsm=debug").arg("a");
     let output = common::run(cmd, "a=1");
-    assert_eq!(stdout_of(&output), "1\n");
+    assert_eq!(common::stdout_of(&output), "1\n");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("logfmt"), "stderr: {stderr}");
     assert!(output.status.success());

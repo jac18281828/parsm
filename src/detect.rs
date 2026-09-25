@@ -18,7 +18,7 @@
 use std::fmt;
 use std::io::{self, BufRead, Cursor};
 
-use crate::json_stream;
+use crate::json_stream::{self, Opening};
 use crate::lines::{Line, LineSource};
 use crate::parse::{parse_csv_line, parse_logfmt};
 
@@ -72,38 +72,59 @@ impl fmt::Display for Format {
 pub fn detect_format(input: &str) -> Format {
     let mut source = LineSource::new(Cursor::new(input.as_bytes()));
     // Reading from memory cannot fail; text is the table's last row.
-    detect(&mut source).unwrap_or(Format::Text)
+    detect(&mut source).map_or(Format::Text, |detection| detection.format)
 }
 
-/// Choose the format of `source`, replaying every line read.
-pub(crate) fn detect<R: BufRead>(source: &mut LineSource<R>) -> io::Result<Format> {
+/// The chosen format; for JSON, its first value, already parsed.
+pub(crate) struct Detection {
+    pub(crate) format: Format,
+    pub(crate) opening: Option<Opening>,
+}
+
+impl From<Format> for Detection {
+    fn from(format: Format) -> Self {
+        Self {
+            format,
+            opening: None,
+        }
+    }
+}
+
+/// Choose the format of `source`, replaying every line read that the chosen
+/// format has not yet consumed.
+pub(crate) fn detect<R: BufRead>(source: &mut LineSource<R>) -> io::Result<Detection> {
     let mut read = Vec::new();
-    let format = choose(source, &mut read)?;
-    source.replay(read);
-    Ok(format)
+    let mut detection = choose(source, &mut read)?;
+    match &mut detection.opening {
+        Some(opening) => source.replay(std::mem::take(&mut opening.rest)),
+        None => source.replay(read),
+    }
+    Ok(detection)
 }
 
-fn choose<R: BufRead>(source: &mut LineSource<R>, read: &mut Vec<Line>) -> io::Result<Format> {
+fn choose<R: BufRead>(source: &mut LineSource<R>, read: &mut Vec<Line>) -> io::Result<Detection> {
     let Some(probe) = next_meaningful(source, read)? else {
-        return Ok(Format::Text);
+        return Ok(Format::Text.into());
     };
-    if opens_json(source, read)? {
-        return Ok(Format::Json);
+    if let Some(opening) = opens_json(source, read)? {
+        return Ok(Detection {
+            format: Format::Json,
+            opening: Some(opening),
+        });
     }
     let probe = probe.text;
-    if parse_logfmt(&probe).is_some() {
-        return Ok(Format::Logfmt);
-    }
-    if opens_toml(&probe, source, read)? {
-        return Ok(Format::Toml);
-    }
-    if opens_yaml(&probe) {
-        return Ok(Format::Yaml);
-    }
-    if opens_csv(&probe) {
-        return Ok(Format::Csv);
-    }
-    Ok(Format::Text)
+    let format = if parse_logfmt(&probe).is_some() {
+        Format::Logfmt
+    } else if opens_toml(&probe, source, read)? {
+        Format::Toml
+    } else if opens_yaml(&probe) {
+        Format::Yaml
+    } else if opens_csv(&probe) {
+        Format::Csv
+    } else {
+        Format::Text
+    };
+    Ok(format.into())
 }
 
 /// Read up to and including the next line that is neither blank nor a `#`
@@ -122,14 +143,14 @@ fn next_meaningful<R: BufRead>(
 }
 
 /// Row 1. The probe is the last line in `read`.
-fn opens_json<R: BufRead>(source: &mut LineSource<R>, read: &mut Vec<Line>) -> io::Result<bool> {
+fn opens_json<R: BufRead>(
+    source: &mut LineSource<R>,
+    read: &mut Vec<Line>,
+) -> io::Result<Option<Opening>> {
     let Some(probe) = read.pop() else {
-        return Ok(false);
+        return Ok(None);
     };
-    let chunk = json_stream::read_chunk(probe, source)?;
-    let opens = json_stream::opens_json_input(&chunk);
-    read.extend(chunk);
-    Ok(opens)
+    json_stream::opens_json_input(probe, source, read)
 }
 
 /// Row 3.
@@ -275,13 +296,23 @@ mod tests {
     #[test]
     fn every_line_read_is_replayed() {
         let mut source = LineSource::new(Cursor::new("# c\n{\n\"a\": 1\n}\nnext\n"));
-        assert_eq!(detect(&mut source).unwrap(), Format::Json);
+        assert_eq!(detect(&mut source).unwrap().format, Format::Json);
         let lines: Vec<String> = source
             .read_to_end()
             .unwrap()
             .into_iter()
             .map(|l| l.text)
             .collect();
-        assert_eq!(lines, vec!["# c", "{", "\"a\": 1", "}", "next"]);
+        assert_eq!(lines, vec!["next"]);
+
+        let mut source = LineSource::new(Cursor::new("# c\nname: Alice\nnext\n"));
+        assert_eq!(detect(&mut source).unwrap().format, Format::Yaml);
+        let lines: Vec<String> = source
+            .read_to_end()
+            .unwrap()
+            .into_iter()
+            .map(|l| l.text)
+            .collect();
+        assert_eq!(lines, vec!["# c", "name: Alice", "next"]);
     }
 }
