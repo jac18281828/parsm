@@ -1,7 +1,7 @@
 name: CI/CD Pipeline
 on:
   push:
-    branches: [main]
+    branches: [main, "agent/**"]
   pull_request:
     branches: [main]
 env:
@@ -32,7 +32,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets --all-features --no-deps -- -D warnings
       - name: Build project
         run: cargo build --verbose
       - name: Run Rust tests
