@@ -879,3 +879,46 @@ fn csv_rows_after_the_header_sample_stream() {
     assert!(rest.is_empty(), "rest: {rest:?}");
     assert!(status.success());
 }
+
+#[test]
+fn loose_comma_prose_is_read_as_text_words() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${word_1}]");
+    let output = common::run(cmd, "Hello, world");
+    assert_eq!(common::stdout_of(&output), "world\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn loose_comma_prose_converts_as_a_word_array() {
+    let output = common::run(parsm_command(), "Hello, world");
+    assert_eq!(common::stdout_of(&output), "[\"Hello,\",\"world\"]\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn tight_comma_line_is_csv_with_positional_fields() {
+    let mut cmd = parsm_command();
+    cmd.arg(r#"field_1 > "25" [${1} (${2})]"#);
+    let output = common::run(cmd, "Alice,30,Engineer");
+    assert_eq!(common::stdout_of(&output), "Alice (30)\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn quoted_comma_keeps_the_line_tight_csv() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${field_0}]");
+    let output = common::run(cmd, "\"Smith, John\",30");
+    assert_eq!(common::stdout_of(&output), "Smith, John\n");
+    assert!(output.status.success());
+}
+
+#[test]
+fn loose_comma_with_a_matching_next_line_is_csv() {
+    let mut cmd = parsm_command();
+    cmd.arg("[${field_0}]");
+    let output = common::run(cmd, "x, y\n1, 2");
+    assert_eq!(common::stdout_of(&output), "1\n");
+    assert!(output.status.success());
+}

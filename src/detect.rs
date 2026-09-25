@@ -10,7 +10,7 @@
 //! | 2 | logfmt | every whitespace-separated token is `key=value` and the line parses as logfmt |
 //! | 3 | TOML | a `key = value` line, or a `[table]` line followed by one, that parses |
 //! | 4 | YAML | a block mapping `key: value`, a `- item`, `---`, or a `{…}` flow map |
-//! | 5 | CSV | the line has commas and parses as a CSV row |
+//! | 5 | CSV | the line parses as a CSV row of 2+ fields with every separator comma tight (no trailing whitespace), or with a loose separator comma when the next line parses as a CSV row of the same field count |
 //! | 6 | text | everything else |
 //!
 //! Every line detection reads is replayed to the chosen format.
@@ -119,7 +119,7 @@ fn choose<R: BufRead>(source: &mut LineSource<R>, read: &mut Vec<Line>) -> io::R
         Format::Toml
     } else if opens_yaml(&probe) {
         Format::Yaml
-    } else if opens_csv(&probe) {
+    } else if opens_csv(&probe, source, read)? {
         Format::Csv
     } else {
         Format::Text
@@ -224,10 +224,51 @@ fn ends_key(rest: &str) -> bool {
         .is_some_and(|after| after.is_empty() || after.starts_with(char::is_whitespace))
 }
 
-/// Row 5.
-fn opens_csv(probe: &str) -> bool {
-    let commas = probe.matches(',').count();
-    commas > 0 && probe.trim().len() > commas && parse_csv_line(probe).is_some()
+/// Row 5. A line with a loose separator comma (one followed by whitespace,
+/// marking prose) is CSV only when the next meaningful line parses as a row
+/// of the same field count.
+fn opens_csv<R: BufRead>(
+    probe: &str,
+    source: &mut LineSource<R>,
+    read: &mut Vec<Line>,
+) -> io::Result<bool> {
+    let Some(row) = parse_csv_line(probe) else {
+        return Ok(false);
+    };
+    if row.len() < 2 {
+        return Ok(false);
+    }
+    if !has_loose_separator_comma(probe) {
+        return Ok(true);
+    }
+    let next = match read
+        .iter()
+        .filter(|line| !line.is_blank() && !line.is_comment())
+        .nth(1)
+        .cloned()
+    {
+        Some(line) => Some(line),
+        None => next_meaningful(source, read)?,
+    };
+    Ok(next.is_some_and(|next| {
+        parse_csv_line(&next.text).is_some_and(|next_row| next_row.len() == row.len())
+    }))
+}
+
+/// Whether a comma outside quotes is directly followed by whitespace —
+/// prose punctuation, not a tight CSV separator.
+fn has_loose_separator_comma(probe: &str) -> bool {
+    let mut in_quotes = false;
+    for (index, ch) in probe.char_indices() {
+        match ch {
+            '"' => in_quotes = !in_quotes,
+            ',' if !in_quotes && probe[index + 1..].starts_with(char::is_whitespace) => {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]
@@ -257,6 +298,8 @@ mod tests {
             ("a,b", Format::Csv),
             ("1,2,3", Format::Csv),
             ("\"Smith, John\",30", Format::Csv),
+            ("Hello, world", Format::Text),
+            ("name, age\nAlice, 30", Format::Csv),
             ("hello", Format::Text),
             ("a:1", Format::Text),
             ("[a]", Format::Text),
