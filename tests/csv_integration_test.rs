@@ -1,30 +1,15 @@
-use std::fs::File;
-use std::io::Write;
-use std::process::Command;
-use tempfile::NamedTempFile;
-
 mod common;
 
-/// Helper function to create a Command with proper environment setup
-fn parsm_command() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
-    cmd.env("RUST_LOG", "parsm=error");
-    cmd
-}
+use common::command;
 
 #[test]
 fn test_csv_field_selection_by_header() {
     // Test field selection by header name on CSV with headers
     let input = "name,age,occupation\nTom,45,engineer\nAlice,30,doctor";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("name")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -40,14 +25,9 @@ fn test_csv_field_selection_by_index() {
     // Test field selection by index on CSV without headers
     let input = "Tom,45,engineer\nAlice,30,doctor";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_0")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -63,14 +43,9 @@ fn test_csv_header_detection() {
     // Test that headers are correctly detected and skipped in output
     let input = "name,age,occupation\nTom,45,engineer\nAlice,30,doctor";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("name")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -87,14 +62,9 @@ fn test_csv_no_header_detection() {
     // Test CSV without headers - should not skip first row
     let input = "Tom,45,engineer\nAlice,30,doctor";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_0")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -116,14 +86,9 @@ fn test_csv_template_with_headers() {
     // Test template rendering with header-based field access
     let input = "name,age,occupation\nTom,45,engineer\nAlice,30,doctor";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("[$name is $age years old]")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("[$name is $age years old]");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -138,14 +103,9 @@ fn test_csv_filter_with_headers() {
     // Test filtering with header-based field access
     let input = "name,age,occupation\nTom,45,engineer\nAlice,30,doctor\nBob,35,engineer";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("occupation == \"engineer\" {$name}")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("occupation == \"engineer\" {$name}");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -161,14 +121,9 @@ fn test_csv_multiple_field_selection() {
     // Test selecting different fields by index
     let input = "Alice,30,Engineer\nBob,25,Designer";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_2") // Select third field (occupation)
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_2");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -182,14 +137,9 @@ fn test_csv_numeric_filtering() {
     // Test filtering CSV data with numeric comparisons
     let input = "Alice,30,Engineer\nBob,25,Designer\nCharlie,35,Manager\nDana,22,Intern";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_1 > 27") // Filter by age > 27
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_1 > 27");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -206,14 +156,9 @@ fn test_csv_string_filtering() {
     // Test filtering CSV data with string operations
     let input = "Alice,30,Engineer\nBob,25,Designer\nCharlie,35,Manager\nEva,28,Engineer";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_2 == \"Engineer\"") // Filter by occupation
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_2 == \"Engineer\"");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -230,14 +175,9 @@ fn test_csv_template_replacement_indexed() {
     // Test template replacement with indexed CSV fields
     let input = "Alice,30,Engineer\nBob,25,Designer";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_1 > 20 {Name: $field_0, Age: $field_1, Job: $field_2}")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_1 > 20 {Name: $field_0, Age: $field_1, Job: $field_2}");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -251,14 +191,9 @@ fn test_csv_original_input_template() {
     // Test ${0} (original input) in templates
     let input = "Alice,30,Engineer";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_1 > 25 {Person: ${field_0} | Original: ${0}}")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_1 > 25 {Person: ${field_0} | Original: ${0}}");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -271,14 +206,9 @@ fn test_csv_complex_boolean_logic() {
     // Test complex boolean logic with CSV data
     let input = "Alice,30,Engineer,true\nBob,22,Designer,false\nCharlie,35,Manager,false\nDana,24,Admin,true";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_1 > 25 && field_3? {Found: $field_0 ($field_2)}")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_1 > 25 && field_3? {Found: $field_0 ($field_2)}");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -295,14 +225,9 @@ fn test_csv_nonexistent_field() {
     // Test accessing non-existent fields
     let input = "Alice,30,Engineer";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_5") // Field that doesn't exist
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_5");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -316,14 +241,9 @@ fn test_csv_quoted_fields() {
     // Test CSV with quoted fields containing commas
     let input = r#""Smith, John",35,"Senior Engineer, Tech Lead""#;
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_1") // Select age field
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_1");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -336,14 +256,9 @@ fn test_csv_empty_fields() {
     // Test CSV with empty fields
     let input = "Alice,,Engineer\n,25,Designer\nCharlie,35,\n";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_0") // Select first field
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -368,14 +283,9 @@ fn test_csv_numeric_comparisons() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut file = NamedTempFile::new().expect("create temp file");
-        write!(file, "{input}").expect("write temp file");
-
-        let output = parsm_command()
-            .arg(format!("{filter} {{Match: $field_0}}"))
-            .stdin(File::open(file.path()).unwrap())
-            .output()
-            .expect("run parsm");
+        let mut cmd = command();
+        cmd.arg(format!("{filter} {{Match: $field_0}}"));
+        let output = common::run(cmd, input);
 
         assert!(output.status.success(), "parsm failed for input: {input}");
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -400,14 +310,9 @@ fn test_csv_different_row_lengths() {
     // Test CSV rows with different number of fields
     let input = "Alice,30\nBob,25,Designer,Manager\nCharlie,35,Engineer";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_1") // Select second field (age)
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_1");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -424,14 +329,9 @@ fn test_csv_single_column() {
     // Test CSV with only one column
     let input = "Alice\nBob\nCharlie";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_0") // Select only field
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, input);
 
     // This might not be detected as CSV, but if it is, should work
     if output.status.success() {
@@ -449,14 +349,9 @@ fn test_csv_malformed_input() {
     let input = r#"Alice,30,"Engineer
 Bob,25,Designer"#;
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_0 == \"Bob\"")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_0 == \"Bob\"");
+    let output = common::run(cmd, input);
 
     // Should handle malformed CSV gracefully without crashing
     assert!(
@@ -470,14 +365,9 @@ fn test_csv_braced_field_syntax() {
     // Test ${field_N} syntax in templates
     let input = "Alice,30,Engineer";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("field_1 > 25 {Name: ${field_0}, Age: ${field_1}, Job: ${field_2}}")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_1 > 25 {Name: ${field_0}, Age: ${field_1}, Job: ${field_2}}");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -490,14 +380,9 @@ fn test_csv_headers_all_data_rows() {
     // Test that with headers, all data rows (not header) are processed
     let input = "Name,Age,Job\nAlice,30,Engineer\nBob,25,Designer\nCharlie,35,Manager";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("name") // Select by header name
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -547,15 +432,9 @@ fn test_csv_forced_format() {
     ];
 
     for (input, expression, expected) in test_cases {
-        let mut file = NamedTempFile::new().expect("create temp file");
-        write!(file, "{input}").expect("write temp file");
-
-        let output = parsm_command()
-            .arg("--csv")
-            .arg(expression)
-            .stdin(File::open(file.path()).unwrap())
-            .output()
-            .expect("run parsm");
+        let mut cmd = command();
+        cmd.arg("--csv").arg(expression);
+        let output = common::run(cmd, input);
 
         assert!(
             output.status.success(),
@@ -587,16 +466,9 @@ fn test_csv_forced_format_filtering() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut file = NamedTempFile::new().expect("create temp file");
-        write!(file, "{input}").expect("write temp file");
-
-        let output = parsm_command()
-            .arg("--csv")
-            .arg(filter)
-            .arg(r#"{match}"#)
-            .stdin(File::open(file.path()).unwrap())
-            .output()
-            .expect("run parsm");
+        let mut cmd = command();
+        cmd.arg("--csv").arg(filter).arg(r#"{match}"#);
+        let output = common::run(cmd, input);
 
         assert!(
             output.status.success(),
@@ -629,14 +501,8 @@ fn test_csv_multiline_output() {
     // Test with a multiline CSV file that has headers
     let input = "name,age,occupation\nAlice,30,Engineer\nBob,25,Designer\nCharlie,35,Manager";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    // Convert mode writes one JSON object per data row, keyed by header
-    let output = parsm_command()
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let cmd = command();
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     assert_eq!(
@@ -652,37 +518,32 @@ fn test_csv_multiline_output() {
     );
 
     // Test filtering functionality on multiline CSV
-    let filter_output = parsm_command()
-        .arg("age > 27") // Filter rows where age > 27
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("age > 27"); // Filter rows where age > 27
+    let filter_output = common::run(cmd, input);
 
     assert!(
         filter_output.status.success(),
         "parsm filter failed: {filter_output:?}"
     );
-    let filter_stdout = String::from_utf8_lossy(&filter_output.stdout);
+    let filter_stdout = common::stdout_of(&filter_output);
 
     // Should only contain rows with age > 27 (Alice and Charlie)
     assert!(filter_stdout.contains("Alice,30,Engineer"));
     assert!(filter_stdout.contains("Charlie,35,Manager"));
     assert!(!filter_stdout.contains("Bob,25,Designer"));
 
-    // Test header-based filtering with --csv flag
-    // Note: Currently, with --csv flag, we need to use field_N syntax instead of header names
-    let header_filter_output = parsm_command()
-        .arg("--csv")
-        .arg("field_1 > 27") // Using field index instead of header name
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    // Header-based filtering with --csv flag needs field_N syntax instead of
+    // header names.
+    let mut cmd = command();
+    cmd.arg("--csv").arg("field_1 > 27");
+    let header_filter_output = common::run(cmd, input);
 
     assert!(
         header_filter_output.status.success(),
         "parsm header filter failed: {header_filter_output:?}"
     );
-    let header_filter_stdout = String::from_utf8_lossy(&header_filter_output.stdout);
+    let header_filter_stdout = common::stdout_of(&header_filter_output);
 
     // Should only contain rows with age > 27 (Alice and Charlie)
     assert!(header_filter_stdout.contains("Alice,30,Engineer"));
@@ -696,14 +557,8 @@ fn test_csv_multiline_output_field() {
     // Test with a multiline CSV file that has headers
     let input = "name,age,occupation\nAlice,30,Engineer\nBob,25,Designer\nCharlie,35,Manager";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    // Convert mode writes one JSON object per data row, keyed by header
-    let output = parsm_command()
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let cmd = command();
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
     assert_eq!(
@@ -719,37 +574,32 @@ fn test_csv_multiline_output_field() {
     );
 
     // Test filtering functionality on multiline CSV
-    let filter_output = parsm_command()
-        .arg("field_1 > 27") // Filter rows where age > 27
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("field_1 > 27"); // Filter rows where age > 27
+    let filter_output = common::run(cmd, input);
 
     assert!(
         filter_output.status.success(),
         "parsm filter failed: {filter_output:?}"
     );
-    let filter_stdout = String::from_utf8_lossy(&filter_output.stdout);
+    let filter_stdout = common::stdout_of(&filter_output);
 
     // Should only contain rows with age > 27 (Alice and Charlie)
     assert!(filter_stdout.contains("Alice,30,Engineer"));
     assert!(filter_stdout.contains("Charlie,35,Manager"));
     assert!(!filter_stdout.contains("Bob,25,Designer"));
 
-    // Test header-based filtering with --csv flag
-    // Note: Currently, with --csv flag, we need to use field_N syntax instead of header names
-    let header_filter_output = parsm_command()
-        .arg("--csv")
-        .arg("field_1 > 27") // Using field index instead of header name
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    // Header-based filtering with --csv flag needs field_N syntax instead of
+    // header names.
+    let mut cmd = command();
+    cmd.arg("--csv").arg("field_1 > 27");
+    let header_filter_output = common::run(cmd, input);
 
     assert!(
         header_filter_output.status.success(),
         "parsm header filter failed: {header_filter_output:?}"
     );
-    let header_filter_stdout = String::from_utf8_lossy(&header_filter_output.stdout);
+    let header_filter_stdout = common::stdout_of(&header_filter_output);
 
     // Should only contain rows with age > 27 (Alice and Charlie)
     assert!(header_filter_stdout.contains("Alice,30,Engineer"));
@@ -767,15 +617,9 @@ fn test_csv_output_regression() {
     // Create a simple CSV file without complex quoting
     let input = "name,age,active\nAlice,30,true\nBob,25,false\nCharlie,35,true";
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    // Convert mode writes one JSON object per data row, keyed by header
-    let output = parsm_command()
-        .arg("--csv")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("--csv");
+    let output = common::run(cmd, input);
 
     assert!(
         output.status.success(),
@@ -794,18 +638,15 @@ fn test_csv_output_regression() {
     );
 
     // Test filtering by field index
-    let filter_output = parsm_command()
-        .arg("--csv")
-        .arg("field_2 == \"true\"")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("--csv").arg("field_2 == \"true\"");
+    let filter_output = common::run(cmd, input);
 
     assert!(
         filter_output.status.success(),
         "parsm filter failed: {filter_output:?}"
     );
-    let filter_stdout = String::from_utf8_lossy(&filter_output.stdout);
+    let filter_stdout = common::stdout_of(&filter_output);
 
     // Should only include rows with active=true
     assert!(filter_stdout.contains("Alice,30,true"));
@@ -813,18 +654,15 @@ fn test_csv_output_regression() {
     assert!(!filter_stdout.contains("Bob,25,false"));
 
     // Test field selection
-    let field_output = parsm_command()
-        .arg("--csv")
-        .arg("field_0")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("--csv").arg("field_0");
+    let field_output = common::run(cmd, input);
 
     assert!(
         field_output.status.success(),
         "parsm field selection failed: {field_output:?}"
     );
-    let field_stdout = String::from_utf8_lossy(&field_output.stdout);
+    let field_stdout = common::stdout_of(&field_output);
 
     // Should extract just the names
     assert_eq!(
@@ -835,7 +673,7 @@ fn test_csv_output_regression() {
 
 #[test]
 fn forced_csv_converts_a_line_without_commas() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("--csv");
     let output = common::run(cmd, "a b");
     assert_eq!(common::stdout_of(&output), "[\"a b\"]\n");
@@ -844,14 +682,14 @@ fn forced_csv_converts_a_line_without_commas() {
 
 #[test]
 fn csv_without_header_converts_to_field_arrays() {
-    let output = common::run(parsm_command(), "1,2,3");
+    let output = common::run(command(), "1,2,3");
     assert_eq!(common::stdout_of(&output), "[\"1\",\"2\",\"3\"]\n");
     assert!(output.status.success());
 }
 
 #[test]
 fn csv_undecodable_later_line_warns_and_is_skipped() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("name");
     let output = common::run(cmd, b"name,age\nTom,45\n\xff,1\nAnn,30\n");
     assert_eq!(common::stdout_of(&output), "Tom\nAnn\n");
@@ -864,7 +702,7 @@ fn csv_undecodable_later_line_warns_and_is_skipped() {
 
 #[test]
 fn csv_rows_after_the_header_sample_stream() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("name");
     let mut session = common::Session::start(cmd);
     session.write_line("name,age");
@@ -882,7 +720,7 @@ fn csv_rows_after_the_header_sample_stream() {
 
 #[test]
 fn loose_comma_prose_is_read_as_text_words() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${word_1}]");
     let output = common::run(cmd, "Hello, world");
     assert_eq!(common::stdout_of(&output), "world\n");
@@ -891,14 +729,14 @@ fn loose_comma_prose_is_read_as_text_words() {
 
 #[test]
 fn loose_comma_prose_converts_as_a_word_array() {
-    let output = common::run(parsm_command(), "Hello, world");
+    let output = common::run(command(), "Hello, world");
     assert_eq!(common::stdout_of(&output), "[\"Hello,\",\"world\"]\n");
     assert!(output.status.success());
 }
 
 #[test]
 fn tight_comma_line_is_csv_with_positional_fields() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg(r#"field_1 > "25" [${1} (${2})]"#);
     let output = common::run(cmd, "Alice,30,Engineer");
     assert_eq!(common::stdout_of(&output), "Alice (30)\n");
@@ -907,7 +745,7 @@ fn tight_comma_line_is_csv_with_positional_fields() {
 
 #[test]
 fn quoted_comma_keeps_the_line_tight_csv() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${field_0}]");
     let output = common::run(cmd, "\"Smith, John\",30");
     assert_eq!(common::stdout_of(&output), "Smith, John\n");
@@ -916,7 +754,7 @@ fn quoted_comma_keeps_the_line_tight_csv() {
 
 #[test]
 fn loose_comma_with_a_matching_next_line_is_csv() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${field_0}]");
     let output = common::run(cmd, "x, y\n1, 2");
     assert_eq!(common::stdout_of(&output), "1\n");
@@ -925,7 +763,7 @@ fn loose_comma_with_a_matching_next_line_is_csv() {
 
 #[test]
 fn header_keys_keep_case_and_a_lower_case_alias() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${Name}/${name}]");
     let output = common::run(cmd, "Name,Age\nAlice,30");
     assert_eq!(common::stdout_of(&output), "Alice/Alice\n");
@@ -934,7 +772,7 @@ fn header_keys_keep_case_and_a_lower_case_alias() {
 
 #[test]
 fn ragged_rows_keep_every_field_in_convert_mode() {
-    let output = common::run(parsm_command(), "name,age\nAlice,30\nBob,40,extra\nCarol");
+    let output = common::run(command(), "name,age\nAlice,30\nBob,40,extra\nCarol");
     assert_eq!(
         common::stdout_of(&output),
         concat!(
@@ -951,7 +789,7 @@ fn ragged_rows_keep_every_field_in_convert_mode() {
 
 #[test]
 fn runaway_quote_fails_its_line_and_resumes_after_it() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${a}]");
     let mut input = String::from("a,b\n\"bad,1\n");
     for n in 1..=100 {
@@ -969,7 +807,7 @@ fn runaway_quote_fails_its_line_and_resumes_after_it() {
 
 #[test]
 fn runaway_quote_recovery_streams_before_stdin_closes() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${a}]");
     let mut session = common::Session::start(cmd);
     session.write_line("a,b");
@@ -988,10 +826,230 @@ fn runaway_quote_recovery_streams_before_stdin_closes() {
 
 #[test]
 fn quoted_field_within_the_bound_stays_one_record() {
-    let output = common::run(parsm_command(), "a,b\n\"x\ny\",2");
+    let output = common::run(command(), "a,b\n\"x\ny\",2");
     assert_eq!(
         common::stdout_of(&output),
         "{\"a\":\"x\\ny\",\"b\":\"2\"}\n"
     );
     assert!(output.status.success());
+}
+
+// Ported from the retired Python integration harness; each asserts the
+// same input, arguments and expected stdout as its original case (see
+// the batch b6 REPORT's mapping table).
+
+#[test]
+fn ported_csv_field_select() {
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, "Alice,30,Engineer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_csv_indexed_select() {
+    let mut cmd = command();
+    cmd.arg("field_2");
+    let output = common::run(cmd, "Alice,30,Engineer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Engineer");
+}
+
+#[test]
+fn ported_csv_filter_string() {
+    let mut cmd = command();
+    cmd.arg(r#"field_1 > "25""#);
+    let output = common::run(cmd, "Alice,30,Engineer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice,30,Engineer");
+}
+
+#[test]
+fn ported_csv_template_simple() {
+    let mut cmd = command();
+    cmd.arg("{${field_0} works as ${field_2}}");
+    let output = common::run(cmd, "Alice,30,Engineer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice works as Engineer");
+}
+
+#[test]
+fn ported_csv_template_indexed() {
+    let mut cmd = command();
+    cmd.arg("{${1} - ${2} - ${3}}");
+    let output = common::run(cmd, "Alice,30,Engineer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice - 30 - Engineer");
+}
+
+#[test]
+fn ported_csv_empty_field() {
+    let mut cmd = command();
+    cmd.arg("field_1");
+    let output = common::run(cmd, "Alice,,Engineer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "");
+}
+
+#[test]
+fn ported_csv_multiline() {
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, "Alice,30\nBob,25");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice\nBob");
+}
+
+#[test]
+fn ported_csv_header_field_select() {
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, "name,age,occupation\nTom,45,engineer\nAlice,30,doctor");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Tom\nAlice");
+}
+
+#[test]
+fn ported_csv_header_detection() {
+    let mut cmd = command();
+    cmd.arg("age");
+    let output = common::run(cmd, "name,age,occupation\nTom,45,engineer\nAlice,30,doctor");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "45\n30");
+}
+
+#[test]
+fn ported_csv_no_header_detection() {
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, "Tom,45,engineer\nAlice,30,doctor");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Tom\nAlice");
+}
+
+#[test]
+fn ported_csv_template_headers() {
+    let mut cmd = command();
+    cmd.arg("{${name} is ${age} years old}");
+    let output = common::run(cmd, "name,age,occupation\nTom,45,engineer\nAlice,30,doctor");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        "Tom is 45 years old\nAlice is 30 years old"
+    );
+}
+
+#[test]
+fn ported_csv_filter_headers() {
+    let mut cmd = command();
+    cmd.arg(r#"occupation == "engineer" {$name}"#);
+    let output = common::run(
+        cmd,
+        "name,age,occupation\nTom,45,engineer\nAlice,30,doctor\nBob,35,engineer",
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Tom\nBob");
+}
+
+#[test]
+fn ported_csv_mixed_header_patterns() {
+    let mut cmd = command();
+    cmd.arg("firstname");
+    let output = common::run(
+        cmd,
+        "user_id,firstName,Last_Name,emailAddress\n1,John,Doe,john@example.com\n2,Jane,Smith,jane@example.com",
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "John\nJane");
+}
+
+#[test]
+fn ported_detect_csv() {
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, "col1,col2,col3");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "col1");
+}
+
+#[test]
+fn ported_special_chars() {
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, r#"test@domain.com,123,"value with spaces""#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "test@domain.com");
+}
+
+#[test]
+fn ported_stream_csv() {
+    let mut cmd = command();
+    cmd.arg("field_0");
+    let output = common::run(cmd, "Alice,30\nBob,25\nCharlie,35");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice\nBob\nCharlie");
+}
+
+#[test]
+fn ported_truthy_csv_present() {
+    let mut cmd = command();
+    cmd.arg("field_1?");
+    let output = common::run(cmd, "Alice,30,Engineer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice,30,Engineer");
+}
+
+#[test]
+fn ported_truthy_csv_empty() {
+    let mut cmd = command();
+    cmd.arg("field_1?");
+    let output = common::run(cmd, "Alice,,Engineer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "");
+}
+
+#[test]
+fn ported_explicit_csv() {
+    let mut cmd = command();
+    cmd.args(["--csv", "field_0"]);
+    let output = common::run(cmd, "Alice,30,Engineer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_json_as_csv() {
+    let mut cmd = command();
+    cmd.args(["--csv", "field_0"]);
+    let output = common::run(cmd, r#"{"name": "Alice", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), r#"{"name": "Alice""#);
+}
+
+#[test]
+fn ported_explicit_csv_filter() {
+    let mut cmd = command();
+    cmd.args(["--csv", r#"field_1 > "27""#]);
+    let output = common::run(cmd, "Alice,30,Engineer\nBob,25,Designer");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice,30,Engineer");
+}
+/// Kitchen sink: positional field access, a case-insensitive regex, `&&`/
+/// `||`/`!field?`, and a template conditional plus `${0}`, combined in one
+/// expression and asserted against exact output.
+#[test]
+fn csv_kitchen_sink() {
+    let input = "Alice,30,engineer,alice@EXAMPLE.com,true,false";
+    let mut cmd = command();
+    cmd.args([
+        "--csv",
+        r#"(field_3 ~= /example\.com/i || field_2 == "engineer") && !field_5? {Role: ${field_2} - Active: ${field_4?yes:no} - Source: ${0}}"#,
+    ]);
+    let output = common::run(cmd, input);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim_end_matches('\n'),
+        format!("Role: engineer - Active: yes - Source: {input}")
+    );
 }

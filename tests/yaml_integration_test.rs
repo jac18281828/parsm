@@ -1,43 +1,15 @@
-use std::io::Write;
-use std::process::{Command, Stdio};
-
 mod common;
 
-/// Helper function to create a Command with proper environment setup
-fn parsm_command() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
-    cmd.env("RUST_LOG", "parsm=error");
-    cmd
-}
-
-// NOTE: Many YAML integration tests are currently failing due to systematic issues
-// with YAML processing, particularly:
-// 1. Template processing bug affecting multi-line input
-// 2. Field selection issues with some YAML formats
-// 3. Filter processing problems with YAML data structures
-// These issues are tracked separately from the truthy operator and CSV header fixes.
+use common::command;
 
 /// Test basic YAML field selection
 #[test]
 fn test_yaml_basic_field_selection() {
     let input = "name: Alice";
 
-    let mut child = parsm_command()
-        .arg(r#""name""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""name""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -60,22 +32,9 @@ fn test_yaml_field_types() {
     ];
 
     for (input, field_selector, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg(field_selector)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(field_selector);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for input '{}': {:?}",
@@ -94,22 +53,9 @@ fn test_yaml_field_types() {
 fn test_yaml_nonexistent_field() {
     let input = "name: Alice";
 
-    let mut child = parsm_command()
-        .arg(r#""nonexistent""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""nonexistent""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -125,22 +71,9 @@ fn test_yaml_nonexistent_field() {
 fn test_yaml_template_dollar_brace_syntax() {
     let input = "name: Alice\nversion: 1.0.0";
 
-    let mut child = parsm_command()
-        .arg(r#"{User: ${name} v${version}}"#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#"{User: ${name} v${version}}"#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -156,22 +89,9 @@ fn test_yaml_template_dollar_brace_syntax() {
 fn test_yaml_template_dollar_syntax() {
     let input = "app: myapp\nenv: production";
 
-    let mut child = parsm_command()
-        .arg(r#"{App ${app} running in ${env} mode}"#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#"{App ${app} running in ${env} mode}"#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -187,22 +107,9 @@ fn test_yaml_template_dollar_syntax() {
 fn test_yaml_literal_dollar_amounts() {
     let input = "price: 25.50";
 
-    let mut child = parsm_command()
-        .arg(r#"{Price is $12 base + ${price} extra}"#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#"{Price is $12 base + ${price} extra}"#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -218,22 +125,9 @@ fn test_yaml_literal_dollar_amounts() {
 fn test_yaml_original_input_template() {
     let input = "key: value1";
 
-    let mut child = parsm_command()
-        .arg(r#"{Original: ${0} | Key: ${key}}"#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#"{Original: ${0} | Key: ${key}}"#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -258,23 +152,9 @@ fn test_yaml_numeric_comparisons() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(filter)
-            .arg(r#"{match}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(filter).arg(r#"{match}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for '{}' with filter '{}': {:?}",
@@ -307,23 +187,9 @@ fn test_yaml_string_operations() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(filter)
-            .arg(r#"{match}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(filter).arg(r#"{match}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for '{}' with filter '{}': {:?}",
@@ -366,23 +232,9 @@ fn test_yaml_boolean_logic() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(filter)
-            .arg(r#"{match}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(filter).arg(r#"{match}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed with filter '{}': {:?}",
@@ -412,22 +264,9 @@ fn test_yaml_flow_syntax() {
     ];
 
     for (input, field_selector, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg(field_selector)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(field_selector);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for selector '{}' with input '{}': {:?}",
@@ -450,22 +289,9 @@ fn test_yaml_flow_syntax() {
 fn test_yaml_array_handling() {
     let input = "tags:\n  - web\n  - api\n  - rust";
 
-    let mut child = parsm_command()
-        .arg(r#""tags""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""tags""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -498,22 +324,9 @@ fn test_yaml_nested_field_access() {
     ];
 
     for (field_selector, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg(field_selector)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(field_selector);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for selector '{}': {:?}",
@@ -546,23 +359,9 @@ fn test_yaml_complex_filtering() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(filter)
-            .arg(r#"{match}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(filter).arg(r#"{match}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for input '{}' with filter '{}': {:?}",
@@ -587,22 +386,9 @@ fn test_yaml_complex_filtering() {
 fn test_yaml_document_separators() {
     let input = "---\nname: Alice\n---\nname: Bob";
 
-    let mut child = parsm_command()
-        .arg(r#""name""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""name""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -623,22 +409,9 @@ fn test_yaml_document_separators() {
 fn test_yaml_quoted_keys() {
     let input = r#"normal_key: value3"#;
 
-    let mut child = parsm_command()
-        .arg(r#""normal_key""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""normal_key""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -661,22 +434,9 @@ fn test_yaml_empty_values() {
     ];
 
     for (input, field_selector, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg(field_selector)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(field_selector);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for input '{}': {:?}",
@@ -707,23 +467,9 @@ fn test_yaml_flow_format_forced() {
     ];
 
     for (input, field_selector, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg("--yaml")
-            .arg(field_selector)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg("--yaml").arg(field_selector);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for input '{}' with selector '{}': {:?}",
@@ -768,23 +514,9 @@ fn test_yaml_flow_format_templates_forced() {
     ];
 
     for (input, template, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg("--yaml")
-            .arg(template)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg("--yaml").arg(template);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for input '{}' with template '{}': {:?}",
@@ -831,24 +563,9 @@ fn test_yaml_flow_format_filtering_forced() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg("--yaml")
-            .arg(filter)
-            .arg(r#"{match}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg("--yaml").arg(filter).arg(r#"{match}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for input '{}' with filter '{}': {:?}",
@@ -903,23 +620,9 @@ fn test_yaml_flow_format_complex_nested_forced() {
     ];
 
     for (input, field_selector, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg("--yaml")
-            .arg(field_selector)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg("--yaml").arg(field_selector);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for complex YAML flow input '{}' with selector '{}': {:?}",
@@ -944,22 +647,9 @@ fn test_yaml_flow_format_complex_nested_forced() {
 fn test_yaml_anchor_alias_resolution() {
     let input = "base: &shared 42\nref: *shared";
 
-    let mut child = parsm_command()
-        .arg(r#""ref""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""ref""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -980,22 +670,9 @@ fn test_yaml_anchor_alias_resolution() {
 fn test_yaml_explicit_string_tag_preserves_leading_zero() {
     let input = "code: !!str 0042";
 
-    let mut child = parsm_command()
-        .arg(r#""code""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""code""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -1018,22 +695,9 @@ fn test_yaml_explicit_string_tag_preserves_leading_zero() {
 fn test_yaml_leading_zero_scalar_not_coerced_to_number() {
     let input = "code: 0042";
 
-    let mut child = parsm_command()
-        .arg(r#""code""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""code""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -1055,22 +719,9 @@ fn test_yaml_leading_zero_scalar_not_coerced_to_number() {
 fn test_yaml_implicit_timestamp_scalar_stays_string() {
     let input = "created: 2024-01-15";
 
-    let mut child = parsm_command()
-        .arg(r#""created""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""created""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -1087,14 +738,14 @@ fn test_yaml_implicit_timestamp_scalar_stays_string() {
 
 #[test]
 fn yaml_converts_to_json() {
-    let output = common::run(parsm_command(), "name: Alice");
+    let output = common::run(command(), "name: Alice");
     assert_eq!(common::stdout_of(&output), "{\"name\":\"Alice\"}\n");
     assert!(output.status.success());
 }
 
 #[test]
 fn yaml_documents_are_separate_records() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("age > 35");
     let output = common::run(cmd, "age: 30\n---\nage: 40");
     assert_eq!(common::stdout_of(&output), "age: 40\n");
@@ -1103,7 +754,7 @@ fn yaml_documents_are_separate_records() {
 
 #[test]
 fn yaml_sequence_exposes_original_input() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${0}]");
     let output = common::run(cmd, "- a");
     assert_eq!(common::stdout_of(&output), "- a\n");
@@ -1112,7 +763,7 @@ fn yaml_sequence_exposes_original_input() {
 
 #[test]
 fn yaml_leading_comment_is_a_comment() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("name");
     let output = common::run(cmd, "# cfg\nname: Alice");
     assert_eq!(common::stdout_of(&output), "Alice\n");
@@ -1121,7 +772,7 @@ fn yaml_leading_comment_is_a_comment() {
 
 #[test]
 fn yaml_with_duplicate_keys_is_read_as_text() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${word_1}]");
     let output = common::run(cmd, "INFO: started\nINFO: done");
     assert_eq!(common::stdout_of(&output), "started\ndone\n");
@@ -1130,7 +781,7 @@ fn yaml_with_duplicate_keys_is_read_as_text() {
 
 #[test]
 fn yaml_flow_map_is_yaml() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("a");
     let output = common::run(cmd, "{a: 1}");
     assert_eq!(common::stdout_of(&output), "1\n");
@@ -1139,13 +790,13 @@ fn yaml_flow_map_is_yaml() {
 
 #[test]
 fn yaml_sequence_items_are_records() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("name");
     let output = common::run(cmd, "- name: x\n- name: y");
     assert_eq!(common::stdout_of(&output), "x\ny\n");
     assert!(output.status.success());
 
-    let output = common::run(parsm_command(), "- name: x\n- name: y");
+    let output = common::run(command(), "- name: x\n- name: y");
     assert_eq!(
         common::stdout_of(&output),
         "{\"name\":\"x\"}\n{\"name\":\"y\"}\n"
@@ -1154,7 +805,7 @@ fn yaml_sequence_items_are_records() {
 
 #[test]
 fn yaml_later_document_failure_names_its_line() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("a");
     let output = common::run(cmd, "a: 1\n---\na: [\n---\na: 3");
     assert_eq!(common::stdout_of(&output), "1\n3\n");
@@ -1165,4 +816,126 @@ fn yaml_later_document_failure_names_its_line() {
     );
     assert!(!stderr.contains(" at line "), "stderr: {stderr}");
     assert!(output.status.success());
+}
+
+// Ported from the retired Python integration harness; each asserts the
+// same input, arguments and expected stdout as its original case (see
+// the batch b6 REPORT's mapping table).
+
+#[test]
+fn ported_yaml_field_select() {
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, "name: Alice\nage: 30");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_yaml_nested_field() {
+    let mut cmd = command();
+    cmd.arg("user.name");
+    let output = common::run(cmd, "user:\n  name: Alice\n  email: alice@test.com");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_yaml_filter() {
+    let mut cmd = command();
+    cmd.arg("age > 25");
+    let output = common::run(cmd, "name: Alice\nage: 30");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "name: Alice\nage: 30");
+}
+
+#[test]
+fn ported_yaml_template() {
+    let mut cmd = command();
+    cmd.arg("{${name} is ${age}}");
+    let output = common::run(cmd, "name: Alice\nage: 30");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice is 30");
+}
+
+#[test]
+fn ported_yaml_document_marker() {
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, "---\nname: Alice\nage: 30");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_yaml_array() {
+    let mut cmd = command();
+    cmd.arg("names");
+    let output = common::run(cmd, "names:\n  - Alice\n  - Bob");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"[
+  "Alice",
+  "Bob"
+]"#
+    );
+}
+
+#[test]
+fn ported_detect_yaml() {
+    let mut cmd = command();
+    cmd.arg("format");
+    let output = common::run(cmd, "format: yaml");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "yaml");
+}
+
+#[test]
+fn ported_truthy_yaml_present() {
+    let mut cmd = command();
+    cmd.arg("active?");
+    let output = common::run(cmd, "active: true\nname: Alice");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        "active: true\nname: Alice"
+    );
+}
+
+#[test]
+fn ported_explicit_yaml() {
+    let mut cmd = command();
+    cmd.args(["--yaml", "name"]);
+    let output = common::run(cmd, "name: Alice\nage: 30");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_explicit_yaml_nested() {
+    let mut cmd = command();
+    cmd.args(["--yaml", "user.name"]);
+    let output = common::run(cmd, "user:\n  name: Alice\n  age: 30");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+/// Kitchen sink: nested field access, a case-insensitive regex, `&&`/`||`/
+/// `!field?`, and a template conditional plus `${0}`, combined in one
+/// expression and asserted against exact output.
+#[test]
+fn yaml_kitchen_sink() {
+    let input =
+        "name: Alice\nemail: alice@EXAMPLE.com\nactive: true\nbanned: false\nuser:\n  role: admin";
+    let mut cmd = command();
+    cmd.args([
+        "--yaml",
+        r#"(email ~= /example\.com/i || user.role == "admin") && !banned? {Role: ${user.role} - Active: ${active?yes:no} - Source: ${0}}"#,
+    ]);
+    let output = common::run(cmd, input);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim_end_matches('\n'),
+        format!("Role: admin - Active: yes - Source: {input}")
+    );
 }

@@ -492,10 +492,10 @@ run_test "REGEX_COMPLEX_PATTERN" \
     '{"url": "https://example.com/api/v1/users"}'
 
 run_test "MULTIPLE_REGEX_FLAGS" \
-    '{"text": "Hello\nWorld"}' \
+    '{"text": "Hello\\nWorld"}' \
     'text ~= "(?ims)hello.*world"' \
-    "Regex with multiple flags" \
-    ''
+    "Regex with multiple flags (dotall lets . span the embedded newline)" \
+    '{"text": "Hello\nWorld"}'
 
 run_test "OPERATOR_CHAINING" \
     '{"name": "Alice", "email": "alice@example.com", "age": 30}' \

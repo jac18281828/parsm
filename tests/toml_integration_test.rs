@@ -1,14 +1,6 @@
-use std::io::Write;
-use std::process::{Command, Stdio};
-
 mod common;
 
-/// Helper function to create a Command with proper environment setup
-fn parsm_command() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
-    cmd.env("RUST_LOG", "parsm=error");
-    cmd
-}
+use common::command;
 
 /// Test basic TOML field selection
 #[test]
@@ -17,22 +9,9 @@ fn test_toml_basic_field_selection() {
 age = 30
 active = true"#;
 
-    let mut child = parsm_command()
-        .arg(r#""name""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""name""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -58,22 +37,9 @@ fn test_toml_field_types() {
     ];
 
     for (input, field, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg(field)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(field);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for input '{}': {:?}",
@@ -101,22 +67,9 @@ port = 5432
 host = "0.0.0.0"
 port = 8080"#;
 
-    let mut child = parsm_command()
-        .arg(r#""database""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""database""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -143,22 +96,9 @@ server.host = "0.0.0.0""#;
 
     // A bare selector is the nested-path form; quoting reads
     // "database.host" as one literal key instead.
-    let mut child = parsm_command()
-        .arg("database.host")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg("database.host");
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -179,22 +119,9 @@ fn test_toml_nonexistent_field() {
     let input = r#"name = "Alice"
 age = 30"#;
 
-    let mut child = parsm_command()
-        .arg(r#""nonexistent""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""nonexistent""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -215,22 +142,9 @@ fn test_toml_arrays() {
     let input = r#"fruits = ["apple", "banana", "cherry"]
 numbers = [1, 2, 3]"#;
 
-    let mut child = parsm_command()
-        .arg(r#""fruits""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""fruits""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -256,22 +170,9 @@ fn test_toml_braced_field_syntax() {
     let input = r#"name = "Bob"
 version = "1.0.0""#;
 
-    let mut child = parsm_command()
-        .arg(r#"{User: ${name} v${version}}"#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#"{User: ${name} v${version}}"#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -293,22 +194,9 @@ fn test_toml_template_replacement() {
 env = "production"
 debug = false"#;
 
-    let mut child = parsm_command()
-        .arg(r#"{App ${app} running in ${env} mode (debug: ${debug})}"#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#"{App ${app} running in ${env} mode (debug: ${debug})}"#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -332,22 +220,9 @@ fn test_toml_original_input_template() {
     let input = r#"key = "value1"
 other = "value2""#;
 
-    let mut child = parsm_command()
-        .arg(r#"{Original: ${0} | Key: ${key}}"#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#"{Original: ${0} | Key: ${key}}"#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -380,23 +255,9 @@ fn test_toml_string_operations() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(filter)
-            .arg(r#"{String ops test}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(filter).arg(r#"{String ops test}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for input '{}': {:?}",
@@ -438,23 +299,9 @@ fn test_toml_numeric_comparisons() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(filter)
-            .arg(r#"{Numeric test}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(filter).arg(r#"{Numeric test}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for input '{}': {:?}",
@@ -493,23 +340,9 @@ fn test_toml_boolean_logic() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(filter)
-            .arg(r#"{Boolean test passed}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(filter).arg(r#"{Boolean test passed}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for filter '{}': {:?}",
@@ -553,23 +386,9 @@ score = 85.5"#;
     ];
 
     for (filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(filter)
-            .arg(r#"{Complex filter result}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg(filter).arg(r#"{Complex filter result}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "Command failed for filter '{}': {:?}",
@@ -607,6 +426,8 @@ score = 85.5"#;
 /// Test TOML malformed input handling
 #[test]
 fn test_toml_malformed_input() {
+    // None of these parse as TOML, so the pipeline falls through to text;
+    // a "name" field selector then finds nothing in any of them.
     let malformed_inputs = vec![
         "name =",     // incomplete assignment
         "= value",    // missing key
@@ -615,40 +436,24 @@ fn test_toml_malformed_input() {
     ];
 
     for input in malformed_inputs {
-        let mut child = parsm_command()
-            .arg(r#""name""#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
+        let mut cmd = command();
+        cmd.arg(r#""name""#);
+        let output = common::run(cmd, input);
 
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
-
-        // For malformed TOML, the tool should either:
-        // 1. Exit with success but produce no/null output (fallback to text mode)
-        // 2. Exit with error on the first line
-
-        if output.status.success() {
-            // If successful, output should be empty or null
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // Should either be empty or contain fallback text processing
-            println!(
-                "Malformed input '{}' processed as: '{}'",
-                input,
-                stdout.trim()
-            );
-        } else {
-            // If failed, that's also acceptable for malformed input
-            println!("Malformed input '{input}' correctly rejected");
-        }
+        assert!(
+            output.status.success(),
+            "parsm should handle malformed TOML gracefully for '{input}': {output:?}"
+        );
+        assert_eq!(
+            common::stdout_of(&output),
+            "",
+            "expected no output for malformed input '{input}'"
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&output.stderr),
+            "",
+            "expected no warning for malformed input '{input}'"
+        );
     }
 }
 
@@ -658,22 +463,9 @@ fn test_toml_inline_tables() {
     let input = r#"server = { host = "localhost", port = 8080 }
 client = { timeout = 30 }"#;
 
-    let mut child = parsm_command()
-        .arg(r#""server""#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#""server""#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -704,22 +496,9 @@ items = ["first", "second"]
 connection_timeout = 5000
 retry_count = 3"#;
 
-    let mut child = parsm_command()
-        .arg(r#"{Title: ${title}, Count: ${count}, Enabled: ${enabled}}"#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#"{Title: ${title}, Count: ${count}, Enabled: ${enabled}}"#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -741,22 +520,9 @@ fn test_toml_empty_and_whitespace() {
 name = "   spaced   "
 zero = 0"#;
 
-    let mut child = parsm_command()
-        .arg(r#"{Empty: '${empty_string}', Name: '${name}', Zero: ${zero}}"#)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("Failed to start parsm");
-
-    {
-        let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        stdin
-            .write_all(input.as_bytes())
-            .expect("Failed to write to stdin");
-    }
-
-    let output = child.wait_with_output().expect("Failed to read stdout");
+    let mut cmd = command();
+    cmd.arg(r#"{Empty: '${empty_string}', Name: '${name}', Zero: ${zero}}"#);
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "Command failed: {:?}",
@@ -815,23 +581,9 @@ fn test_toml_forced_format() {
     ];
 
     for (input, expression, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg("--toml")
-            .arg(expression)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg("--toml").arg(expression);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "TOML forced format failed for input '{}' with expression '{}': {:?}",
@@ -878,24 +630,9 @@ fn test_toml_forced_format_filtering() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg("--toml")
-            .arg(filter)
-            .arg(r#"{match}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg("--toml").arg(filter).arg(r#"{match}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "TOML forced format filtering failed for input '{}' with filter '{}': {:?}",
@@ -923,10 +660,146 @@ fn test_toml_forced_format_filtering() {
 
 #[test]
 fn toml_convert_keeps_key_order() {
-    let output = common::run(parsm_command(), "name = \"Alice\"\nage = 30");
+    let output = common::run(command(), "name = \"Alice\"\nage = 30");
     assert_eq!(
         common::stdout_of(&output),
         "{\"name\":\"Alice\",\"age\":30}\n"
     );
     assert!(output.status.success());
+}
+
+// Ported from the retired Python integration harness; each asserts the
+// same input, arguments and expected stdout as its original case (see
+// the batch b6 REPORT's mapping table).
+
+#[test]
+fn ported_toml_field_select() {
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(
+        cmd,
+        r#"name = "Alice"
+age = 30"#,
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_toml_section() {
+    let mut cmd = command();
+    cmd.arg("profile.age");
+    let output = common::run(
+        cmd,
+        r#"name = "Alice"
+
+[profile]
+age = 30"#,
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "30");
+}
+
+#[test]
+fn ported_toml_filter() {
+    let mut cmd = command();
+    cmd.arg("age > 25");
+    let output = common::run(
+        cmd,
+        r#"name = "Alice"
+age = 30"#,
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"name = "Alice"
+age = 30"#
+    );
+}
+
+#[test]
+fn ported_toml_template() {
+    let mut cmd = command();
+    cmd.arg("{${name} is ${age}}");
+    let output = common::run(
+        cmd,
+        r#"name = "Alice"
+age = 30"#,
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice is 30");
+}
+
+#[test]
+fn ported_toml_array() {
+    let mut cmd = command();
+    cmd.arg("hobbies");
+    let output = common::run(
+        cmd,
+        r#"name = "Alice"
+hobbies = ["reading", "coding"]"#,
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"[
+  "reading",
+  "coding"
+]"#
+    );
+}
+
+#[test]
+fn ported_detect_toml() {
+    let mut cmd = command();
+    cmd.arg("format");
+    let output = common::run(cmd, r#"format = "toml""#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "toml");
+}
+
+#[test]
+fn ported_explicit_toml() {
+    let mut cmd = command();
+    cmd.args(["--toml", "name"]);
+    let output = common::run(
+        cmd,
+        r#"name = "Alice"
+age = 30"#,
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_explicit_toml_section() {
+    let mut cmd = command();
+    cmd.args(["--toml", "profile.age"]);
+    let output = common::run(
+        cmd,
+        r#"name = "Alice"
+
+[profile]
+age = 30"#,
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "30");
+}
+/// Kitchen sink: nested (section) field access, a case-insensitive regex,
+/// `&&`/`||`/`!field?`, and a template conditional plus `${0}`, combined in
+/// one expression and asserted against exact output.
+#[test]
+fn toml_kitchen_sink() {
+    let input = "name = \"Alice\"\nemail = \"alice@EXAMPLE.com\"\nactive = true\nbanned = false\n\n[user]\nrole = \"admin\"";
+    let mut cmd = command();
+    cmd.args([
+        "--toml",
+        r#"(email ~= /example\.com/i || user.role == "admin") && !banned? {Role: ${user.role} - Active: ${active?yes:no} - Source: ${0}}"#,
+    ]);
+    let output = common::run(cmd, input);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim_end_matches('\n'),
+        format!("Role: admin - Active: yes - Source: {input}")
+    );
 }

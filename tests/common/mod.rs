@@ -12,6 +12,13 @@ use std::time::{Duration, Instant};
 /// How long streamed records may take to reach stdout while stdin is open.
 const STREAM_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// A `parsm` invocation with a quiet log level, ready for its arguments.
+pub fn command() -> Command {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
+    cmd.env("RUST_LOG", "parsm=error");
+    cmd
+}
+
 /// Run `cmd` with `stdin` as its whole input and collect its output.
 pub fn run(mut cmd: Command, stdin: impl AsRef<[u8]>) -> Output {
     let mut child = cmd

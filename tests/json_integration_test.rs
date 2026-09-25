@@ -1,16 +1,8 @@
-use std::fs::File;
-use std::io::Write;
-use std::process::{Command, Stdio};
-use tempfile::NamedTempFile;
+use std::process::Stdio;
 
 mod common;
 
-/// Helper function to create a Command with proper environment setup
-fn parsm_command() -> Command {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_parsm"));
-    cmd.env("RUST_LOG", "parsm=error");
-    cmd
-}
+use common::command;
 
 #[test]
 fn test_json_array_field_selection() {
@@ -20,17 +12,12 @@ fn test_json_array_field_selection() {
         {"Id": "2", "State": {"Status": "stopped", "Pid": 456}}
     ]"#;
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("\"State\"")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("\"State\"");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = common::stdout_of(&output);
 
     // Should output two pretty-printed State objects
     assert!(stdout.contains("\"Status\": \"running\""));
@@ -44,20 +31,9 @@ fn test_json_object_field_selection() {
     // Test field selection on single JSON object
     let input = r#"{"name": "Alice", "age": 30, "active": true, "profile": {"email": "alice@example.com"}}"#;
 
-    let mut child = parsm_command()
-        .arg("\"name\"")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("\"name\"");
+    let result = common::run(cmd, input);
     assert!(
         result.status.success(),
         "parsm failed: stderr={}",
@@ -75,20 +51,9 @@ fn test_json_nested_field_selection() {
 
     // A bare selector is the nested-path form; quoting would read
     // "user.profile.name" as one literal key instead.
-    let mut child = parsm_command()
-        .arg("user.profile.name")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("user.profile.name");
+    let result = common::run(cmd, input);
     assert!(
         result.status.success(),
         "parsm failed: stderr={}",
@@ -104,20 +69,9 @@ fn test_json_filter_and_template() {
     // Test filtering with template output
     let input = r#"{"name": "Charlie", "age": 25, "status": "active"}"#;
 
-    let mut child = parsm_command()
-        .arg("age > 20 {User ${name} is ${age} years old (status: ${status})}")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("age > 20 {User ${name} is ${age} years old (status: ${status})}");
+    let result = common::run(cmd, input);
     assert!(
         result.status.success(),
         "parsm failed: stderr={}",
@@ -136,20 +90,9 @@ fn test_json_template_with_original_input() {
     // Test $0 (original input) in templates
     let input = r#"{"name": "Dana", "score": 95}"#;
 
-    let mut child = parsm_command()
-        .arg("score > 90 {Result: ${name} scored ${score} points. Original: ${0}}")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("score > 90 {Result: ${name} scored ${score} points. Original: ${0}}");
+    let result = common::run(cmd, input);
     assert!(
         result.status.success(),
         "parsm failed: stderr={}",
@@ -180,20 +123,9 @@ fn test_json_complex_filtering() {
     ];
 
     for (input, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg("(age > 25 && active == true) || role == \"admin\" {Found: ${name} (${role})}")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn parsm");
-
-        let stdin = child.stdin.take().expect("get stdin");
-        let mut stdin = stdin;
-        write!(stdin, "{input}").expect("write to stdin");
-        drop(stdin);
-
-        let result = child.wait_with_output().expect("wait for output");
+        let mut cmd = command();
+        cmd.arg("(age > 25 && active == true) || role == \"admin\" {Found: ${name} (${role})}");
+        let result = common::run(cmd, input);
         let stdout = String::from_utf8_lossy(&result.stdout);
 
         if should_match {
@@ -213,20 +145,9 @@ fn test_json_field_selection_nonexistent() {
     // Test field selection with non-existent field
     let input = r#"{"name": "Henry", "age": 40}"#;
 
-    let mut child = parsm_command()
-        .arg("\"nonexistent\"")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("\"nonexistent\"");
+    let result = common::run(cmd, input);
     let stdout = String::from_utf8_lossy(&result.stdout);
     // Field selection for non-existent fields returns empty output
     assert_eq!(stdout.trim(), "");
@@ -237,25 +158,13 @@ fn test_json_array_of_primitives() {
     // Test field selection on array of primitives
     let input = r#"["apple", "banana", "cherry"]"#;
 
-    let mut child = parsm_command()
-        .arg("\"0\"") // Try to access index as field
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
-    // The behavior here depends on implementation - it might return null or handle differently
-    assert!(
-        result.status.success(),
-        "parsm should handle array of primitives gracefully"
-    );
+    // A JSON array of primitives has no "0" object key on each element, so
+    // field selection finds nothing and prints nothing.
+    let mut cmd = command();
+    cmd.arg("\"0\"");
+    let output = common::run(cmd, input);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output), "");
 }
 
 #[test]
@@ -264,14 +173,14 @@ fn test_json_malformed_input() {
     // the precedence table; this input is read as text lines.
     let input = r#"{"name": "Invalid JSON"
 {"name": "Second line", "age": 25}"#;
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${word_1}]");
     let output = common::run(cmd, input);
     assert_eq!(common::stdout_of(&output), "\"Invalid\n\"Second\n");
     assert!(output.status.success());
 
     // Forced JSON never falls through: the first-record failure is fatal.
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.args(["--json", "name"]);
     let output = common::run(cmd, input);
     assert_eq!(common::stdout_of(&output), "");
@@ -279,7 +188,7 @@ fn test_json_malformed_input() {
 
     // After the first record, a failure warns and the stream resumes at the
     // next line.
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("name");
     let output = common::run(
         cmd,
@@ -299,20 +208,9 @@ fn test_json_replacement_template() {
     // Test JSON object replacement using filter + template
     let input = r#"{"name": "Iris", "age": 28, "city": "Portland"}"#;
 
-    let mut child = parsm_command()
-        .arg("age > 25 {\"person\": \"${name}\", \"location\": \"${city}\", \"adult\": true}")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("age > 25 {\"person\": \"${name}\", \"location\": \"${city}\", \"adult\": true}");
+    let result = common::run(cmd, input);
     assert!(
         result.status.success(),
         "parsm failed: stderr={}",
@@ -332,20 +230,9 @@ fn test_json_string_operations() {
     let input = r#"{"email": "user@example.com", "name": "John Doe", "status": "active_user"}"#;
 
     // Test contains
-    let mut child = parsm_command()
-        .arg("email ~ \"@example\" {Email: ${email}}")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("email ~ \"@example\" {Email: ${email}}");
+    let result = common::run(cmd, input);
     assert!(result.status.success());
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(stdout.contains("Email: user@example.com"));
@@ -357,48 +244,32 @@ fn test_json_truthy_operator() {
     let input = r#"{"a": 1, "b": 1}
 {"a": 1, "b": 1, "c": 1}"#;
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input}").expect("write temp file");
-
     // Test simple truthy check with AND logic
-    let output = parsm_command()
-        .arg("a? && b? [${a}, ${b}]")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("a? && b? [${a}, ${b}]");
+    let output = common::run(cmd, input);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = common::stdout_of(&output);
 
     // Should match both lines where a and b are truthy
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
-    // Debug output to see what we actually get
-    eprintln!("Debug: got {} lines: {:?}", lines.len(), lines);
     assert_eq!(lines.len(), 2, "Expected 2 matching lines");
     assert!(lines[0].contains("1, 1")); // Should show 1, 1
     assert!(lines[1].contains("1, 1")); // Should show 1, 1
 
-    // Test mixed truthy and comparison
-    // Note: Currently there's a known issue with templates and multi-line input
-    // Testing with single line that matches the condition
+    // Test mixed truthy and comparison, single line
     let input2 = r#"{"a": 1, "g": true}"#;
 
-    let mut file = NamedTempFile::new().expect("create temp file");
-    write!(file, "{input2}").expect("write temp file");
-
-    let output = parsm_command()
-        .arg("a? && g == true [${a}, ${g}]")
-        .stdin(File::open(file.path()).unwrap())
-        .output()
-        .expect("run parsm");
+    let mut cmd = command();
+    cmd.arg("a? && g == true [${a}, ${g}]");
+    let output = common::run(cmd, input2);
 
     assert!(output.status.success(), "parsm failed: {output:?}");
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = common::stdout_of(&output);
 
     // Should match the line where a is truthy and g is true
     let lines: Vec<&str> = stdout.trim().split('\n').collect();
-    // Debug output to see what we actually get
-    eprintln!("Debug mixed: got {} lines: {:?}", lines.len(), lines);
     assert_eq!(lines.len(), 1);
     assert!(lines[0].contains("1, true"));
 }
@@ -408,20 +279,9 @@ fn test_json_truthy_operator_and_expr() {
     // Test truthy operator with JSON objects
     let input = r#"{"active": true, "verified": false, "premium": true}"#;
 
-    let mut child = parsm_command()
-        .arg("active? && premium? {User is active and premium}")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("active? && premium? {User is active and premium}");
+    let result = common::run(cmd, input);
     assert!(
         result.status.success(),
         "parsm failed: stderr={}",
@@ -443,20 +303,9 @@ fn test_json_numeric_comparisons() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(format!("{filter} {{Match found - ${{score}}}}"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn parsm");
-
-        let stdin = child.stdin.take().expect("get stdin");
-        let mut stdin = stdin;
-        write!(stdin, "{input}").expect("write to stdin");
-        drop(stdin);
-
-        let result = child.wait_with_output().expect("wait for output");
+        let mut cmd = command();
+        cmd.arg(format!("{filter} {{Match found - ${{score}}}}"));
+        let result = common::run(cmd, input);
         let stdout = String::from_utf8_lossy(&result.stdout);
 
         if should_match {
@@ -489,20 +338,9 @@ fn test_json_boolean_logic() {
     ];
 
     for (filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg(format!("{filter} {{Boolean test passed - ${{active}}}}"))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("spawn parsm");
-
-        let stdin = child.stdin.take().expect("get stdin");
-        let mut stdin = stdin;
-        write!(stdin, "{input}").expect("write to stdin");
-        drop(stdin);
-
-        let result = child.wait_with_output().expect("wait for output");
+        let mut cmd = command();
+        cmd.arg(format!("{filter} {{Boolean test passed - ${{active}}}}"));
+        let result = common::run(cmd, input);
         let stdout = String::from_utf8_lossy(&result.stdout);
 
         if should_match {
@@ -521,20 +359,9 @@ fn test_json_braced_field_syntax() {
     // Test ${field} syntax in templates
     let input = r#"{"user": {"name": "Alice", "profile": {"email": "alice@example.com"}}}"#;
 
-    let mut child = parsm_command()
-        .arg("user.name == \"Alice\" {Contact: ${user.name} at ${user.profile.email}}")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("user.name == \"Alice\" {Contact: ${user.name} at ${user.profile.email}}");
+    let result = common::run(cmd, input);
     assert!(
         result.status.success(),
         "parsm failed: stderr={}",
@@ -551,20 +378,9 @@ fn test_json_null_handling() {
     let input = r#"{"name": "Test", "description": null, "count": 0}"#;
 
     // Test filtering with null
-    let mut child = parsm_command()
-        .arg("description == null {Found null description for ${name}}")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("description == null {Found null description for ${name}}");
+    let result = common::run(cmd, input);
     assert!(result.status.success());
     let stdout = String::from_utf8_lossy(&result.stdout);
     assert!(stdout.contains("Found null description for Test"));
@@ -614,23 +430,9 @@ fn test_json_forced_format() {
     ];
 
     for (input, expression, expected) in test_cases {
-        let mut child = parsm_command()
-            .arg("--json")
-            .arg(expression)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg("--json").arg(expression);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "JSON forced format failed for input '{}' with expression '{}': {:?}",
@@ -677,24 +479,9 @@ fn test_json_forced_format_filtering() {
     ];
 
     for (input, filter, should_match) in test_cases {
-        let mut child = parsm_command()
-            .arg("--json")
-            .arg(filter)
-            .arg(r#"{match}"#)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .expect("Failed to start parsm");
-
-        {
-            let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-            stdin
-                .write_all(input.as_bytes())
-                .expect("Failed to write to stdin");
-        }
-
-        let output = child.wait_with_output().expect("Failed to read stdout");
+        let mut cmd = command();
+        cmd.arg("--json").arg(filter).arg(r#"{match}"#);
+        let output = common::run(cmd, input);
         assert!(
             output.status.success(),
             "JSON forced format filtering failed for input '{}' with filter '{}': {:?}",
@@ -726,20 +513,9 @@ fn test_json_lines_filter() {
     // misdetected as headered CSV and silently drop all output.
     let input = "{\"id\": 1, \"name\": \"Alice\"}\n{\"id\": 2, \"name\": \"Bob\"}\n{\"id\": 3, \"name\": \"Charlie\"}\n";
 
-    let mut child = parsm_command()
-        .arg("id > 1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("id > 1");
+    let result = common::run(cmd, input);
     assert!(
         result.status.success(),
         "parsm failed: stderr={}",
@@ -758,26 +534,16 @@ fn test_json_multibyte_detection_prefix() {
     // of this line falls inside the two-byte UTF-8 encoding of 'é'.
     let input = format!("{{\"a\":\"{}{}\"}}", "x".repeat(93), 'é');
 
-    let mut child = parsm_command()
-        .arg("a")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.as_mut().expect("get stdin");
-    stdin.write_all(input.as_bytes()).expect("write to stdin");
-    drop(child.stdin.take());
-
-    let output = child.wait_with_output().expect("wait for parsm");
+    let mut cmd = command();
+    cmd.arg("a");
+    let output = common::run(cmd, input);
     assert!(
         output.status.success(),
         "parsm failed: stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = common::stdout_of(&output);
     assert_eq!(stdout.trim(), format!("{}{}", "x".repeat(93), 'é'));
 }
 
@@ -785,27 +551,16 @@ fn test_json_multibyte_detection_prefix() {
 fn test_invalid_rust_log_falls_back_to_warn() {
     // A malformed RUST_LOG must not abort the process; parsm falls back to
     // its default filter and continues processing.
-    let mut child = parsm_command()
-        .env("RUST_LOG", "parsm=bogus[")
-        .arg("a == 1")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.as_mut().expect("get stdin");
-    stdin.write_all(b"{\"a\": 1}\n").expect("write to stdin");
-    drop(child.stdin.take());
-
-    let output = child.wait_with_output().expect("wait for parsm");
+    let mut cmd = command();
+    cmd.env("RUST_LOG", "parsm=bogus[").arg("a == 1");
+    let output = common::run(cmd, "{\"a\": 1}\n");
     assert!(
         output.status.success(),
         "parsm failed: stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = common::stdout_of(&output);
     assert_eq!(stdout.trim(), "{\"a\": 1}");
 }
 
@@ -815,20 +570,9 @@ fn test_json_lines_field_selector() {
     // extract from each document in order, not be dropped by CSV misdetection.
     let input = "{\"id\": 1, \"name\": \"Alice\"}\n{\"id\": 2, \"name\": \"Bob\"}\n{\"id\": 3, \"name\": \"Charlie\"}\n";
 
-    let mut child = parsm_command()
-        .arg("name")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn parsm");
-
-    let stdin = child.stdin.take().expect("get stdin");
-    let mut stdin = stdin;
-    write!(stdin, "{input}").expect("write to stdin");
-    drop(stdin);
-
-    let result = child.wait_with_output().expect("wait for output");
+    let mut cmd = command();
+    cmd.arg("name");
+    let result = common::run(cmd, input);
     assert!(
         result.status.success(),
         "parsm failed: stderr={}",
@@ -841,7 +585,7 @@ fn test_json_lines_field_selector() {
 
 #[test]
 fn json_filter_streams_first_record_before_eof() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("a > 1");
     let streamed = common::first_line_while_open(cmd, r#"{"a":2}"#, r#"{"a":3}"#);
     assert_eq!(streamed.first.as_deref(), Some(r#"{"a":2}"#));
@@ -851,7 +595,7 @@ fn json_filter_streams_first_record_before_eof() {
 
 #[test]
 fn json_array_items_carry_their_own_source() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("a > 3");
     let output = common::run(cmd, r#"[{"a":1},{"a":5},{"a":7}]"#);
     assert_eq!(common::stdout_of(&output), "{\"a\":5}\n{\"a\":7}\n");
@@ -860,7 +604,7 @@ fn json_array_items_carry_their_own_source() {
 
 #[test]
 fn json_pretty_values_are_one_record_each() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("a");
     let output = common::run(cmd, "{\n \"a\": 1\n}\n{\n \"a\": 5\n}\n");
     assert_eq!(common::stdout_of(&output), "1\n5\n");
@@ -869,7 +613,7 @@ fn json_pretty_values_are_one_record_each() {
 
 #[test]
 fn json_lines_and_pretty_values_mix() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("a");
     let output = common::run(cmd, "{\"a\":1}\n{\n \"a\":5\n}\n");
     assert_eq!(common::stdout_of(&output), "1\n5\n");
@@ -878,7 +622,7 @@ fn json_lines_and_pretty_values_mix() {
 
 #[test]
 fn forced_json_rejects_text_input() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.args(["--json", r#"word_0 == "hello""#]);
     let output = common::run(cmd, "hello world");
     assert_eq!(common::stdout_of(&output), "");
@@ -887,7 +631,7 @@ fn forced_json_rejects_text_input() {
 
 #[test]
 fn format_flags_are_mutually_exclusive() {
-    let output = parsm_command()
+    let output = command()
         .args(["--json", "--yaml"])
         .stdin(Stdio::null())
         .output()
@@ -903,14 +647,14 @@ fn format_flags_are_mutually_exclusive() {
 
 #[test]
 fn json_convert_keeps_key_order_per_item() {
-    let output = common::run(parsm_command(), r#"[{"b":1,"a":2},{"c":3}]"#);
+    let output = common::run(command(), r#"[{"b":1,"a":2},{"c":3}]"#);
     assert_eq!(common::stdout_of(&output), "{\"b\":1,\"a\":2}\n{\"c\":3}\n");
     assert!(output.status.success());
 }
 
 #[test]
 fn json_scalar_exposes_original_input() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("[${0}]");
     let output = common::run(cmd, "42");
     assert_eq!(common::stdout_of(&output), "42\n");
@@ -919,7 +663,7 @@ fn json_scalar_exposes_original_input() {
 
 #[test]
 fn json_values_sharing_a_line_are_separate_records() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("a");
     let output = common::run(cmd, r#"{"a":1} {"a":2}"#);
     assert_eq!(common::stdout_of(&output), "1\n2\n");
@@ -928,7 +672,7 @@ fn json_values_sharing_a_line_are_separate_records() {
 
 #[test]
 fn json_truncated_line_does_not_hold_later_records() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("a > 0");
     let mut session = common::Session::start(cmd);
     session.write_line(r#"{"a":1}"#);
@@ -944,7 +688,7 @@ fn json_truncated_line_does_not_hold_later_records() {
 
 #[test]
 fn json_undecodable_later_line_warns_and_is_skipped() {
-    let mut cmd = parsm_command();
+    let mut cmd = command();
     cmd.arg("a");
     let output = common::run(cmd, b"{\"a\":1}\n\xff\xfe\n{\"a\":3}\n");
     assert_eq!(common::stdout_of(&output), "1\n3\n");
@@ -953,4 +697,334 @@ fn json_undecodable_later_line_warns_and_is_skipped() {
         "Warning: failed to parse line 2: invalid UTF-8\n"
     );
     assert!(output.status.success());
+}
+
+// Ported from the retired Python integration harness; each asserts the
+// same input, arguments and expected stdout as its original case (see
+// the batch b6 REPORT's mapping table).
+
+#[test]
+fn ported_json_field_select() {
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, r#"{"name": "Alice", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_json_nested_field() {
+    let mut cmd = command();
+    cmd.arg("user.name");
+    let output = common::run(cmd, r#"{"user": {"name": "Alice"}}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_json_filter_numeric() {
+    let mut cmd = command();
+    cmd.arg("age > 25");
+    let output = common::run(cmd, r#"{"name": "Alice", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"name": "Alice", "age": 30}"#
+    );
+}
+
+#[test]
+fn ported_json_filter_string() {
+    let mut cmd = command();
+    cmd.arg(r#"name == "Alice""#);
+    let output = common::run(cmd, r#"{"name": "Alice", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"name": "Alice", "age": 30}"#
+    );
+}
+
+#[test]
+fn ported_json_template_simple() {
+    let mut cmd = command();
+    cmd.arg("{${name} is ${age}}");
+    let output = common::run(cmd, r#"{"name": "Alice", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice is 30");
+}
+
+#[test]
+fn ported_json_template_braced() {
+    let mut cmd = command();
+    cmd.arg("{${name} is ${age} years old}");
+    let output = common::run(cmd, r#"{"name": "Alice", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice is 30 years old");
+}
+
+#[test]
+fn ported_json_filter_template() {
+    let mut cmd = command();
+    cmd.arg("age > 25 {Hello ${name}!}");
+    let output = common::run(cmd, r#"{"name": "Alice", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Hello Alice!");
+}
+
+#[test]
+fn ported_json_array_select() {
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, r#"[{"name": "Alice"}, {"name": "Bob"}]"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice\nBob");
+}
+
+#[test]
+fn ported_json_boolean_and() {
+    let mut cmd = command();
+    cmd.arg("age > 25 && active == true");
+    let output = common::run(cmd, r#"{"age": 30, "active": true}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"age": 30, "active": true}"#
+    );
+}
+
+#[test]
+fn ported_json_boolean_or() {
+    let mut cmd = command();
+    cmd.arg(r#"age > 25 || name == "Alice""#);
+    let output = common::run(cmd, r#"{"age": 20, "name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"age": 20, "name": "Alice"}"#
+    );
+}
+
+#[test]
+fn ported_json_string_contains() {
+    let mut cmd = command();
+    cmd.arg(r#"email ~ "@example.com""#);
+    let output = common::run(cmd, r#"{"email": "alice@example.com"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"email": "alice@example.com"}"#
+    );
+}
+
+#[test]
+fn ported_json_null_value() {
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, r#"{"name": null, "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "null");
+}
+
+#[test]
+fn ported_json_passthrough() {
+    let cmd = command();
+    let output = common::run(cmd, r#"{"name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), r#"{"name":"Alice"}"#);
+}
+
+#[test]
+fn ported_detect_json() {
+    let mut cmd = command();
+    cmd.arg("format");
+    let output = common::run(cmd, r#"{"format": "json"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "json");
+}
+
+#[test]
+fn ported_empty_json() {
+    let cmd = command();
+    let output = common::run(cmd, "{}");
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "{}");
+}
+
+#[test]
+fn ported_malformed_json() {
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(cmd, r#"{"name": "Alice""#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "");
+}
+
+#[test]
+fn ported_stream_json() {
+    let mut cmd = command();
+    cmd.arg("age > 25");
+    let output = common::run(
+        cmd,
+        r#"{"name": "Alice", "age": 30}
+{"name": "Bob", "age": 25}"#,
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"name": "Alice", "age": 30}"#
+    );
+}
+
+#[test]
+fn ported_stream_template() {
+    let mut cmd = command();
+    cmd.arg("name");
+    let output = common::run(
+        cmd,
+        r#"{"name": "Alice"}
+{"name": "Bob"}"#,
+    );
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice\nBob");
+}
+
+#[test]
+fn ported_truthy_json_true() {
+    let mut cmd = command();
+    cmd.arg("active?");
+    let output = common::run(cmd, r#"{"active": true, "name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"active": true, "name": "Alice"}"#
+    );
+}
+
+#[test]
+fn ported_truthy_json_false() {
+    let mut cmd = command();
+    cmd.arg("active?");
+    let output = common::run(cmd, r#"{"active": false, "name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "");
+}
+
+#[test]
+fn ported_truthy_json_null() {
+    let mut cmd = command();
+    cmd.arg("active?");
+    let output = common::run(cmd, r#"{"active": null, "name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "");
+}
+
+#[test]
+fn ported_truthy_json_zero() {
+    let mut cmd = command();
+    cmd.arg("count?");
+    let output = common::run(cmd, r#"{"count": 0, "name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "");
+}
+
+#[test]
+fn ported_truthy_json_nonzero() {
+    let mut cmd = command();
+    cmd.arg("count?");
+    let output = common::run(cmd, r#"{"count": 5, "name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"count": 5, "name": "Alice"}"#
+    );
+}
+
+#[test]
+fn ported_truthy_json_empty_string() {
+    let mut cmd = command();
+    cmd.arg("text?");
+    let output = common::run(cmd, r#"{"text": "", "name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "");
+}
+
+#[test]
+fn ported_truthy_json_nonempty_string() {
+    let mut cmd = command();
+    cmd.arg("text?");
+    let output = common::run(cmd, r#"{"text": "hello", "name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"text": "hello", "name": "Alice"}"#
+    );
+}
+
+#[test]
+fn ported_truthy_template_conditional() {
+    let mut cmd = command();
+    cmd.arg("active? {${name} is active}");
+    let output = common::run(cmd, r#"{"active": true, "name": "Alice"}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice is active");
+}
+
+#[test]
+fn ported_explicit_json() {
+    let mut cmd = command();
+    cmd.args(["--json", "name"]);
+    let output = common::run(cmd, r#"{"name": "Alice", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice");
+}
+
+#[test]
+fn ported_explicit_json_template() {
+    let mut cmd = command();
+    cmd.args(["--json", "{${name} is ${age}}"]);
+    let output = common::run(cmd, r#"{"name": "Alice", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(common::stdout_of(&output).trim(), "Alice is 30");
+}
+
+#[test]
+fn ported_field_to_field_comparison() {
+    let mut cmd = command();
+    cmd.arg("score >= threshold");
+    let output = common::run(cmd, r#"{"score": 98.5, "threshold": 95.0}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"score": 98.5, "threshold": 95.0}"#
+    );
+}
+
+#[test]
+fn ported_contains_with_and() {
+    let mut cmd = command();
+    cmd.arg(r#"email ~ "@example.com" && age > 25"#);
+    let output = common::run(cmd, r#"{"email": "alice@example.com", "age": 30}"#);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim(),
+        r#"{"email": "alice@example.com", "age": 30}"#
+    );
+}
+/// Kitchen sink: nested field access, a case-insensitive regex, `&&`/`||`/
+/// `!field?`, and a template conditional plus `${0}`, combined in one
+/// expression and asserted against exact output.
+#[test]
+fn json_kitchen_sink() {
+    let input = r#"{"name":"Alice","email":"alice@EXAMPLE.com","active":true,"banned":false,"user":{"role":"admin"}}"#;
+    let mut cmd = command();
+    cmd.arg(
+        r#"(email ~= /example\.com/i || user.role == "admin") && !banned? {Role: ${user.role} - Active: ${active?yes:no} - Source: ${0}}"#,
+    );
+    let output = common::run(cmd, input);
+    assert!(output.status.success(), "parsm failed: {output:?}");
+    assert_eq!(
+        common::stdout_of(&output).trim_end_matches('\n'),
+        format!("Role: admin - Active: yes - Source: {input}")
+    );
 }
