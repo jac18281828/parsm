@@ -232,7 +232,8 @@ fn describe_parsed(dsl: &ParsedDSL) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::filter::{FilterExpr, TemplateItem};
+    use crate::filter::{FilterEngine, FilterExpr, TemplateItem};
+    use serde_json::json;
 
     #[test]
     fn test_parse_command_field_selector() {
@@ -506,94 +507,69 @@ mod tests {
 
     #[test]
     fn test_template_variable_edge_cases() {
-        // Test ${0} - should be special variable for original input
-        let result = parse_command("${0}").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["$0"]),
-            _ => panic!("Expected ${{0}} to be mapped to $0 field"),
-        }
+        // ${0} is the special variable for the record's original input.
+        let template = parse_command("${0}").unwrap().template.unwrap();
+        assert_eq!(
+            template.render(&json!({"$0": "original text"})),
+            "original text"
+        );
 
-        // Test $0 - should be literal (not special)
-        let result = parse_command("$0").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Literal(text) => assert_eq!(text, "$0"),
-            _ => panic!("Expected $0 to be literal"),
-        }
+        // $0 (unbraced) is a literal dollar amount, not the special variable.
+        let template = parse_command("$0").unwrap().template.unwrap();
+        assert_eq!(template.render(&json!({"$0": "original text"})), "$0");
 
-        // Test $20 - should be literal dollar amount
-        let result = parse_command("$20").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Literal(text) => assert_eq!(text, "$20"),
-            _ => panic!("Expected $20 to be literal"),
-        }
+        // $20 is a literal dollar amount.
+        let template = parse_command("$20").unwrap().template.unwrap();
+        assert_eq!(template.render(&json!({})), "$20");
 
-        // Test ${1} - should be field variable (maps to "1")
-        let result = parse_command("${1}").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["1"]),
-            _ => panic!("Expected ${{1}} to be mapped to \"1\""),
-        }
+        // ${1} is a field variable, mapped to the field named "1".
+        let template = parse_command("${1}").unwrap().template.unwrap();
+        assert_eq!(template.render(&json!({"1": "first field"})), "first field");
     }
 
     #[test]
     fn test_mixed_numeric_template_patterns() {
-        // Test braced template with dollar amounts and variables: a run of
-        // literal text containing a "$digits" amount stays one literal, not
-        // split at the dollar sign.
-        let result = parse_command("{I have $20 and ${name} has $100}").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
+        // A "$digits" amount inside a braced template stays literal text;
+        // it does not split at the dollar sign or consume the variable.
+        let template = parse_command("{I have $20 and ${name} has $100}")
+            .unwrap()
+            .template
+            .unwrap();
         assert_eq!(
-            template.items,
-            vec![
-                TemplateItem::Literal("I have $20 and ".to_string()),
-                TemplateItem::Field(crate::filter::FieldPath::new(vec!["name".to_string()])),
-                TemplateItem::Literal(" has $100".to_string()),
-            ]
+            template.render(&json!({"name": "Bob"})),
+            "I have $20 and Bob has $100"
         );
 
-        // Test interpolated text with variables and dollar amounts in brackets
-        let result = parse_command("[Hello ${name}, you owe $25]").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
+        // Same for a bracketed template.
+        let template = parse_command("[Hello ${name}, you owe $25]")
+            .unwrap()
+            .template
+            .unwrap();
         assert_eq!(
-            template.items,
-            vec![
-                TemplateItem::Literal("Hello ".to_string()),
-                TemplateItem::Field(crate::filter::FieldPath::new(vec!["name".to_string()])),
-                TemplateItem::Literal(", you owe $25".to_string()),
-            ]
+            template.render(&json!({"name": "Eve"})),
+            "Hello Eve, you owe $25"
         );
     }
 
     #[test]
     fn test_quoted_string_literals() {
-        // Test "Alice" should be parsed as field selector
+        // "Alice" is a field selector for the literal key "Alice", not a
+        // filter or template.
         let result = parse_command("\"Alice\"").unwrap();
-        assert!(result.field_selector.is_some());
         assert!(result.filter.is_none());
         assert!(result.template.is_none());
-
         let field_selector = result.field_selector.unwrap();
-        assert_eq!(field_selector.parts, vec!["Alice"]);
+        assert_eq!(
+            field_selector.get_value(&json!({"Alice": "found"})),
+            Some(&json!("found"))
+        );
 
-        // Test single-quoted strings
-        let result = parse_command("'Alice'").unwrap();
-        assert!(result.field_selector.is_some());
-        let field_selector = result.field_selector.unwrap();
-        assert_eq!(field_selector.parts, vec!["Alice"]);
+        // Single-quoted strings select the same way.
+        let field_selector = parse_command("'Alice'").unwrap().field_selector.unwrap();
+        assert_eq!(
+            field_selector.get_value(&json!({"Alice": "found"})),
+            Some(&json!("found"))
+        );
     }
 
     #[test]
@@ -634,27 +610,36 @@ mod tests {
 
     #[test]
     fn test_nested_field_access() {
-        // In filters
-        let result = parse_command("user.email == \"alice@example.com\"").unwrap();
-        if let Some(FilterExpr::Comparison { field, .. }) = result.filter {
-            assert_eq!(field.parts, vec!["user", "email"]);
-        } else {
-            panic!("Expected comparison with nested field");
-        }
+        // In filters: a nested field resolves through the comparison.
+        let filter = parse_command("user.email == \"alice@example.com\"")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"user": {"email": "alice@example.com"}})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"user": {"email": "bob@example.com"}})
+        ));
 
-        // In templates
-        let result = parse_command("{${user.name}}").unwrap();
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["user", "name"]),
-            _ => panic!("Expected nested field in template"),
-        }
+        // In templates: a nested field renders its resolved value.
+        let template = parse_command("{${user.name}}").unwrap().template.unwrap();
+        assert_eq!(
+            template.render(&json!({"user": {"name": "Alice"}})),
+            "Alice"
+        );
 
-        // In field selectors
-        let result = parse_command("user.profile.bio").unwrap();
-        let field = result.field_selector.unwrap();
-        assert_eq!(field.parts, vec!["user", "profile", "bio"]);
+        // In field selectors: a nested path navigates to the leaf value.
+        let field = parse_command("user.profile.bio")
+            .unwrap()
+            .field_selector
+            .unwrap();
+        assert_eq!(
+            field.get_value(&json!({"user": {"profile": {"bio": "hi"}}})),
+            Some(&json!("hi"))
+        );
     }
 
     #[test]
@@ -680,38 +665,51 @@ mod tests {
 
     #[test]
     fn test_comprehensive_disambiguation() {
-        // Test that identical strings are interpreted differently based on context
+        // Identical field names are interpreted as different DSL kinds
+        // depending on context; each kind is exercised, not just detected.
+        let data = json!({"name": "Alice"});
 
-        // "name" as field selector
+        // "name" as field selector.
         let result = parse_command("name").unwrap();
-        assert!(result.field_selector.is_some());
         assert!(result.filter.is_none());
         assert!(result.template.is_none());
+        assert_eq!(
+            result.field_selector.unwrap().get_value(&data),
+            Some(&json!("Alice"))
+        );
 
         // "name?" as filter (truthy check) - no template, same as any
         // other filter-only expression.
         let result = parse_command("name?").unwrap();
-        assert!(result.filter.is_some());
         assert!(result.field_selector.is_none());
         assert!(result.template.is_none());
+        assert!(FilterEngine::evaluate(&result.filter.unwrap(), &data));
+        assert!(!FilterEngine::evaluate(
+            &parse_command("name?").unwrap().filter.unwrap(),
+            &json!({"name": ""})
+        ));
 
-        // "$name" as template
+        // "$name" as template.
         let result = parse_command("$name").unwrap();
-        assert!(result.template.is_some());
         assert!(result.filter.is_none());
         assert!(result.field_selector.is_none());
+        assert_eq!(result.template.unwrap().render(&data), "Alice");
 
-        // "{${name}}" as template
+        // "{${name}}" as template.
         let result = parse_command("{${name}}").unwrap();
-        assert!(result.template.is_some());
         assert!(result.filter.is_none());
         assert!(result.field_selector.is_none());
+        assert_eq!(result.template.unwrap().render(&data), "Alice");
 
         // "name == \"Alice\"" as filter - no template.
         let result = parse_command("name == \"Alice\"").unwrap();
-        assert!(result.filter.is_some());
         assert!(result.field_selector.is_none());
         assert!(result.template.is_none());
+        assert!(FilterEngine::evaluate(&result.filter.unwrap(), &data));
+        assert!(!FilterEngine::evaluate(
+            &parse_command("name == \"Alice\"").unwrap().filter.unwrap(),
+            &json!({"name": "Bob"})
+        ));
     }
 
     #[test]
@@ -735,26 +733,25 @@ mod tests {
 
     #[test]
     fn test_bracketed_template_syntax() {
-        // Test bracketed templates work like braced templates
-        let result = parse_command("[${name}]").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
-            _ => panic!("Expected field in bracketed template"),
-        }
+        // Bracketed templates render like braced templates.
+        let template = parse_command("[${name}]").unwrap().template.unwrap();
+        assert_eq!(template.render(&json!({"name": "Alice"})), "Alice");
 
-        // Test mixed content in brackets
-        let result = parse_command("[Hello ${name}!]").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 3);
+        // Mixed literal and field content in brackets.
+        let template = parse_command("[Hello ${name}!]").unwrap().template.unwrap();
+        assert_eq!(template.render(&json!({"name": "Alice"})), "Hello Alice!");
 
-        // Test combined with filters
+        // Combined with a filter: both the filter and the template render.
         let result = parse_command("age > 25 [User: ${name}]").unwrap();
-        assert!(result.filter.is_some());
-        assert!(result.template.is_some());
+        let filter = result.filter.unwrap();
+        let template = result.template.unwrap();
+        let data = json!({"age": 30, "name": "Alice"});
+        assert!(FilterEngine::evaluate(&filter, &data));
+        assert_eq!(template.render(&data), "User: Alice");
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"age": 10, "name": "Alice"})
+        ));
     }
 
     #[test]

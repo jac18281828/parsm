@@ -155,7 +155,8 @@ impl DSLParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::filter::{ComparisonOp, FilterExpr, FilterValue, TemplateItem};
+    use crate::filter::{ComparisonOp, FilterEngine, FilterExpr, FilterValue, TemplateItem};
+    use serde_json::json;
 
     #[test]
     fn test_parse_dsl_field_selector() {
@@ -336,21 +337,53 @@ mod tests {
 
     #[test]
     fn test_nested_field_access() {
-        let result = DSLParser::parse_dsl("user.profile.email").unwrap();
-        assert!(result.field_selector.is_some());
-        let field = result.field_selector.unwrap();
-        assert_eq!(field.parts, vec!["user", "profile", "email"]);
+        let field = DSLParser::parse_dsl("user.profile.email")
+            .unwrap()
+            .field_selector
+            .unwrap();
+        assert_eq!(
+            field.get_value(&json!({"user": {"profile": {"email": "a@b.com"}}})),
+            Some(&json!("a@b.com"))
+        );
     }
 
     #[test]
     fn test_complex_boolean_expressions() {
-        // Test parenthesized expressions
-        let result = DSLParser::parse_dsl("(active? && verified?) || admin?").unwrap();
-        assert!(result.filter.is_some());
+        // Parenthesized OR: either clause satisfies the whole expression.
+        let filter = DSLParser::parse_dsl("(active? && verified?) || admin?")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"active": true, "verified": true, "admin": false})
+        ));
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"active": false, "verified": false, "admin": true})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"active": false, "verified": false, "admin": false})
+        ));
 
-        // Test nested boolean logic
-        let result = DSLParser::parse_dsl("!suspended? && (premium? || credits > 100)").unwrap();
-        assert!(result.filter.is_some());
+        // Negation gates a parenthesized OR.
+        let filter = DSLParser::parse_dsl("!suspended? && (premium? || credits > 100)")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"suspended": false, "premium": true, "credits": 0})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"suspended": true, "premium": true, "credits": 1000})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"suspended": false, "premium": false, "credits": 50})
+        ));
     }
 
     #[test]
