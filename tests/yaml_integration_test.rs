@@ -1138,6 +1138,21 @@ fn yaml_flow_map_is_yaml() {
 }
 
 #[test]
+fn yaml_sequence_items_are_records() {
+    let mut cmd = parsm_command();
+    cmd.arg("name");
+    let output = common::run(cmd, "- name: x\n- name: y");
+    assert_eq!(common::stdout_of(&output), "x\ny\n");
+    assert!(output.status.success());
+
+    let output = common::run(parsm_command(), "- name: x\n- name: y");
+    assert_eq!(
+        common::stdout_of(&output),
+        "{\"name\":\"x\"}\n{\"name\":\"y\"}\n"
+    );
+}
+
+#[test]
 fn yaml_later_document_failure_names_its_line() {
     let mut cmd = parsm_command();
     cmd.arg("a");

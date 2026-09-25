@@ -82,11 +82,44 @@ fn document_records(format: Format, document: &Document) -> Result<Vec<Record>, 
     }
 }
 
+/// A top-level sequence yields one record per item; any other document is
+/// one record.
 fn yaml_records(document: &Document) -> Result<Vec<Record>, Failure> {
-    Ok(vec![Record::value(
-        yaml_value(document)?,
-        document.text.trim(),
-    )])
+    let items = match yaml_value(document)? {
+        Value::Array(items) => items,
+        value => return Ok(vec![Record::value(value, document.text.trim())]),
+    };
+    let sources = sequence_item_sources(&document.text, items.len())
+        .unwrap_or_else(|| items.iter().map(Value::to_string).collect());
+    Ok(items
+        .into_iter()
+        .zip(sources)
+        .map(|(item, source)| Record::value(item, source))
+        .collect())
+}
+
+/// Each top-level item's text, its `- ` marker included; `None` when the
+/// markers do not match `count` items, as in a flow sequence.
+fn sequence_item_sources(text: &str, count: usize) -> Option<Vec<String>> {
+    let mut items: Vec<Vec<&str>> = Vec::new();
+    let mut indent = None;
+    for line in text.lines() {
+        let content = line.trim_start();
+        let depth = line.len() - content.len();
+        let marker = content == "-" || content.starts_with("- ");
+        if marker && indent.is_none_or(|indent| indent == depth) {
+            indent = Some(depth);
+            items.push(vec![line]);
+        } else if let Some(item) = items.last_mut() {
+            item.push(line);
+        }
+    }
+    (items.len() == count).then(|| {
+        items
+            .iter()
+            .map(|lines| lines.join("\n").trim_end().to_string())
+            .collect()
+    })
 }
 
 fn whole_input(lines: &[Line]) -> Document {
@@ -235,6 +268,29 @@ mod tests {
         assert!(warning.starts_with("failed to parse line 3: "), "{warning}");
         assert!(!warning.contains(" at line "), "{warning}");
         assert_eq!(sources[2], Ok("a: 3".to_string()));
+    }
+
+    #[test]
+    fn yaml_sequence_items_are_records_with_their_marker_lines() {
+        let input = "# list\n- name: x\n  n: 1\n- name: y\n- plain";
+        let parsed = read(Format::Yaml, &lines(input), false).unwrap();
+        assert_eq!(
+            sources(&parsed),
+            vec![
+                Ok("- name: x\n  n: 1".to_string()),
+                Ok("- name: y".to_string()),
+                Ok("- plain".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn yaml_flow_sequence_items_use_compact_json_sources() {
+        let parsed = read(Format::Yaml, &lines("[a, {b: 1}]"), true).unwrap();
+        assert_eq!(
+            sources(&parsed),
+            vec![Ok("\"a\"".to_string()), Ok("{\"b\":1}".to_string())]
+        );
     }
 
     #[test]
