@@ -1,4 +1,4 @@
-use clap::{Arg, ArgMatches, Command};
+use clap::{Arg, ArgGroup, ArgMatches, Command};
 use std::fs::File;
 use std::io::{self, BufRead, BufReader};
 use tracing::debug;
@@ -161,9 +161,14 @@ fn cli() -> Command {
                 ))
                 .action(clap::ArgAction::SetTrue)
         }))
+        .group(
+            ArgGroup::new("format")
+                .args(FORMAT_FLAGS.map(|(id, _, _)| id))
+                .multiple(false),
+        )
 }
 
-/// The format named by the first format flag given.
+/// The format named by a format flag; clap allows at most one.
 fn forced_format(matches: &ArgMatches) -> Option<Format> {
     FORMAT_FLAGS
         .iter()
@@ -331,6 +336,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(String::from_utf8(output).unwrap(), "Alice|30|Engineer\n");
+    }
+
+    /// Only one format flag is accepted.
+    #[test]
+    fn test_format_flags_conflict() {
+        let error = cli()
+            .try_get_matches_from(["parsm", "--json", "--yaml"])
+            .unwrap_err();
+        assert_eq!(error.kind(), clap::error::ErrorKind::ArgumentConflict);
     }
 
     /// A format flag names the format it forces.

@@ -887,6 +887,22 @@ fn forced_json_rejects_text_input() {
 }
 
 #[test]
+fn format_flags_are_mutually_exclusive() {
+    let output = parsm_command()
+        .args(["--json", "--yaml"])
+        .stdin(Stdio::null())
+        .output()
+        .expect("run parsm");
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(stdout_of(&output), "");
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Usage"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn json_convert_keeps_key_order_per_item() {
     let output = common::run(parsm_command(), r#"[{"b":1,"a":2},{"c":3}]"#);
     assert_eq!(stdout_of(&output), "{\"b\":1,\"a\":2}\n{\"c\":3}\n");
