@@ -3,12 +3,12 @@ name = "parsm"
 version = "0.8.4"
 edition = "2024"
 authors = ["John Cairns <john@2ad.com>"]
-description = "Multi-format data processor that understands structured text better than sed or awk. Supports JSON, CSV, YAML, TOML, logfmt, and plain text with powerful filtering and templating."
+description = "Detects and parses JSON, CSV, YAML, TOML, logfmt, and plain text, with one expression language for filtering and templating."
 license = "MIT"
 repository = "https://github.com/jac18281828/parsm"
 documentation = "https://docs.rs/parsm"
 readme = "README.md"
-keywords = ["parser", "filter", "json", "yaml", "toml"]
+keywords = ["cli", "json", "yaml", "logfmt", "filter"]
 categories = ["command-line-utilities", "parsing", "text-processing"]
 include = [
     "src/**",
