@@ -1,11 +1,12 @@
 //! # parsm - **Parse 'Em** - Multi-Format Data Processor
 //!
-//! A powerful library for parsing, filtering, and transforming structured data from various formats.
+//! A library for parsing, filtering, and transforming structured data from various formats.
 //!
 //! ## Overview
 //!
-//! `parsm` automatically detects and parses JSON, CSV, TOML, YAML, logfmt, and plain text,
-//! providing powerful filtering and templating capabilities with a simple, intuitive syntax.
+//! `parsm` detects and parses JSON, CSV, TOML, YAML, logfmt, and plain text, and applies
+//! one expression language for filtering and templating. See `doc/syntax.md` for the
+//! full syntax reference.
 //!
 //! ## Quick Start
 //!
@@ -41,7 +42,6 @@
 //! - **Boolean logic**: `age > 25 && active == true`, `name == "Alice" || name == "Bob"`
 //! - **Nested fields**: `user.email == "alice@example.com"`
 //! - **Parentheses**: `(age > 25) && (status == "active")`
-//! - **Array membership**: `role in ["admin", "moderator"]`, `user.id in allowed_ids`
 //!
 //! **Note**: Bare field names like `name` are field selectors, not filters.
 //! Use explicit comparisons: `name == "Alice"` instead of just `name`.
@@ -302,7 +302,7 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! ### Combined Filter and Template Examples
+//! ### Filter With Template Examples
 //!
 //! ```rust
 //! use parsm::{parse_command, FilterEngine};
@@ -484,7 +484,7 @@
 //! - **Field selectors**: Bare field names with no operators (`name`, `user.email`)
 //! - **Filter expressions**: Explicit comparisons (`age > 25`, `name == "Alice"`)
 //! - **Truthy checks**: Field names with `?` suffix (`active?`, `user.verified?`)
-//! - **Templates**: Expressions starting with `$` or wrapped in `[]`
+//! - **Templates**: Expressions starting with `$` or wrapped in `[]` or `{}`
 //!
 //! To avoid ambiguity:
 //!
