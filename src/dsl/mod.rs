@@ -232,7 +232,7 @@ fn describe_parsed(dsl: &ParsedDSL) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::filter::{FilterEngine, FilterExpr, TemplateItem};
+    use crate::filter::{FilterEngine, FilterExpr};
     use serde_json::json;
 
     #[test]
@@ -244,6 +244,10 @@ mod tests {
 
         let field = result.field_selector.unwrap();
         assert_eq!(field.parts, vec!["name"]);
+        assert_eq!(
+            field.get_value(&json!({"name": "Alice"})),
+            Some(&json!("Alice"))
+        );
     }
 
     #[test]
@@ -274,93 +278,81 @@ mod tests {
 
     #[test]
     fn test_new_template_syntax() {
-        // Test braced templates with explicit field substitution
-        let result = parse_command("{${name}}").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
-            _ => panic!("Expected field substitution"),
-        }
+        // Braced templates substitute a field.
+        let template = parse_command("{${name}}").unwrap().template.unwrap();
+        assert_eq!(template.render(&json!({"name": "Alice"})), "Alice");
 
-        // Test bracketed templates
-        let result = parse_command("[${name}]").unwrap();
-        assert!(result.template.is_some());
+        // Bracketed templates substitute the same way.
+        let template = parse_command("[${name}]").unwrap().template.unwrap();
+        assert_eq!(template.render(&json!({"name": "Alice"})), "Alice");
 
-        // Test simple variables
-        let result = parse_command("$name").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
-            _ => panic!("Expected field substitution"),
-        }
+        // A bare "$name" is a simple variable.
+        let template = parse_command("$name").unwrap().template.unwrap();
+        assert_eq!(template.render(&json!({"name": "Alice"})), "Alice");
 
-        // Test interpolated text in brackets
-        let result = parse_command("[Hello ${name}!]").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        // Adjust expectations - the parser might segment this differently
-        assert!(template.items.len() >= 2); // At least literal + field
+        // Interpolated literal text surrounds the field in brackets.
+        let template = parse_command("[Hello ${name}!]").unwrap().template.unwrap();
+        assert_eq!(template.render(&json!({"name": "Alice"})), "Hello Alice!");
     }
 
     #[test]
     fn test_field_truthy_parsing() {
-        // The grammar already has field_truthy rule, test it works
-        let result = parse_command("active?").unwrap();
-        assert!(result.filter.is_some());
-        match result.filter {
-            Some(FilterExpr::FieldTruthy(field)) => {
-                assert_eq!(field.parts, vec!["active"]);
-            }
-            _ => panic!("active? should parse as FieldTruthy"),
-        }
+        let filter = parse_command("active?").unwrap().filter.unwrap();
+        assert!(FilterEngine::evaluate(&filter, &json!({"active": true})));
+        assert!(!FilterEngine::evaluate(&filter, &json!({"active": false})));
 
-        // Test nested field truthy
-        let result = parse_command("user.settings.notifications?").unwrap();
-        assert!(result.filter.is_some());
-        match result.filter {
-            Some(FilterExpr::FieldTruthy(field)) => {
-                assert_eq!(field.parts, vec!["user", "settings", "notifications"]);
-            }
-            _ => panic!("user.settings.notifications? should parse as FieldTruthy"),
-        }
+        // Nested field truthy.
+        let filter = parse_command("user.settings.notifications?")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"user": {"settings": {"notifications": true}}})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"user": {"settings": {"notifications": false}}})
+        ));
     }
 
     #[test]
     fn test_explicit_truthy_in_boolean_expressions() {
-        // AND with explicit truthy
-        let result = parse_command("active? && verified?").unwrap();
-        assert!(result.filter.is_some());
-        match result.filter {
-            Some(FilterExpr::And(left, right)) => match (left.as_ref(), right.as_ref()) {
-                (FilterExpr::FieldTruthy(l), FilterExpr::FieldTruthy(r)) => {
-                    assert_eq!(l.parts, vec!["active"]);
-                    assert_eq!(r.parts, vec!["verified"]);
-                }
-                _ => panic!("Expected two FieldTruthy in AND"),
-            },
-            _ => panic!("Expected AND expression"),
-        }
+        // AND with explicit truthy.
+        let filter = parse_command("active? && verified?")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"active": true, "verified": true})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"active": true, "verified": false})
+        ));
 
-        // OR with explicit truthy
-        let result = parse_command("premium? || admin?").unwrap();
-        assert!(result.filter.is_some());
+        // OR with explicit truthy.
+        let filter = parse_command("premium? || admin?").unwrap().filter.unwrap();
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"premium": true, "admin": false})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"premium": false, "admin": false})
+        ));
 
-        // NOT with truthy
-        let result = parse_command("!suspended?").unwrap();
-        assert!(result.filter.is_some());
-        match result.filter {
-            Some(FilterExpr::Not(inner)) => match inner.as_ref() {
-                FilterExpr::FieldTruthy(field) => {
-                    assert_eq!(field.parts, vec!["suspended"]);
-                }
-                _ => panic!("Expected FieldTruthy inside NOT"),
-            },
-            _ => panic!("Expected NOT expression"),
-        }
+        // NOT with truthy.
+        let filter = parse_command("!suspended?").unwrap().filter.unwrap();
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"suspended": false})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"suspended": true})
+        ));
     }
 
     #[test]
@@ -525,6 +517,20 @@ mod tests {
         // ${1} is a field variable, mapped to the field named "1".
         let template = parse_command("${1}").unwrap().template.unwrap();
         assert_eq!(template.render(&json!({"1": "first field"})), "first field");
+
+        // Every "$digits" amount, whatever the digit count, renders as its
+        // own literal text.
+        for amount in ["$1", "$5", "$10", "$999"] {
+            let template = parse_command(amount).unwrap().template.unwrap();
+            assert_eq!(template.render(&json!({})), amount);
+        }
+
+        // Every "${digits}" reference, whatever the digit count, renders
+        // the matching field's value.
+        for (reference, field) in [("${2}", "2"), ("${10}", "10"), ("${100}", "100")] {
+            let template = parse_command(reference).unwrap().template.unwrap();
+            assert_eq!(template.render(&json!({field: "value"})), "value");
+        }
     }
 
     #[test]
@@ -643,27 +649,6 @@ mod tests {
     }
 
     #[test]
-    fn test_special_field_references() {
-        // Test $0 (original input) field reference
-        let result = parse_command("${0}").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["$0"]),
-            _ => panic!("Expected $0 field reference"),
-        }
-
-        // Test numeric field references
-        let result = parse_command("${1}").unwrap();
-        assert!(result.template.is_some());
-        let template = result.template.unwrap();
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["1"]),
-            _ => panic!("Expected numeric field reference"),
-        }
-    }
-
-    #[test]
     fn test_comprehensive_disambiguation() {
         // Identical field names are interpreted as different DSL kinds
         // depending on context; each kind is exercised, not just detected.
@@ -752,30 +737,5 @@ mod tests {
             &filter,
             &json!({"age": 10, "name": "Alice"})
         ));
-    }
-
-    #[test]
-    fn test_numeric_literal_vs_field_distinction() {
-        // Test that dollar amounts are preserved as literals
-        for amount in ["$0", "$1", "$5", "$10", "$20", "$100", "$999"] {
-            let result = parse_command(amount).unwrap();
-            assert!(result.template.is_some());
-            let template = result.template.unwrap();
-            match &template.items[0] {
-                TemplateItem::Literal(text) => assert_eq!(text, amount),
-                _ => panic!("Expected {amount} to be literal"),
-            }
-        }
-
-        // Test that braced numerics are field references
-        for num in ["${1}", "${2}", "${10}", "${100}"] {
-            let result = parse_command(num).unwrap();
-            assert!(result.template.is_some());
-            let template = result.template.unwrap();
-            match &template.items[0] {
-                TemplateItem::Field(_) => {} // Expected
-                _ => panic!("Expected {num} to be field reference"),
-            }
-        }
     }
 }

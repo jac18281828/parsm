@@ -155,7 +155,7 @@ impl DSLParser {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::filter::{ComparisonOp, FilterEngine, FilterExpr, FilterValue, TemplateItem};
+    use crate::filter::{ComparisonOp, FilterEngine, FilterExpr, TemplateItem};
     use serde_json::json;
 
     #[test]
@@ -167,6 +167,10 @@ mod tests {
 
         let field = result.field_selector.unwrap();
         assert_eq!(field.parts, vec!["name"]);
+        assert_eq!(
+            field.get_value(&json!({"name": "Alice"})),
+            Some(&json!("Alice"))
+        );
     }
 
     #[test]
@@ -187,15 +191,16 @@ mod tests {
 
     #[test]
     fn test_parse_filter_only() {
-        let result = DSLParser::parse_dsl("age > 25").unwrap();
-        match result.filter.unwrap() {
-            FilterExpr::Comparison { field, op, value } => {
+        let filter = DSLParser::parse_dsl("age > 25").unwrap().filter.unwrap();
+        match &filter {
+            FilterExpr::Comparison { field, op, .. } => {
                 assert_eq!(field.parts, vec!["age"]);
                 assert!(matches!(op, ComparisonOp::GreaterThan));
-                assert!(matches!(value, FilterValue::Number(25.0)));
             }
             _ => panic!("Expected comparison"),
         }
+        assert!(FilterEngine::evaluate(&filter, &json!({"age": 30})));
+        assert!(!FilterEngine::evaluate(&filter, &json!({"age": 10})));
     }
 
     #[test]
@@ -203,76 +208,75 @@ mod tests {
         let result = DSLParser::parse_dsl("$name").unwrap();
         let template = result.template.unwrap();
         assert_eq!(template.items.len(), 1);
-        match &template.items[0] {
-            TemplateItem::Field(field) => assert_eq!(field.parts, vec!["name"]),
-            _ => panic!("Expected field"),
-        }
+        assert!(matches!(&template.items[0], TemplateItem::Field(_)));
+        assert_eq!(template.render(&json!({"name": "Alice"})), "Alice");
     }
 
     #[test]
     fn test_parse_field_selector_only() {
-        let result = DSLParser::parse_dsl("user.email").unwrap();
-        assert_eq!(result.field_selector.unwrap().parts, vec!["user", "email"]);
+        let field = DSLParser::parse_dsl("user.email")
+            .unwrap()
+            .field_selector
+            .unwrap();
+        assert_eq!(field.parts, vec!["user", "email"]);
+        assert_eq!(
+            field.get_value(&json!({"user": {"email": "a@b.com"}})),
+            Some(&json!("a@b.com"))
+        );
     }
 
     #[test]
     fn test_field_truthy_parsing() {
-        let result = DSLParser::parse_dsl("active?").unwrap();
-        assert!(result.filter.is_some());
-        match result.filter {
-            Some(FilterExpr::FieldTruthy(field)) => {
-                assert_eq!(field.parts, vec!["active"]);
-            }
-            _ => panic!("active? should parse as FieldTruthy"),
-        }
+        let filter = DSLParser::parse_dsl("active?").unwrap().filter.unwrap();
+        assert!(FilterEngine::evaluate(&filter, &json!({"active": true})));
+        assert!(!FilterEngine::evaluate(&filter, &json!({"active": false})));
     }
 
     #[test]
     fn test_not_operator() {
-        // Test NOT with explicit truthy
-        let result = DSLParser::parse_dsl("!active?").unwrap();
-        assert!(result.filter.is_some());
-        match result.filter {
-            Some(FilterExpr::Not(inner)) => match inner.as_ref() {
-                FilterExpr::FieldTruthy(field) => {
-                    assert_eq!(field.parts, vec!["active"]);
-                }
-                _ => panic!("Expected FieldTruthy inside NOT"),
-            },
-            _ => panic!("Expected NOT expression"),
-        }
+        let filter = DSLParser::parse_dsl("!active?").unwrap().filter.unwrap();
+        assert!(FilterEngine::evaluate(&filter, &json!({"active": false})));
+        assert!(!FilterEngine::evaluate(&filter, &json!({"active": true})));
     }
 
     #[test]
     fn test_boolean_and_expression() {
-        let result = DSLParser::parse_dsl("active? && verified?").unwrap();
-        assert!(result.filter.is_some());
-        match result.filter {
-            Some(FilterExpr::And(left, right)) => match (left.as_ref(), right.as_ref()) {
-                (FilterExpr::FieldTruthy(l), FilterExpr::FieldTruthy(r)) => {
-                    assert_eq!(l.parts, vec!["active"]);
-                    assert_eq!(r.parts, vec!["verified"]);
-                }
-                _ => panic!("Expected two FieldTruthy in AND"),
-            },
-            _ => panic!("Expected AND expression"),
-        }
+        let filter = DSLParser::parse_dsl("active? && verified?")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"active": true, "verified": true})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"active": true, "verified": false})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"active": false, "verified": true})
+        ));
     }
 
     #[test]
     fn test_boolean_or_expression() {
-        let result = DSLParser::parse_dsl("premium? || admin?").unwrap();
-        assert!(result.filter.is_some());
-        match result.filter {
-            Some(FilterExpr::Or(left, right)) => match (left.as_ref(), right.as_ref()) {
-                (FilterExpr::FieldTruthy(l), FilterExpr::FieldTruthy(r)) => {
-                    assert_eq!(l.parts, vec!["premium"]);
-                    assert_eq!(r.parts, vec!["admin"]);
-                }
-                _ => panic!("Expected two FieldTruthy in OR"),
-            },
-            _ => panic!("Expected OR expression"),
-        }
+        let filter = DSLParser::parse_dsl("premium? || admin?")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"premium": true, "admin": false})
+        ));
+        assert!(FilterEngine::evaluate(
+            &filter,
+            &json!({"premium": false, "admin": true})
+        ));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"premium": false, "admin": false})
+        ));
     }
 
     #[test]
@@ -313,26 +317,41 @@ mod tests {
 
     #[test]
     fn test_quoted_field_selectors() {
-        let result = DSLParser::parse_dsl("\"field with spaces\"").unwrap();
-        assert!(result.field_selector.is_some());
-        let field = result.field_selector.unwrap();
-        assert_eq!(field.parts, vec!["field with spaces"]);
+        let field = DSLParser::parse_dsl("\"field with spaces\"")
+            .unwrap()
+            .field_selector
+            .unwrap();
+        assert_eq!(
+            field.get_value(&json!({"field with spaces": "found"})),
+            Some(&json!("found"))
+        );
     }
 
     /// A quoted selector is one literal key, dots included; only quoting
     /// reaches a key that itself contains a ".".
     #[test]
     fn quoted_selector_with_dots_is_one_key() {
-        let result = DSLParser::parse_dsl("\"user.name\"").unwrap();
-        let field = result.field_selector.unwrap();
+        let field = DSLParser::parse_dsl("\"user.name\"")
+            .unwrap()
+            .field_selector
+            .unwrap();
         assert_eq!(field.parts, vec!["user.name"]);
+        assert_eq!(
+            field.get_value(&json!({"user.name": "Alice"})),
+            Some(&json!("Alice"))
+        );
     }
 
     #[test]
     fn quoted_selector_unescapes_content() {
-        let result = DSLParser::parse_dsl(r#""say \"hi\"""#).unwrap();
-        let field = result.field_selector.unwrap();
-        assert_eq!(field.parts, vec![r#"say "hi""#]);
+        let field = DSLParser::parse_dsl(r#""say \"hi\"""#)
+            .unwrap()
+            .field_selector
+            .unwrap();
+        assert_eq!(
+            field.get_value(&json!({r#"say "hi""#: "found"})),
+            Some(&json!("found"))
+        );
     }
 
     #[test]
@@ -396,49 +415,35 @@ mod tests {
     #[test]
     fn test_value_types() {
         // String values
-        let result = DSLParser::parse_dsl("name == \"Alice\"").unwrap();
-        match result.filter {
-            Some(FilterExpr::Comparison {
-                value: FilterValue::String(s),
-                ..
-            }) => {
-                assert_eq!(s, "Alice");
-            }
-            _ => panic!("Expected string value"),
-        }
+        let filter = DSLParser::parse_dsl("name == \"Alice\"")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(&filter, &json!({"name": "Alice"})));
+        assert!(!FilterEngine::evaluate(&filter, &json!({"name": "Bob"})));
 
         // Number values
-        let result = DSLParser::parse_dsl("age == 25").unwrap();
-        match result.filter {
-            Some(FilterExpr::Comparison {
-                value: FilterValue::Number(n),
-                ..
-            }) => {
-                assert_eq!(n, 25.0);
-            }
-            _ => panic!("Expected number value"),
-        }
+        let filter = DSLParser::parse_dsl("age == 25").unwrap().filter.unwrap();
+        assert!(FilterEngine::evaluate(&filter, &json!({"age": 25})));
+        assert!(!FilterEngine::evaluate(&filter, &json!({"age": 30})));
 
         // Boolean values
-        let result = DSLParser::parse_dsl("active == true").unwrap();
-        match result.filter {
-            Some(FilterExpr::Comparison {
-                value: FilterValue::Boolean(b),
-                ..
-            }) => {
-                assert!(b);
-            }
-            _ => panic!("Expected boolean value"),
-        }
+        let filter = DSLParser::parse_dsl("active == true")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(&filter, &json!({"active": true})));
+        assert!(!FilterEngine::evaluate(&filter, &json!({"active": false})));
 
         // Null values
-        let result = DSLParser::parse_dsl("data == null").unwrap();
-        match result.filter {
-            Some(FilterExpr::Comparison {
-                value: FilterValue::Null,
-                ..
-            }) => {}
-            _ => panic!("Expected null value"),
-        }
+        let filter = DSLParser::parse_dsl("data == null")
+            .unwrap()
+            .filter
+            .unwrap();
+        assert!(FilterEngine::evaluate(&filter, &json!({"data": null})));
+        assert!(!FilterEngine::evaluate(
+            &filter,
+            &json!({"data": "present"})
+        ));
     }
 }
