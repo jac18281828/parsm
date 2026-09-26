@@ -128,7 +128,7 @@ fn cli() -> Command {
         .about("Understands structured text better than sed or awk")
         .arg(
             Arg::new("filter")
-                .help("Expression: field selector, filter, template, or filter+template (optional)")
+                .help("Expression: field selector, filter, template, or filter with a template (optional)")
                 .value_name("EXPR")
                 .index(1),
         )
@@ -199,12 +199,12 @@ fn print_usage_examples() {
     println!("  # Field selection:");
     println!(r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'name'"#);
     println!();
-    println!("  # Filter and format output (combined):");
+    println!("  # Filter with a template (one argument):");
     println!(
         r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25 [${{name}} is ${{age}} years old]'"#
     );
     println!();
-    println!("  # Filter and format output (separate arguments):");
+    println!("  # Filter with a template (two arguments):");
     println!(
         r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'age > 25' '[${{name}} is ${{age}} years old]'"#
     );
@@ -232,10 +232,12 @@ fn print_usage_examples() {
     println!(r#"  echo '{{"name": "Alice"}}' | parsm 'name ~= "A.*e"' # regex match"#);
     println!();
     println!("  # Complex conditions:");
-    println!(r#"  parsm 'name == "Alice" && age > 25 [${{name}}: active]'"#);
+    println!(
+        r#"  echo '{{"name": "Alice", "age": 30}}' | parsm 'name == "Alice" && age > 25 [${{name}}: active]'"#
+    );
     println!();
     println!("  # Read input from a file instead of stdin (-f is repeatable, '-' means stdin):");
-    println!(r#"  parsm -f package.json 'name'"#);
+    println!(r#"  parsm -f Cargo.toml 'package.name'"#);
     println!();
     println!("  # Convert to JSON, one line per record (no expression):");
     println!("  echo 'name: Alice' | parsm  # {{\"name\":\"Alice\"}}");
@@ -248,16 +250,17 @@ fn print_usage_examples() {
     println!("OPERATORS:");
     println!("  ==, !=, <, <=, >, >=        # Comparison");
     println!(
-        "  *=, ^=, $=, ~=              # String operations (contains, starts with, ends with, regex)"
+        "  *=, ~, ^=, $=, ~=           # String operations (contains, contains, starts with, ends with, regex)"
     );
     println!("  &&, ||, !                   # Boolean logic");
     println!();
     println!("FIELD ACCESS:");
-    println!("  name                        # Field selection (bare identifier)");
-    println!("  \"name\"                      # Field selection (quoted)");
+    println!("  name                        # Field selector (bare identifier)");
+    println!("  \"name\"                      # Field selector (quoted)");
     println!("  user.email                  # Nested field");
-    println!("  field_0, field_1            # CSV columns");
-    println!("  word_0, word_1              # Text words");
+    println!("  items.0                     # Array index (0-based)");
+    println!("  field_0, field_1            # CSV columns (0-based)");
+    println!("  word_0, word_1              # Text words (0-based)");
     println!();
     println!("TEMPLATE FORMATS:");
     println!("  [template content]          # Bracket format (preferred)");
@@ -265,9 +268,11 @@ fn print_usage_examples() {
     println!();
     println!("TEMPLATE VARIABLES:");
     println!("  ${{0}}                        # Entire original input");
+    println!("  ${{1}}, ${{2}}                  # CSV/text columns (1-based)");
     println!("  ${{field_0}}, ${{field_1}}      # CSV columns (0-based)");
     println!("  ${{word_0}}, ${{word_1}}        # Text words (0-based)");
     println!("  $name, ${{user.email}}        # Named fields ($simple or ${{complex}})");
+    println!("  ${{a?x:y}}                    # Conditional: x if a is truthy, else y");
     println!("  $100                        # Literal dollar amounts (invalid variable names)");
     println!();
     println!("FORMAT FLAGS:");
@@ -319,8 +324,8 @@ mod tests {
             panic!("Expected template");
         }
 
-        // For combined filter + template expressions, we would need a more complex setup
-        // but that's not needed for this simple rendering test
+        // A filter with a template would need a more complex setup, but
+        // that's not needed for this simple rendering test.
     }
 
     /// Test CSV fields reach templates as field_0, field_1, ...
