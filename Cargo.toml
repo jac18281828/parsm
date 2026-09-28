@@ -1,6 +1,6 @@
 [package]
 name = "parsm"
-version = "0.8.4"
+version = "0.9.0"
 edition = "2024"
 authors = ["John Cairns <john@2ad.com>"]
 description = "Detects and parses JSON, CSV, YAML, TOML, logfmt, and plain text, with one expression language for filtering and templating."

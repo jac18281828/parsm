@@ -1,3 +1,59 @@
+0.9.0 (2026-09-28)
+
+* **Breaking**
+  - convert mode (no expression) writes one line of compact JSON per record
+    instead of echoing the input; a CSV or text row without a header
+    converts to a JSON array, and a CSV header row no longer converts to a
+    record of its own
+  - a quoted field selector (`"user.name"`) now reads as one literal key,
+    dots included, instead of splitting on `.`; use the bare form
+    (`user.name`) for the nested path
+  - `~` is contains-only and rejects a `/pattern/` regex literal (use `~=`
+    for a regex); a `~=` pattern - literal, or a number or boolean
+    stringified the same way `*=`/`^=`/`$=` already did - compiles once
+    when the expression is parsed, and an invalid pattern is a parse error
+    instead of a silent non-match
+  - the CLI's two-argument form (`parsm FILTER TEMPLATE`) requires the
+    first argument to resolve to a filter and the second to a template;
+    anything else is an error naming the argument and what it parsed as
+    instead of guessing
+  - only one format flag (`--json`/`--yaml`/`--csv`/`--toml`/`--logfmt`/
+    `--text`) is accepted at a time (a second is a usage error, exit 2),
+    and a forced format's first record failing is fatal instead of falling
+    through to another format
+  - a missing field is silent everywhere: a filter comparison is false, a
+    truthy check is false, a template variable renders empty, and a field
+    selector prints nothing for that record
+  - JSON and TOML objects keep their input key order through conversion
+    instead of being re-sorted
+  - a CSV header's field names key the record view by their written case
+    plus a lower-case alias, instead of always lower-casing them; a ragged
+    row keeps every field past the header under `field_N`
+* text records expose `${1}`, `${2}`, … as 1-based positional fields, the
+  same convention CSV already used (`field_0`, `field_1`, … stay available
+  as the 0-based legacy form for both)
+* a YAML document that is a top-level sequence yields one record per item,
+  the same way a JSON array already did
+* a CSV quoted field may span up to 64 lines; past that its row fails
+  instead of holding the read open until end of input
+* a JSON, YAML, TOML or logfmt object's own keys are exposed as-is; every
+  record - whatever its format - now carries its own source text as `$0`
+* a later line that is not valid UTF-8 warns and is skipped in every
+  format, instead of only some; one before the first record is fatal
+* format detection, record reading and output are unified behind one
+  detector (`src/detect.rs`), one record pipeline (`src/records.rs`,
+  `src/documents.rs`) and one writer (`src/pipeline.rs`) for every format
+* `bin/integration_test.py` is retired; `bin/quick_test.sh` and the Rust
+  integration test suite (`tests/`) are the only test harnesses
+* fixed a panic when a multibyte character straddled byte 100 of the input, and a panic
+  on an invalid `RUST_LOG`; tracing output goes to stderr
+* JSON Lines, logfmt, text and CSV stream: each record prints as it arrives instead of
+  after end of input
+* a pretty-printed JSON array reads in linear time (12 MB: 55.6s to 0.32s); CSV reads about
+  twice as fast
+* short prose with a comma (`Hello, world`) reads as text, and logfmt is detected only when
+  the line parses as logfmt
+
 0.8.3 (2026-07-08)
 
 * removed the legacy hand-rolled fallback parser (`fallback.rs`, ~800 lines) that silently
